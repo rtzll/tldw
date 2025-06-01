@@ -1,4 +1,4 @@
-# TLDW - too long; didn't watch
+# tldw - too long; didn't watch
 
 Transform YouTube videos into concise summaries using AI. Works with existing captions (free) or Whisper transcription (paid). Includes MCP server for Claude and other AI assistants.
 
@@ -13,19 +13,36 @@ brew install yt-dlp ffmpeg
 sudo apt install yt-dlp ffmpeg
 ```
 
-**2. Build TLDW:**
+**2. Build tldw:**
 ```bash
 git clone https://github.com/rtzll/tldw.git
 cd tldw
 go build -o tldw
 ```
 
-**3. Set OpenAI API key** (for summaries or whisper transcription):
+**3. [Optional] Set OpenAI API key** (for summaries or whisper transcription):
 ```bash
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-## Usage Examples
+## Claude Desktop Setup
+
+**Easy setup:**
+```bash
+./tldw mcp setup-claude
+```
+
+This automatically configures Claude Desktop to use tldw. Restart Claude Desktop afterward.
+
+**After setup**, ask Claude: *"tldw: https://youtu.be/tAP1eZYEuKA"*
+
+![Claude using tldw via MCP](./assets/claude-tldw-screenshot.png)
+
+## ChatGPT Desktop (not yet)
+
+ChatGPT Desktop does not support MCP servers yet. But it was announced that it will support them in the [coming months](https://x.com/OpenAIDevs/status/1904957755829481737). 
+
+## CLI Usage Examples
 
 ```bash
 # Get transcript only (free if video has captions)
@@ -50,20 +67,9 @@ export OPENAI_API_KEY="your-api-key-here"
 ./tldw mcp
 ```
 
-## Claude Desktop Setup
+### Example Output
 
-**Easy setup:**
-```bash
-./tldw mcp setup-claude
-```
-
-This automatically configures Claude Desktop to use TLDW. Restart Claude Desktop afterward.
-
-**After setup**, ask Claude: *"tldw: https://youtu.be/tAP1eZYEuKA"*
-
-## ChatGPT Desktop (not yet)
-
-ChatGPT Desktop does not support MCP servers yet. But it was announced that it will support them in the [comming months](https://x.com/OpenAIDevs/status/1904957755829481737). 
+![CLI usage of tldw](./assets/cli-tldw-screenshot.png)
 
 
 ## How It Works
