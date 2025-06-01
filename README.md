@@ -20,7 +20,7 @@ cd tldw
 go build -o tldw
 ```
 
-**3. Set OpenAI API key** (for summaries only):
+**3. Set OpenAI API key** (for summaries or whisper transcription):
 ```bash
 export OPENAI_API_KEY="your-api-key-here"
 ```
