@@ -131,11 +131,11 @@ func setupClaudeDesktop() error {
 		config.MCPServers = make(map[string]MCPServerConfig)
 	}
 
-	// Get XDG paths using the same logic as internal config
+	// Get XDG base paths so internal config can add tldw
 	xdgPaths := map[string]string{
-		"XDG_DATA_HOME":   filepath.Join(xdg.DataHome, "tldw"),
-		"XDG_CONFIG_HOME": filepath.Join(xdg.ConfigHome, "tldw"),
-		"XDG_CACHE_HOME":  filepath.Join(xdg.CacheHome, "tldw"),
+		"XDG_DATA_HOME":   xdg.DataHome,
+		"XDG_CONFIG_HOME": xdg.ConfigHome,
+		"XDG_CACHE_HOME":  xdg.CacheHome,
 	}
 
 	// Add/update TL;DW MCP server configuration
