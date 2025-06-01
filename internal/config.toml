@@ -1,0 +1,23 @@
+# OpenAI API settings
+# Set your API key here or use OPENAI_API_KEY environment variable
+openai_api_key = ""
+
+# Model used for generating summaries
+tldr_model = "gpt-4o-mini"
+
+# Custom transcripts directory (optional)
+# By default, transcripts are stored in the XDG data directory
+# transcripts_dir = "/path/to/custom/transcripts"
+
+# Timeouts
+summary_timeout = "2m"  # Timeout for summary generation
+whisper_timeout = "10m" # Timeout for Whisper transcription
+
+# Verbose mode (enables additional logging)
+verbose = false
+
+# Custom prompt template (optional)
+# By default, uses the embedded prompt.txt template
+# Can be a file path or a prompt string
+# prompt = "/path/to/custom/prompt.txt"
+# prompt = "tldr: {{.Transcript}}"

@@ -1,0 +1,6 @@
+.env
+*.html
+*.out
+transcripts
+temp_chunks
+tldw
