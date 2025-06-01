@@ -10,7 +10,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 
-	"tldw/internal"
+	"github.com/rtzll/tldw/internal"
 )
 
 // mcpCmd represents the mcp command

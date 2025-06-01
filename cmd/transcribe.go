@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"tldw/internal"
+	"github.com/rtzll/tldw/internal"
 )
 
 // transcribeCmd represents the transcribe command

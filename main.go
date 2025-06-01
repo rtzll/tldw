@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"tldw/cmd"
+	"github.com/rtzll/tldw/cmd"
 )
 
 func main() {
