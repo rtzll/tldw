@@ -13,8 +13,8 @@ func AddTranscriptionFlags(cmd *cobra.Command) {
 
 // AddOpenAIFlags adds flags related to OpenAI API functionality
 func AddOpenAIFlags(cmd *cobra.Command) {
-	cmd.Flags().String("model", "", "OpenAI model to use for summaries")
-	cmd.Flags().String("prompt", "", "Custom prompt (string or file path)")
+	cmd.Flags().StringP("model", "m", "", "OpenAI model to use for summaries")
+	cmd.Flags().StringP("prompt", "p", "", "Custom prompt (string or file path)")
 }
 
 // HandlePromptFlag processes the --prompt flag to set custom prompt

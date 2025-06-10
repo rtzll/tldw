@@ -9,7 +9,7 @@ Transform YouTube videos into concise summaries using AI. Works with existing ca
 brew install yt-dlp ffmpeg
 # Clone and build tldw
 git clone https://github.com/rtzll/tldw.git && cd tldw && go build -o tldw
-# [Optional] Set OpenAI API key for summaries/whisper
+# [Optional] Set OpenAI API key for summaries and Whisper transcription
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
@@ -40,7 +40,7 @@ ChatGPT Desktop will support MCP servers in the [coming months](https://x.com/Op
 
 # Generate summary (requires API key)
 ./tldw "https://youtu.be/tAP1eZYEuKA"
-./tldw tAP1eZYEuKA --model gpt-4o --prompt "tldr: {{.Transcript}}"
+./tldw tAP1eZYEuKA -m gpt-4o -p "tldr: {{.Transcript}}"
 
 # Start MCP server
 ./tldw mcp
@@ -68,15 +68,19 @@ ChatGPT Desktop will support MCP servers in the [coming months](https://x.com/Op
 ## Commands
 
 ```bash
-./tldw [url]                      # Summarize video (requires API key)
-./tldw transcribe [url] [-o file] # Get transcript from captions
-./tldw summarize [url]            # Generate summary (requires API key)
-./tldw mcp [--port 8080]          # Start MCP server
-./tldw paths                      # Show config locations
-./tldw version                    # Show version
+./tldw [URL]                         # Summarize video (requires API key)
+./tldw transcribe [URL] [-o FILE]    # Get transcript from captions
+./tldw -c FILE [URL]                 # Use a specific config file
+./tldw mcp [--port 8080]             # Start MCP server
+./tldw paths                         # Show config locations
+./tldw version                       # Show version
 ```
 
 ## Configuration
+
+Either edit the config file or use environment variables.
+
+### Config file
 
 **Find your config location:**
 ```bash
@@ -91,3 +95,11 @@ prompt = "tldr: {{.Transcript}}"
 ```
 
 or edit the `prompt.txt` file in the config directory to change the default summary prompt.
+
+### Environment variables
+
+```bash
+export OPENAI_API_KEY="your-key"
+export TLDW_TLDR_MODEL="gpt-4o-mini"
+export TLDW_PROMPT="tldr: {{.Transcript}}"
+```

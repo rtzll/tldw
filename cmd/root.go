@@ -21,14 +21,17 @@ var (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "tldw [YouTube URL or ID]",
+	Use:   "tldw [URL]",
 	Short: "Too Long; Didn't Watch - YouTube video summarizer",
 	Long: `TLDW (Too Long; Didn't Watch) summarizes YouTube videos using AI.
 
 It extracts transcripts directly from YouTube when available,
 or processes the audio with Whisper when transcripts are unavailable.
 
-The summary is generated using OpenAI's language models.`,
+The summary is generated using OpenAI's language models.
+
+Configuration can be provided via environment variables (e.g. OPENAI_API_KEY, TLDW_TLDR_MODEL, TLDW_PROMPT)
+or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	Example: `  # Summarize a YouTube video (default behavior)
   tldw "https://www.youtube.com/watch?v=tAP1eZYEuKA"
   tldw tAP1eZYEuKA
@@ -59,7 +62,7 @@ The summary is generated using OpenAI's language models.`,
 		arg := args[0]
 		if internal.IsLikelyCommand(arg) {
 			// Check if it's similar to any available commands
-			availableCommands := []string{"mcp", "transcribe", "summarize", "version", "paths", "help"}
+			availableCommands := []string{"mcp", "transcribe", "version", "paths", "help"}
 			var suggestions []string
 			for _, cmdName := range availableCommands {
 				if strings.Contains(cmdName, arg) || (len(arg) <= len(cmdName) && strings.Contains(arg, cmdName[:len(arg)])) {
@@ -68,9 +71,9 @@ The summary is generated using OpenAI's language models.`,
 			}
 
 			if len(suggestions) > 0 {
-				return fmt.Errorf("'%s' doesn't look like a YouTube URL or video ID. Did you mean: %s?", arg, strings.Join(suggestions, ", "))
+				return fmt.Errorf("%s doesn't look like a YouTube URL or video ID; did you mean %s", arg, strings.Join(suggestions, ", "))
 			}
-			return fmt.Errorf("'%s' doesn't look like a YouTube URL or video ID. Use --help to see available commands", arg)
+			return fmt.Errorf("%s doesn't look like a YouTube URL or video ID; use --help", arg)
 		}
 
 		youtubeURL, _ := internal.ParseArg(args[0])
@@ -91,18 +94,17 @@ func Execute() error {
 
 	// Ensure XDG directories exist
 	if err := internal.EnsureDirs(config.ConfigDir, config.DataDir, config.CacheDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating XDG directories: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating XDG directories: %w", err)
 	}
 
 	// Ensure default config exists in XDG config directory
 	if err := internal.EnsureDefaultConfig(config.ConfigDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to ensure default config: %v\n", err)
+		return fmt.Errorf("ensuring default config: %w", err)
 	}
 
 	// Ensure default prompt exists in XDG config directory
 	if err := internal.EnsureDefaultPrompt(config.ConfigDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to ensure default prompt: %v\n", err)
+		return fmt.Errorf("ensuring default prompt: %w", err)
 	}
 
 	// Set up signal handling for graceful shutdown
@@ -125,7 +127,7 @@ func Execute() error {
 		cleanupDone := make(chan struct{})
 		go func() {
 			if err := internal.CleanupTempDir(config.TempDir); err != nil {
-				fmt.Fprintf(os.Stderr, "Error cleaning up temporary files: %v\n", err)
+				fmt.Fprintf(os.Stderr, "failed to clean up temporary files: %v\n", err)
 			}
 			close(cleanupDone)
 		}()
@@ -136,7 +138,7 @@ func Execute() error {
 			// Cleanup completed successfully
 		case <-cleanupCtx.Done():
 			// Timeout occurred
-			fmt.Fprintln(os.Stderr, "Warning: Cleanup timed out, forcing exit")
+			fmt.Fprintln(os.Stderr, "cleanup timed out, forcing exit")
 		}
 
 		// Exit the program
@@ -145,14 +147,20 @@ func Execute() error {
 
 	// Set context on root command
 	rootCmd.SetContext(ctx)
-
 	return rootCmd.Execute()
 }
 
 func init() {
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+
 	internal.AddTranscriptionFlags(rootCmd)
 	internal.AddOpenAIFlags(rootCmd)
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output for debugging")
-	rootCmd.PersistentFlags().String("config", "", "Config file (default is $XDG_CONFIG_HOME/tldw/config.toml)")
+	rootCmd.PersistentFlags().StringP("config", "c", "", "Config file (default is $XDG_CONFIG_HOME/tldw/config.toml)")
+
 	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("config", rootCmd.PersistentFlags().Lookup("config"))
+	_ = viper.BindPFlag("tldr_model", rootCmd.Flags().Lookup("model"))
+	_ = viper.BindPFlag("prompt", rootCmd.Flags().Lookup("prompt"))
 }
