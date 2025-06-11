@@ -142,7 +142,7 @@ func FileExists(filename string) bool {
 
 // ValidateModel checks if the model is supported
 func ValidateModel(model string) error {
-	supportedModels := []string{"gpt-4o", "gpt-4o-mini", "o4-mini"}
+	supportedModels := []string{"gpt-4o", "gpt-4o-mini", "o4-mini", "gpt-4.1-nano"}
 	if slices.Contains(supportedModels, model) {
 		return nil
 	}

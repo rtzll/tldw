@@ -53,6 +53,8 @@ func (c *OpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt s
 		oaiModel = openai.ChatModelGPT4oMini
 	case "o4-mini":
 		oaiModel = openai.ChatModelO4Mini
+	case "gpt-4.1-nano":
+		oaiModel = openai.ChatModelGPT4_1Nano
 	default:
 		return "", fmt.Errorf("unsupported model: %s", model)
 	}

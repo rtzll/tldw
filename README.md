@@ -90,7 +90,7 @@ Either edit the config file or use environment variables.
 **Edit config file: `config.toml`**
 ```toml
 openai_api_key = "your-key"
-tldr_model = "gpt-4o-mini"
+tldr_model = "gpt-4.1-nano"
 prompt = "tldr: {{.Transcript}}"
 ```
 
@@ -100,6 +100,6 @@ or edit the `prompt.txt` file in the config directory to change the default summ
 
 ```bash
 export OPENAI_API_KEY="your-key"
-export TLDW_TLDR_MODEL="gpt-4o-mini"
+export TLDW_TLDR_MODEL="gpt-4.1-nano"
 export TLDW_PROMPT="tldr: {{.Transcript}}"
 ```
