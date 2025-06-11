@@ -152,8 +152,6 @@ func Execute() error {
 
 func init() {
 	rootCmd.SilenceUsage = true
-	rootCmd.SilenceErrors = true
-
 	internal.AddTranscriptionFlags(rootCmd)
 	internal.AddOpenAIFlags(rootCmd)
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output for debugging")
