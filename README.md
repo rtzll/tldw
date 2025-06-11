@@ -1,6 +1,6 @@
 # tldw - too long; didn't watch
 
-Transform YouTube videos into concise summaries using AI. Works with existing captions (free) or Whisper transcription (paid). Includes MCP server for Claude and other AI assistants.
+Transform YouTube videos into concise summaries using AI. Works with existing captions (free) or Whisper transcription (paid). Includes MCP server for Claude and other AI assistants and CLI.
 
 ## Quick Setup
 
@@ -13,7 +13,14 @@ git clone https://github.com/rtzll/tldw.git && cd tldw && go build -o tldw
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-## Claude Desktop Setup
+## MCP
+
+`./tldw mcp` provides AI assistants with:
+- **`get_youtube_metadata`**: Video info and captions status
+- **`get_youtube_transcript`**: Free captions transcript
+- **`transcribe_youtube_whisper`**: Paid Whisper transcription
+
+### Claude Desktop Setup
 
 **Easy setup:**
 ```bash
@@ -30,7 +37,9 @@ This automatically configures Claude Desktop to use tldw. Restart Claude Desktop
 
 ChatGPT Desktop will support MCP servers in the [coming months](https://x.com/OpenAIDevs/status/1904957755829481737).
 
-## CLI Usage Examples
+## CLI
+
+### Usage Examples
 
 ```bash
 # Get transcript (free with captions)
@@ -40,41 +49,14 @@ ChatGPT Desktop will support MCP servers in the [coming months](https://x.com/Op
 
 # Generate summary (requires API key)
 ./tldw "https://youtu.be/tAP1eZYEuKA"
-./tldw tAP1eZYEuKA -m gpt-4o -p "tldr: {{.Transcript}}"
-
-# Start MCP server
-./tldw mcp
+./tldw tAP1eZYEuKA -m o4-mini -p "tldr: {{.Transcript}}"
 ```
 
 ### Example Output
 
+Summaries are shown as markdown and rendered in the terminal.
+
 ![CLI usage of tldw](./assets/cli-tldw-screenshot.png)
-
-## How It Works
-
-- **Free transcripts**: Uses YouTube captions when available
-- **Paid transcription**: Whisper via OpenAI API as a fallback ($0.006/min)
-- **AI summaries**: Configurable OpenAI models
-- **Caching**: Local transcript storage
-- **MCP integration**: Tools for AI assistants
-
-## MCP Tools
-
-`./tldw mcp` provides AI assistants with:
-- **`get_youtube_metadata`**: Video info and captions status
-- **`get_youtube_transcript`**: Free captions transcript
-- **`transcribe_youtube_whisper`**: Paid Whisper transcription
-
-## Commands
-
-```bash
-./tldw [URL]                         # Summarize video (requires API key)
-./tldw transcribe [URL] [-o FILE]    # Get transcript from captions
-./tldw -c FILE [URL]                 # Use a specific config file
-./tldw mcp [--port 8080]             # Start MCP server
-./tldw paths                         # Show config locations
-./tldw version                       # Show version
-```
 
 ## Configuration
 
