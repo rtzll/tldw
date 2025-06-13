@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/muesli/termenv"
 	"golang.org/x/term"
 )
 
@@ -121,6 +122,7 @@ func RenderMarkdown(content string) (string, error) {
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(width),
+		glamour.WithColorProfile(termenv.EnvColorProfile()),
 	)
 	if err != nil {
 		return "", fmt.Errorf("creating terminal renderer: %w", err)
