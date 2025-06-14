@@ -132,7 +132,8 @@ func setupClaudeDesktop() error {
 	}
 
 	// Get XDG base paths so internal config can add tldw
-	xdgPaths := map[string]string{
+	paths := map[string]string{
+		"HOME":            xdg.Home,
 		"XDG_DATA_HOME":   xdg.DataHome,
 		"XDG_CONFIG_HOME": xdg.ConfigHome,
 		"XDG_CACHE_HOME":  xdg.CacheHome,
@@ -142,7 +143,7 @@ func setupClaudeDesktop() error {
 	config.MCPServers["tldw"] = MCPServerConfig{
 		Command: execPath,
 		Args:    []string{"mcp"},
-		Env:     xdgPaths,
+		Env:     paths,
 	}
 
 	// Write updated config back to file
