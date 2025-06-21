@@ -47,6 +47,20 @@ release:
   draft: false          # publish right away
   prerelease: auto      # mark pre-releases automatically
 
+brews:
+  - name: tldw
+    tap:
+      owner: rtzll
+      name: homebrew-tap
+    folder: Formula
+    description: "Too Long; Didn't Watch - YouTube video summarizer (CLI + MCP)"
+    homepage: "https://github.com/rtzll/tldw"
+    dependencies:
+      - ffmpeg
+      - yt-dlp
+    test: |
+      tldw version | grep -q "tldw v"
+
 changelog:
   sort: asc
   filters:
