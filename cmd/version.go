@@ -6,7 +6,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.4.0"
+var (
+	version = "dev" // overridden at build time via -ldflags
+	commit  = ""
+	date    = ""
+)
 
 // versionCmd represents the version command
 var versionCmd = &cobra.Command{
@@ -15,7 +19,7 @@ var versionCmd = &cobra.Command{
 	Example: `  # Show version information
   tldw version`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("tldw v" + version)
+		fmt.Printf("tldw v%s (commit: %s, built %s)\n", version, commit, date)
 	},
 }
 
