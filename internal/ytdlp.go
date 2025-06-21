@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
-	"github.com/lrstanley/go-ytdlp"
 )
 
 // VideoMetadata contains YouTube video information
@@ -18,7 +17,6 @@ type VideoMetadata struct {
 	Title       string         `json:"title"`
 	Description string         `json:"description"`
 	Channel     string         `json:"channel"`
-	Uploader    string         `json:"uploader"`
 	Duration    float64        `json:"duration"`
 	Categories  []string       `json:"categories"`
 	Tags        []string       `json:"tags"`
@@ -38,6 +36,7 @@ type YouTube struct {
 	fs             fs.FS
 	transcriptsDir string
 	verbose        bool
+	cmdRunner      CommandRunner
 }
 
 // NewYouTube creates a new YouTube downloader
@@ -46,34 +45,38 @@ func NewYouTube(filesystem fs.FS, transcriptsDir string, verbose bool) *YouTube 
 		fs:             filesystem,
 		transcriptsDir: transcriptsDir,
 		verbose:        verbose,
+		cmdRunner:      &DefaultCommandRunner{},
 	}
 }
 
-// Metadata fetches video details using go-ytdlp
+// Metadata fetches video details using direct yt-dlp command execution
 func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
 	if yt.verbose {
 		fmt.Println("Extracting video metadata...")
 	}
 
-	// Create a new ytdlp command to extract JSON metadata
-	dl := ytdlp.New().
-		DumpSingleJSON(). // Get all info in JSON format
-		NoPlaylist().     // Don't process playlists
-		SkipDownload()    // Don't download the actual video
+	// Build arguments for yt-dlp command
+	args := []string{
+		"--skip-download",    // Don't download the actual video
+		"--dump-single-json", // Get all info in JSON format
+		"--no-playlist",      // Don't process playlists
+		"-q",                 // Quiet mode
+		youtubeURL,
+	}
 
 	// Run the command
-	result, err := dl.Run(ctx, youtubeURL)
+	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
 	if err != nil {
 		if yt.verbose {
 			fmt.Printf("Metadata extraction error: %v\n", err)
-			fmt.Printf("Stderr: %s\n", result.Stderr)
+			fmt.Printf("Command output: %s\n", string(output))
 		}
 		return nil, fmt.Errorf("extracting video metadata: %w", err)
 	}
 
 	// Parse the JSON output into a raw map first to extract subtitle info
 	var rawData map[string]any
-	if err := json.Unmarshal([]byte(result.Stdout), &rawData); err != nil {
+	if err := json.Unmarshal(output, &rawData); err != nil {
 		if yt.verbose {
 			fmt.Printf("Failed to parse metadata JSON: %v\n", err)
 		}
@@ -82,7 +85,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 
 	// Parse the JSON output into our struct
 	var metadata VideoMetadata
-	if err := json.Unmarshal([]byte(result.Stdout), &metadata); err != nil {
+	if err := json.Unmarshal(output, &metadata); err != nil {
 		if yt.verbose {
 			fmt.Printf("Failed to parse metadata JSON: %v\n", err)
 		}
@@ -93,11 +96,10 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	metadata.HasCaptions = extractSubtitleInfo(rawData)
 
 	if yt.verbose {
-		fmt.Println("Metadata extraction completed successfully")
+		fmt.Println("Metadata extraction completed")
 		fmt.Printf("Title: %s\n", metadata.Title)
 		fmt.Printf("Channel: %s\n", metadata.Channel)
 		fmt.Printf("Duration: %.2f seconds\n", metadata.Duration)
-		fmt.Printf("Chapters: %d\n", len(metadata.Chapters))
 	}
 
 	return &metadata, nil
@@ -124,26 +126,28 @@ func (yt *YouTube) Audio(ctx context.Context, youtubeURL string) (string, error)
 	// Set output path in cache directory
 	outputPath := filepath.Join(cacheDir, "%(id)s.%(ext)s")
 
-	// Create a new ytdlp command with the desired options for audio extraction
-	dl := ytdlp.New().
-		Format("bestaudio"). // Select best audio format
-		ExtractAudio().      // Extract audio from video
-		AudioFormat("mp3").  // Convert to MP3 format
-		AudioQuality("10").  // Set audio quality (0 is best, 10 is worst)
-		Output(outputPath)   // Output to XDG cache directory
+	// Build arguments for yt-dlp command
+	args := []string{
+		"-f", "bestaudio", // Select best audio format
+		"--extract-audio",       // Extract audio from video
+		"--audio-format", "mp3", // Convert to MP3 format
+		"--audio-quality", "10", // Set audio quality (0 is best, 10 is worst)
+		"-o", outputPath, // Output to XDG cache directory
+		youtubeURL, // The YouTube URL or ID
+	}
 
 	// Run the command
-	result, err := dl.Run(ctx, youtubeURL)
+	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
 	if err != nil {
 		if yt.verbose {
 			fmt.Printf("Audio download error: %v\n", err)
-			fmt.Printf("Stderr: %s\n", result.Stderr)
+			fmt.Printf("Command output: %s\n", string(output))
 		}
-		return "", fmt.Errorf("yt-dlp failed: %w\nOutput: %s", err, result.Stderr)
+		return "", fmt.Errorf("yt-dlp failed: %w\nOutput: %s", err, string(output))
 	}
 
 	if yt.verbose {
-		fmt.Println("Audio download completed successfully")
+		fmt.Println("Audio download completed")
 	}
 
 	// Return the full path to the downloaded file
@@ -172,27 +176,29 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 	// Set output path in cache directory
 	outputPath := filepath.Join(cacheDir, "%(id)s")
 
-	// Create a new ytdlp command with the desired options
-	dl := ytdlp.New().
-		WriteSubs().        // Enable subtitle writing
-		WriteAutoSubs().    // Enable auto-generated subtitle writing
-		SubLangs("en").     // Download all English subtitle variants (including auto-generated)
-		ConvertSubs("srt"). // Convert subtitles to SRT format
-		SkipDownload().     // Skip downloading the video
-		Output(outputPath)  // Output to XDG cache directory
+	// Build arguments for yt-dlp command
+	args := []string{
+		"--write-subs",      // Enable subtitle writing
+		"--write-auto-subs", // Enable auto-generated subtitle writing
+		"--sub-langs", "en", // Download all English subtitle variants
+		"--convert-subs", "srt", // Convert subtitles to SRT format
+		"--skip-download", // Skip downloading the video
+		"-o", outputPath,  // Output to XDG cache directory
+		youtubeURL, // The YouTube URL or ID
+	}
 
 	// Run the command
-	result, err := dl.Run(ctx, youtubeURL)
+	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
 	if err != nil {
 		if yt.verbose {
 			fmt.Printf("Subtitle download error: %v\n", err)
-			fmt.Printf("Stderr: %s\n", result.Stderr)
+			fmt.Printf("Command output: %s\n", string(output))
 		}
 		return err
 	}
 
 	if yt.verbose {
-		fmt.Println("Subtitle download completed successfully")
+		fmt.Println("Subtitle download completed")
 	}
 
 	// Check for the downloaded subtitle files

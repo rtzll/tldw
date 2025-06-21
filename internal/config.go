@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
-	"github.com/lrstanley/go-ytdlp"
 	"github.com/spf13/viper"
 )
 
@@ -95,9 +94,16 @@ func EnsureDefaultPrompt(configDir string) error {
 }
 
 // InitConfig initializes Viper and loads configuration
-func InitConfig() *Config {
-	// Ensure yt-dlp is installed
-	ytdlp.MustInstall(context.Background(), nil)
+func InitConfig() (*Config, error) {
+	_, err := exec.LookPath("yt-dlp")
+	if err != nil {
+		// before we used ytdlp.MustInstall to install yt-dlp
+		// but took >7s to check and use **cached** install
+		// so we removed it
+		// might lead to version mismatch though
+		return nil, fmt.Errorf("yt-dlp not found: %w", err)
+	}
+	// ytdlp.MustInstall(context.Background(), nil)
 
 	// XDG standard directories
 	configDir := filepath.Join(xdg.ConfigHome, "tldw")
@@ -162,5 +168,5 @@ func InitConfig() *Config {
 		fmt.Printf("Using config file: %s\n", v.ConfigFileUsed())
 	}
 
-	return config
+	return config, nil
 }

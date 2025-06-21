@@ -134,6 +134,11 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 	return transcript, nil
 }
 
+// Metadata gets metadata from YouTube
+func (app *App) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
+	return app.youtube.Metadata(ctx, youtubeURL)
+}
+
 // GenerateSummary creates a summary from transcript and returns it
 func (app *App) GenerateSummary(ctx context.Context, youtubeURL, transcript string) (string, error) {
 	if transcript == "" {
@@ -141,7 +146,7 @@ func (app *App) GenerateSummary(ctx context.Context, youtubeURL, transcript stri
 	}
 
 	var metadata *VideoMetadata
-	metadata, err := app.youtube.Metadata(ctx, youtubeURL)
+	metadata, err := app.Metadata(ctx, youtubeURL)
 	if err != nil {
 		if app.config.Verbose {
 			fmt.Printf("Failed to extract video metadata: %v\n", err)

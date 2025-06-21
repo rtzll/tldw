@@ -90,7 +90,11 @@ func Execute() error {
 	defer cancel()
 
 	// Initialize configuration with Viper
-	config = internal.InitConfig()
+	var err error
+	config, err = internal.InitConfig()
+	if err != nil {
+		return fmt.Errorf("initializing configuration: %w", err)
+	}
 
 	// Ensure XDG directories exist
 	if err := internal.EnsureDirs(config.ConfigDir, config.DataDir, config.CacheDir); err != nil {
