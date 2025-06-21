@@ -49,10 +49,9 @@ release:
 
 brews:
   - name: tldw
-    tap:
+    github:
       owner: rtzll
       name: homebrew-tap
-    folder: Formula
     description: "Too Long; Didn't Watch - YouTube video summarizer (CLI + MCP)"
     homepage: "https://github.com/rtzll/tldw"
     dependencies:
