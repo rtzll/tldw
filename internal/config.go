@@ -97,13 +97,8 @@ func EnsureDefaultPrompt(configDir string) error {
 func InitConfig() (*Config, error) {
 	_, err := exec.LookPath("yt-dlp")
 	if err != nil {
-		// before we used ytdlp.MustInstall to install yt-dlp
-		// but took >7s to check and use **cached** install
-		// so we removed it
-		// might lead to version mismatch though
 		return nil, fmt.Errorf("yt-dlp not found: %w", err)
 	}
-	// ytdlp.MustInstall(context.Background(), nil)
 
 	// XDG standard directories
 	configDir := filepath.Join(xdg.ConfigHome, "tldw")
