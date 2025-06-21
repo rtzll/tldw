@@ -49,7 +49,7 @@ release:
 
 brews:
   - name: tldw
-    github:
+    repository:
       owner: rtzll
       name: homebrew-tap
     description: "Too Long; Didn't Watch - YouTube video summarizer (CLI + MCP)"
@@ -58,7 +58,7 @@ brews:
       - ffmpeg
       - yt-dlp
     test: |
-      tldw version | grep -q "tldw v"
+      system "#{bin}/tldw", "version"
 
 changelog:
   sort: asc
