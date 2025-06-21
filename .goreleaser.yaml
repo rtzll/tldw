@@ -52,6 +52,7 @@ brews:
     repository:
       owner: rtzll
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     description: "Too Long; Didn't Watch - YouTube video summarizer (CLI + MCP)"
     homepage: "https://github.com/rtzll/tldw"
     dependencies:
