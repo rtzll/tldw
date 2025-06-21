@@ -45,11 +45,16 @@ ChatGPT Desktop will support MCP servers in the [coming months](https://x.com/Op
 # Get transcript (free with captions)
 ./tldw transcribe "https://youtu.be/tAP1eZYEuKA"
 ./tldw transcribe tAP1eZYEuKA -o transcript.txt  # Save to file
-./tldw transcribe tAP1eZYEuKA --fallback-whisper # Use Whisper if no captions
+./tldw transcribe tAP1eZYEuKA --fallback-whisper # Use Whisper if video has no captions
 
 # Generate summary (requires API key)
 ./tldw "https://youtu.be/tAP1eZYEuKA"
 ./tldw tAP1eZYEuKA -m o4-mini -p "tldr: {{.Transcript}}"
+
+# Get video metadata
+./tldw metadata "https://youtu.be/tAP1eZYEuKA"
+./tldw metadata tAP1eZYEuKA -o metadata.json   # Save to file
+./tldw metadata tAP1eZYEuKA --pretty           # Format JSON output
 ```
 
 ### Example Output
