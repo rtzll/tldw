@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
@@ -98,10 +99,13 @@ func setupClaudeDesktop() error {
 		return fmt.Errorf("getting executable path: %w", err)
 	}
 
-	// Resolve symlinks to get the actual binary path
-	execPath, err = filepath.EvalSymlinks(execPath)
-	if err != nil {
-		return fmt.Errorf("resolving executable path: %w", err)
+	// Only resolve symlinks if not running from Homebrew
+	// This preserves the Homebrew symlink path which will always point to latest version
+	if !strings.Contains(execPath, "/Cellar/") && !strings.Contains(execPath, "/homebrew/") {
+		execPath, err = filepath.EvalSymlinks(execPath)
+		if err != nil {
+			return fmt.Errorf("resolving executable path: %w", err)
+		}
 	}
 
 	// Get Claude Desktop config path
