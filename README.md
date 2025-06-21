@@ -7,8 +7,8 @@ Transform YouTube videos into concise summaries using AI. Works with existing ca
 ```bash
 # Install dependencies
 brew install yt-dlp ffmpeg
-# Clone and build tldw
-git clone https://github.com/rtzll/tldw.git && cd tldw && go build -o tldw
+# Install tldw (or check releases for pre-built binaries)
+go install github.com/rtzll/tldw@latest
 # [Optional] Set OpenAI API key for summaries and Whisper transcription
 export OPENAI_API_KEY="your-api-key-here"
 ```
