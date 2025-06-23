@@ -2,13 +2,11 @@
 
 Transform YouTube videos into concise summaries using AI. Works with existing captions (free) or Whisper transcription (paid). Includes MCP server for Claude and other AI assistants and CLI.
 
-## Quick Setup
+## Installation
 
 ```bash
-# Install tldw
 brew install rtzll/tap/tldw
-# [Optional] Set OpenAI API key for summaries and Whisper transcription
-export OPENAI_API_KEY="your-api-key-here"
+export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & Whisper
 ```
 
 ## MCP
