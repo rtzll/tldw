@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/mark3labs/mcp-go v0.32.0
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.6.0
+	github.com/openai/openai-go v1.7.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	golang.org/x/term v0.32.0
@@ -21,7 +21,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
 	github.com/charmbracelet/x/ansi v0.9.3 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
-	github.com/charmbracelet/x/exp/slice v0.0.0-20250616121729-19b66ab4499b // indirect
+	github.com/charmbracelet/x/exp/slice v0.0.0-20250623112707-45752038d08d // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
