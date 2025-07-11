@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/adrg/xdg"
 )
+
+// ErrDownloadFailed indicates a retryable download failure from yt-dlp
+var ErrDownloadFailed = errors.New("yt-dlp download failed")
 
 // VideoMetadata contains YouTube video information
 type VideoMetadata struct {
@@ -194,7 +198,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 			fmt.Printf("Subtitle download error: %v\n", err)
 			fmt.Printf("Command output: %s\n", string(output))
 		}
-		return err
+		return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
 	}
 
 	if yt.verbose {
@@ -251,11 +255,8 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string) (stri
 	// No existing transcript found, try to download one
 	err = yt.Transcript(ctx, youtubeURL)
 	if err != nil {
-		if yt.verbose {
-			fmt.Printf("Could not download subtitles: %v\n", err)
-			fmt.Println("Will need to transcribe audio instead...")
-		}
-		return "", fmt.Errorf("downloading subtitle: %w", err)
+		// Preserve the error type for retry logic
+		return "", err
 	}
 
 	// Look for the downloaded transcript

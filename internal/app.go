@@ -2,9 +2,11 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // App holds the application state and dependencies
@@ -123,7 +125,19 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 	// Try to get transcript from YouTube
 	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL)
 	if err != nil || transcript == "" {
-		return "", fmt.Errorf("no transcript available for %s", youtubeID)
+		// Only retry if it's a download failure (not other errors like invalid ID)
+		if errors.Is(err, ErrDownloadFailed) {
+			if app.config.Verbose {
+				fmt.Println("Download failed, retrying in 1 second...")
+			}
+			time.Sleep(1 * time.Second)
+
+			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL)
+		}
+
+		if err != nil || transcript == "" {
+			return "", fmt.Errorf("no transcript available for %s", youtubeID)
+		}
 	}
 
 	// Save transcript for future use
