@@ -22,19 +22,16 @@ type App struct {
 func NewApp(config *Config, options ...AppOption) *App {
 	cmdRunner := &DefaultCommandRunner{}
 
-	// Create prompt manager
 	promptManager := NewPromptManager(config.ConfigDir, config.Prompt)
+	audio := NewAudio(cmdRunner, config.TempDir, config.Verbose)
 
 	app := &App{
 		youtube:       NewYouTube(os.DirFS("."), config.TranscriptsDir, config.Verbose),
-		audio:         NewAudio(cmdRunner, config.TempDir, config.Verbose),
-		ai:            NewAIWithKey(config.OpenAIAPIKey, nil, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose),
+		audio:         audio,
+		ai:            NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose),
 		promptManager: promptManager,
 		config:        config,
 	}
-
-	// Set audio processor in AI processor after creation
-	app.ai.audio = app.audio
 
 	// Apply any custom options
 	for _, option := range options {
