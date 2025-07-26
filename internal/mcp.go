@@ -38,27 +38,27 @@ func NewMCPServer(app *App) *MCPServer {
 func (s *MCPServer) registerTools() {
 	// get_youtube_metadata tool
 	s.mcpServer.AddTool(mcp.NewTool("get_youtube_metadata",
-		mcp.WithDescription("Extract video metadata including caption availability. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid)."),
+		mcp.WithDescription("Extract video or playlist metadata including caption availability. For playlists, returns metadata for all videos. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid)."),
 		mcp.WithString("url",
-			mcp.Description("YouTube video URL"),
+			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
 		),
 	), s.handleGetMetadata)
 
 	// get_youtube_transcript tool (free - existing captions only)
 	s.mcpServer.AddTool(mcp.NewTool("get_youtube_transcript",
-		mcp.WithDescription("Get existing YouTube captions/transcript (FREE). Only works if video has captions - check metadata first. Fails if no captions available."),
+		mcp.WithDescription("Get existing YouTube captions/transcript (FREE). For playlists, returns combined transcript of all videos. Only works if videos have captions - check metadata first. Fails if no captions available."),
 		mcp.WithString("url",
-			mcp.Description("YouTube video URL"),
+			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
 		),
 	), s.handleGetTranscript)
 
 	// transcribe_youtube_whisper tool (paid - creates transcript using AI)
 	s.mcpServer.AddTool(mcp.NewTool("transcribe_youtube_whisper",
-		mcp.WithDescription("Create transcript using OpenAI Whisper API (PAID). Requires OPENAI_API_KEY environment variable to be set. Use only when video has no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool."),
+		mcp.WithDescription("Create transcript using OpenAI Whisper API (PAID). For playlists, transcribes all videos - costs multiply by number of videos. Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool."),
 		mcp.WithString("url",
-			mcp.Description("YouTube video URL"),
+			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
 		),
 	), s.handleWhisperTranscribe)
