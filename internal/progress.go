@@ -11,6 +11,7 @@ type UIManager interface {
 	// Progress bars
 	NewProgressBar(total int, description string) ProgressBar
 	NewSharedProgressBar(total int, description string) ProgressBar
+	NewSpinner(description string) ProgressBar
 
 	// Verbose output
 	Verbose(format string, args ...interface{})
@@ -25,6 +26,7 @@ type ProgressBar interface {
 	Set(current int)
 	Describe(description string)
 	Finish()
+	Advance() // For spinners
 }
 
 // StandardUIManager handles normal UI operations
@@ -66,6 +68,26 @@ func (ui *StandardUIManager) NewSharedProgressBar(total int, description string)
 	return ui.NewProgressBar(total, description)
 }
 
+func (ui *StandardUIManager) NewSpinner(description string) ProgressBar {
+	if ui.quiet {
+		return &SilentProgressBar{bar: progressbar.DefaultSilent(-1)}
+	}
+
+	bar := progressbar.NewOptions(-1,
+		progressbar.OptionSetDescription(description),
+		progressbar.OptionSpinnerType(11), // Nice Braille dots spinner
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "=",
+			SaucerHead:    ">",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+	return &VisibleProgressBar{bar: bar}
+}
+
 // Verbose Output Methods
 func (ui *StandardUIManager) Verbose(format string, args ...interface{}) {
 	if ui.verbose {
@@ -103,6 +125,10 @@ func (v *VisibleProgressBar) Finish() {
 	v.bar.Finish()
 }
 
+func (v *VisibleProgressBar) Advance() {
+	v.bar.Add(1)
+}
+
 // SilentProgressBar implements a silent progress bar
 type SilentProgressBar struct {
 	bar *progressbar.ProgressBar
@@ -118,4 +144,8 @@ func (s *SilentProgressBar) Describe(description string) {
 
 func (s *SilentProgressBar) Finish() {
 	s.bar.Finish()
+}
+
+func (s *SilentProgressBar) Advance() {
+	s.bar.Add(1)
 }

@@ -122,7 +122,19 @@ func (app *App) TranscribeAudioWithProgress(ctx context.Context, audioFile strin
 
 // GetTranscript gets transcript from YouTube (cached or downloaded)
 func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, error) {
+	return app.GetTranscriptWithStatus(ctx, youtubeURL, false)
+}
+
+// GetTranscriptWithStatus gets transcript with optional status spinner
+func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, showStatus bool) (string, error) {
+	var spinner ProgressBar
+	if showStatus {
+		spinner = app.ui.NewSpinner("Checking for existing captions...")
+	}
 	if err := EnsureDirs(app.config.TranscriptsDir); err != nil {
+		if spinner != nil {
+			spinner.Finish()
+		}
 		return "", fmt.Errorf("creating transcripts directory: %w", err)
 	}
 
@@ -131,6 +143,10 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 
 	// Check for cached transcript
 	if FileExists(existingTranscriptPath) {
+		if spinner != nil {
+			spinner.Describe("Found cached transcript")
+			spinner.Finish()
+		}
 		if app.config.Verbose {
 			fmt.Printf("Found existing transcript for %s\n", youtubeID)
 		}
@@ -141,15 +157,44 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 		return string(text), nil
 	}
 
+	if spinner != nil {
+		spinner.Describe("Checking caption availability...")
+		spinner.Advance()
+	}
+
+	// Check metadata first to see if captions are available (faster than attempting download)
+	metadata, err := app.MetadataWithStatus(ctx, youtubeURL, false) // Don't show nested spinner
+	if err != nil {
+		if spinner != nil {
+			spinner.Finish()
+		}
+		return "", fmt.Errorf("checking video metadata: %w", err)
+	}
+
+	// If no captions available, skip the expensive download attempt
+	if !metadata.HasCaptions {
+		if spinner != nil {
+			spinner.Finish()
+		}
+		return "", fmt.Errorf("no captions available for %s", youtubeID)
+	}
+
+	if spinner != nil {
+		spinner.Describe("Fetching YouTube captions...")
+		spinner.Advance()
+	}
 	if app.config.Verbose {
 		fmt.Printf("Fetching transcript for %s\n", youtubeID)
 	}
 
-	// Try to get transcript from YouTube
+	// Try to get transcript from YouTube (we know captions exist)
 	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL)
 	if err != nil || transcript == "" {
 		// Only retry if it's a download failure (not other errors like invalid ID)
 		if errors.Is(err, ErrDownloadFailed) {
+			if spinner != nil {
+				spinner.Describe("Download failed, retrying...")
+			}
 			if app.config.Verbose {
 				fmt.Println("Download failed, retrying in 1 second...")
 			}
@@ -159,8 +204,16 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 		}
 
 		if err != nil || transcript == "" {
+			if spinner != nil {
+				spinner.Finish()
+			}
 			return "", fmt.Errorf("no transcript available for %s", youtubeID)
 		}
+	}
+
+	if spinner != nil {
+		spinner.Describe("Saving transcript...")
+		spinner.Advance()
 	}
 
 	// Save transcript for future use
@@ -168,15 +221,31 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
 
+	if spinner != nil {
+		spinner.Finish()
+	}
 	return transcript, nil
 }
 
 // Metadata gets metadata from YouTube (cached or fresh)
 func (app *App) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
+	return app.MetadataWithStatus(ctx, youtubeURL, false)
+}
+
+// MetadataWithStatus gets metadata with optional status spinner
+func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showStatus bool) (*VideoMetadata, error) {
+	var spinner ProgressBar
+	if showStatus {
+		spinner = app.ui.NewSpinner("Fetching video metadata...")
+	}
 	_, youtubeID := ParseArg(youtubeURL)
 
 	// Try to load cached metadata first
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
+		if spinner != nil {
+			spinner.Describe("Found cached metadata")
+			spinner.Finish()
+		}
 		if app.config.Verbose {
 			fmt.Printf("Using cached metadata for %s\n", youtubeID)
 		}
@@ -184,22 +253,36 @@ func (app *App) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata
 	}
 
 	// No cache found, fetch from YouTube
+	if spinner != nil {
+		spinner.Describe("Fetching video metadata from YouTube...")
+		spinner.Advance()
+	}
 	if app.config.Verbose {
 		fmt.Printf("Fetching fresh metadata for %s\n", youtubeID)
 	}
 
 	metadata, err := app.youtube.Metadata(ctx, youtubeURL)
 	if err != nil {
+		if spinner != nil {
+			spinner.Finish()
+		}
 		return nil, err
 	}
 
 	// Cache the metadata for future use
+	if spinner != nil {
+		spinner.Describe("Caching metadata...")
+		spinner.Advance()
+	}
 	if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
 		if app.config.Verbose {
 			fmt.Printf("Warning: Failed to cache metadata: %v\n", err)
 		}
 	}
 
+	if spinner != nil {
+		spinner.Finish()
+	}
 	return metadata, nil
 }
 
@@ -246,7 +329,9 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 		return app.SummarizePlaylist(ctx, youtubeURL, fallbackWhisper)
 	}
 
-	transcript, err := app.GetTranscript(ctx, youtubeURL)
+	// Show status unless explicitly quiet
+	showStatus := !app.config.Quiet
+	transcript, err := app.GetTranscriptWithStatus(ctx, youtubeURL, showStatus)
 	if err != nil {
 		if !fallbackWhisper {
 			if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
@@ -254,10 +339,9 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 			}
 		}
 
-		// Use unified progress bar for all stages (download -> conversion -> transcription)
-		// Show progress unless explicitly quiet (verbose is independent)
-		showProgress := !app.config.Quiet
-		transcript, err = app.transcribeVideoWithUnifiedProgress(ctx, youtubeURL, showProgress)
+		// Show status unless explicitly quiet (verbose is independent)
+		showStatus := !app.config.Quiet
+		transcript, err = app.transcribeVideoWithStatusSpinner(ctx, youtubeURL, showStatus)
 		if err != nil {
 			return err
 		}
@@ -497,10 +581,10 @@ func (app *App) buildPlaylistTranscript(playlistTitle string, videos []VideoTran
 	return sb.String()
 }
 
-// transcribeVideoWithUnifiedProgress handles the complete transcription workflow with a unified progress bar
-func (app *App) transcribeVideoWithUnifiedProgress(ctx context.Context, youtubeURL string, showProgress bool) (string, error) {
-	if !showProgress || app.config.Verbose {
-		// Fall back to non-unified approach for verbose mode
+// transcribeVideoWithStatusSpinner handles the complete transcription workflow with status spinners
+func (app *App) transcribeVideoWithStatusSpinner(ctx context.Context, youtubeURL string, showStatus bool) (string, error) {
+	if !showStatus || app.config.Verbose {
+		// Fall back to non-status approach for verbose mode
 		audioFile, err := app.DownloadAudio(ctx, youtubeURL)
 		if err != nil {
 			return "", err
@@ -508,25 +592,28 @@ func (app *App) transcribeVideoWithUnifiedProgress(ctx context.Context, youtubeU
 		return app.TranscribeAudio(ctx, audioFile)
 	}
 
-	// Create unified progress bar for all stages
-	bar := app.ui.NewSharedProgressBar(100, "Downloading audio")
+	// Stage 1: Download audio
+	var spinner ProgressBar
+	spinner = app.ui.NewSpinner("Downloading audio...")
 
-	// Stage 1: Download (0-50%)
-	audioFile, err := app.downloadAudioWithSharedProgress(ctx, youtubeURL, bar, 0, 50)
+	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
 	if err != nil {
-		bar.Finish()
+		spinner.Finish()
 		return "", err
 	}
 
-	// Stage 2: Transcription (50-100%)
-	bar.Describe("Transcribing audio")
-	transcript, err := app.transcribeAudioWithSharedProgress(ctx, audioFile, bar, 50, 100)
+	// Stage 2: Transcription
+	spinner.Describe("Transcribing with OpenAI Whisper...")
+	spinner.Advance()
+
+	transcript, err := app.TranscribeAudio(ctx, audioFile)
 	if err != nil {
-		bar.Finish()
+		spinner.Finish()
 		return "", err
 	}
 
-	bar.Finish()
+	spinner.Describe("Transcription complete")
+	spinner.Finish()
 	return transcript, nil
 }
 
