@@ -68,6 +68,11 @@ var getVideoID VideoIDExtractor = func(youtubeURL string) (string, error) {
 		return v, nil
 	}
 
+	// Don't extract video IDs from playlist URLs
+	if strings.Contains(u.Path, "/playlist") {
+		return "", fmt.Errorf("this is a playlist URL, not a video URL: %s", youtubeURL)
+	}
+
 	parts := strings.Split(u.Path, "/")
 	if len(parts) > 0 && parts[len(parts)-1] != "" {
 		return parts[len(parts)-1], nil
