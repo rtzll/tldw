@@ -384,6 +384,77 @@ func removeDuplicates(lines []string) []string {
 	return result
 }
 
+// PlaylistEntry represents a single video in a playlist
+type PlaylistEntry struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+// PlaylistMetadata contains YouTube playlist information
+type PlaylistMetadata struct {
+	Title   string          `json:"title"`
+	Entries []PlaylistEntry `json:"entries"`
+}
+
+// PlaylistInfo contains both playlist metadata and video URLs
+type PlaylistInfo struct {
+	Title     string
+	VideoURLs []string
+}
+
+// PlaylistVideoURLs fetches all video URLs from a YouTube playlist
+func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
+	if yt.verbose {
+		fmt.Println("Extracting playlist video URLs...")
+	}
+
+	// Build arguments for yt-dlp command
+	args := []string{
+		"--flat-playlist",    // Only extract video URLs, don't download
+		"--dump-single-json", // Get all info in JSON format
+		"-q",                 // Quiet mode
+		playlistURL,
+	}
+
+	// Run the command
+	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+	if err != nil {
+		if yt.verbose {
+			fmt.Printf("Playlist extraction error: %v\n", err)
+			fmt.Printf("Command output: %s\n", string(output))
+		}
+		return nil, fmt.Errorf("extracting playlist URLs: %w", err)
+	}
+
+	// Parse the JSON output
+	var playlist PlaylistMetadata
+	if err := json.Unmarshal(output, &playlist); err != nil {
+		if yt.verbose {
+			fmt.Printf("Failed to parse playlist JSON: %v\n", err)
+		}
+		return nil, fmt.Errorf("parsing playlist metadata: %w", err)
+	}
+
+	// Extract video URLs
+	var videoURLs []string
+	for _, entry := range playlist.Entries {
+		if entry.ID != "" {
+			videoURL := "https://www.youtube.com/watch?v=" + entry.ID
+			videoURLs = append(videoURLs, videoURL)
+		}
+	}
+
+	if yt.verbose {
+		fmt.Printf("Found %d videos in playlist: %s\n", len(videoURLs), playlist.Title)
+	}
+
+	return &PlaylistInfo{
+		Title:     playlist.Title,
+		VideoURLs: videoURLs,
+	}, nil
+}
+
 // extractSubtitleInfo extracts subtitle availability from yt-dlp JSON output
 func extractSubtitleInfo(rawData map[string]any) bool {
 	// Check for manual subtitles

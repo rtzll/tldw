@@ -23,7 +23,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "tldw [URL]",
 	Short: "Too Long; Didn't Watch - YouTube video summarizer",
-	Long: `TLDW (Too Long; Didn't Watch) summarizes YouTube videos using AI.
+	Long: `TLDW (Too Long; Didn't Watch) summarizes YouTube videos and playlists using AI.
 
 It extracts transcripts directly from YouTube when available,
 or processes the audio with Whisper when transcripts are unavailable.
@@ -35,6 +35,10 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	Example: `  # Summarize a YouTube video (default behavior)
   tldw "https://www.youtube.com/watch?v=tAP1eZYEuKA"
   tldw tAP1eZYEuKA
+
+  # Summarize a YouTube playlist
+  tldw "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
+  tldw PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq
 
   # Use a specific OpenAI model
   tldw "https://youtu.be/tAP1eZYEuKA" --model gpt-4o
@@ -61,19 +65,22 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		// Validate argument before processing
 		arg := args[0]
 		if internal.IsLikelyCommand(arg) {
-			// Check if it's similar to any available commands
-			availableCommands := []string{"mcp", "transcribe", "version", "paths", "help"}
-			var suggestions []string
-			for _, cmdName := range availableCommands {
-				if strings.Contains(cmdName, arg) || (len(arg) <= len(cmdName) && strings.Contains(arg, cmdName[:len(arg)])) {
-					suggestions = append(suggestions, cmdName)
+			// Check if it's a valid YouTube video ID or playlist ID
+			if !internal.IsValidYouTubeID(arg) && !internal.IsValidPlaylistID(arg) {
+				// Check if it's similar to any available commands
+				availableCommands := []string{"mcp", "transcribe", "version", "paths", "help"}
+				var suggestions []string
+				for _, cmdName := range availableCommands {
+					if strings.Contains(cmdName, arg) || (len(arg) <= len(cmdName) && strings.Contains(arg, cmdName[:len(arg)])) {
+						suggestions = append(suggestions, cmdName)
+					}
 				}
-			}
 
-			if len(suggestions) > 0 {
-				return fmt.Errorf("%s doesn't look like a YouTube URL or video ID; did you mean %s", arg, strings.Join(suggestions, ", "))
+				if len(suggestions) > 0 {
+					return fmt.Errorf("%s doesn't look like a YouTube URL, video ID, or playlist ID; did you mean %s", arg, strings.Join(suggestions, ", "))
+				}
+				return fmt.Errorf("%s doesn't look like a YouTube URL, video ID, or playlist ID; use --help", arg)
 			}
-			return fmt.Errorf("%s doesn't look like a YouTube URL or video ID; use --help", arg)
 		}
 
 		youtubeURL, _ := internal.ParseArg(args[0])

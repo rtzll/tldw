@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,22 +10,41 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/muesli/termenv"
 	"golang.org/x/term"
 )
 
-// ParseArg normalizes YouTube video IDs and URLs
+// ParseArg normalizes YouTube video IDs and URLs, now also handles playlists
 func ParseArg(arg string) (string, string) {
 	if strings.HasPrefix(arg, "https://") {
+		// Try video ID first - prioritize individual videos over playlists
 		videoID, err := getVideoID(arg)
-		if err != nil {
-			// Fall back to original arg if we can't extract ID
-			return arg, arg
+		if err == nil {
+			// Successfully extracted video ID, use it even if URL also has playlist
+			return arg, videoID
 		}
-		return arg, videoID
+
+		// No video ID found, check if it's a playlist URL
+		if strings.Contains(arg, "list=") {
+			playlistID, err := getPlaylistID(arg)
+			if err != nil {
+				return arg, arg
+			}
+			return arg, playlistID
+		}
+
+		// Fall back to original arg if we can't extract either
+		return arg, arg
 	}
+
+	// Check if the arg looks like a playlist ID
+	if IsValidPlaylistID(arg) {
+		return "https://www.youtube.com/playlist?list=" + arg, arg
+	}
+
 	return "https://www.youtube.com/watch?v=" + arg, arg
 }
 
@@ -184,11 +204,60 @@ func IsValidYouTubeID(id string) bool {
 
 // IsLikelyCommand checks if a string looks like it might be a mistyped command
 func IsLikelyCommand(arg string) bool {
-	// Short strings (1-10 chars) that don't look like YouTube IDs are likely commands
-	if len(arg) <= 10 && !IsValidYouTubeID(arg) {
+	// Short strings (1-10 chars) that don't look like YouTube IDs or playlist IDs are likely commands
+	if len(arg) <= 10 && !IsValidYouTubeID(arg) && !IsValidPlaylistID(arg) {
 		return true
 	}
 	return false
+}
+
+// IsValidPlaylistID checks if a string looks like a valid YouTube playlist ID
+func IsValidPlaylistID(id string) bool {
+	// Common playlist prefixes: PL, UU, FL, RD, etc.
+	playlistPrefixes := []string{"PL", "UU", "FL", "RD", "LP", "BP", "QL", "SV", "EL", "LL", "UC"}
+
+	// Check for standard prefixes with appropriate lengths
+	for _, prefix := range playlistPrefixes {
+		if strings.HasPrefix(id, prefix) {
+			// Standard playlist IDs are typically 16, 32, or 34 characters
+			if len(id) == 18 || len(id) == 34 || len(id) == 36 {
+				matched, _ := regexp.MatchString(`^[A-Za-z0-9_-]+$`, id)
+				return matched
+			}
+		}
+	}
+
+	// Check for music playlists (OLAK5uy_, RDCLAK5uy_)
+	if strings.HasPrefix(id, "OLAK5uy_") || strings.HasPrefix(id, "RDCLAK5uy_") {
+		if len(id) == 40 {
+			matched, _ := regexp.MatchString(`^[A-Za-z0-9_-]+$`, id)
+			return matched
+		}
+	}
+
+	return false
+}
+
+// getPlaylistID extracts playlist ID from YouTube URLs
+func getPlaylistID(youtubeURL string) (string, error) {
+	youtubeURL = strings.TrimSpace(youtubeURL)
+	u, err := url.Parse(youtubeURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing URL: %w", err)
+	}
+
+	if u.Host != "www.youtube.com" && u.Host != "youtube.com" {
+		return "", fmt.Errorf("not a YouTube URL: %s", youtubeURL)
+	}
+
+	if list := u.Query().Get("list"); list != "" {
+		if IsValidPlaylistID(list) {
+			return list, nil
+		}
+		return "", fmt.Errorf("invalid playlist ID format: %s", list)
+	}
+
+	return "", fmt.Errorf("could not extract playlist ID from URL: %s", youtubeURL)
 }
 
 // ValidateOpenAIAPIKey checks if the OpenAI API key is set and returns a standardized error if not
@@ -206,4 +275,74 @@ func SaveTranscript(youtubeID, transcript, transcriptsDir string) error {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
 	return nil
+}
+
+// CachedVideoMetadata extends VideoMetadata with cache information
+type CachedVideoMetadata struct {
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Channel     string         `json:"channel"`
+	Duration    float64        `json:"duration"`
+	Categories  []string       `json:"categories"`
+	Tags        []string       `json:"tags"`
+	Chapters    []VideoChapter `json:"chapters"`
+	HasCaptions bool           `json:"has_captions"`
+	CachedAt    time.Time      `json:"cached_at"`
+}
+
+// SaveMetadata saves video metadata to cache as JSON
+func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir string) error {
+	cached := CachedVideoMetadata{
+		Title:       metadata.Title,
+		Description: metadata.Description,
+		Channel:     metadata.Channel,
+		Duration:    metadata.Duration,
+		Categories:  metadata.Categories,
+		Tags:        metadata.Tags,
+		Chapters:    metadata.Chapters,
+		HasCaptions: metadata.HasCaptions,
+		CachedAt:    time.Now(),
+	}
+
+	metadataPath := filepath.Join(transcriptsDir, youtubeID+".meta.json")
+	data, err := json.MarshalIndent(cached, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling metadata: %w", err)
+	}
+
+	if err := os.WriteFile(metadataPath, data, 0644); err != nil {
+		return fmt.Errorf("saving metadata: %w", err)
+	}
+
+	return nil
+}
+
+// LoadCachedMetadata loads video metadata from cache
+func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error) {
+	metadataPath := filepath.Join(transcriptsDir, youtubeID+".meta.json")
+
+	if !FileExists(metadataPath) {
+		return nil, fmt.Errorf("metadata cache not found")
+	}
+
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading metadata cache: %w", err)
+	}
+
+	var cached CachedVideoMetadata
+	if err := json.Unmarshal(data, &cached); err != nil {
+		return nil, fmt.Errorf("parsing metadata cache: %w", err)
+	}
+
+	return &VideoMetadata{
+		Title:       cached.Title,
+		Description: cached.Description,
+		Channel:     cached.Channel,
+		Duration:    cached.Duration,
+		Categories:  cached.Categories,
+		Tags:        cached.Tags,
+		Chapters:    cached.Chapters,
+		HasCaptions: cached.HasCaptions,
+	}, nil
 }

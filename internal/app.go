@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 // App holds the application state and dependencies
@@ -145,9 +148,36 @@ func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, e
 	return transcript, nil
 }
 
-// Metadata gets metadata from YouTube
+// Metadata gets metadata from YouTube (cached or fresh)
 func (app *App) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
-	return app.youtube.Metadata(ctx, youtubeURL)
+	_, youtubeID := ParseArg(youtubeURL)
+
+	// Try to load cached metadata first
+	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
+		if app.config.Verbose {
+			fmt.Printf("Using cached metadata for %s\n", youtubeID)
+		}
+		return cachedMetadata, nil
+	}
+
+	// No cache found, fetch from YouTube
+	if app.config.Verbose {
+		fmt.Printf("Fetching fresh metadata for %s\n", youtubeID)
+	}
+
+	metadata, err := app.youtube.Metadata(ctx, youtubeURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the metadata for future use
+	if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
+		if app.config.Verbose {
+			fmt.Printf("Warning: Failed to cache metadata: %v\n", err)
+		}
+	}
+
+	return metadata, nil
 }
 
 // GenerateSummary creates a summary from transcript and returns it
@@ -187,6 +217,12 @@ func (app *App) GenerateSummary(ctx context.Context, youtubeURL, transcript stri
 
 // SummarizeYouTube performs the complete workflow: get transcript -> summarize
 func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbackWhisper bool) error {
+	// Check if this is a playlist
+	_, id := ParseArg(youtubeURL)
+	if IsValidPlaylistID(id) {
+		return app.SummarizePlaylist(ctx, youtubeURL, fallbackWhisper)
+	}
+
 	transcript, err := app.GetTranscript(ctx, youtubeURL)
 	if err != nil {
 		if !fallbackWhisper {
@@ -220,4 +256,237 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 
 	fmt.Println(summary)
 	return nil
+}
+
+// VideoTranscript holds a video's metadata and transcript
+type VideoTranscript struct {
+	URL         string
+	Title       string
+	Channel     string
+	Duration    float64
+	Description string
+	Transcript  string
+}
+
+// SummarizePlaylist summarizes all videos in a YouTube playlist
+func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallbackWhisper bool) error {
+	if app.config.Verbose {
+		fmt.Println("Processing playlist...")
+	}
+
+	// Get playlist information
+	playlistInfo, err := app.youtube.PlaylistVideoURLs(ctx, playlistURL)
+	if err != nil {
+		return fmt.Errorf("extracting playlist videos: %w", err)
+	}
+
+	if len(playlistInfo.VideoURLs) == 0 {
+		return fmt.Errorf("no videos found in playlist")
+	}
+
+	fmt.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
+
+	// Create progress bar - clean display without confusing rate for cached content
+	bar := progressbar.NewOptions(len(playlistInfo.VideoURLs),
+		progressbar.OptionSetDescription("Gathering transcripts"),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetPredictTime(false),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "=",
+			SaucerHead:    ">",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+
+	// Collect all video transcripts
+	var videoTranscripts []VideoTranscript
+	var skippedVideos []string
+
+	for i, videoURL := range playlistInfo.VideoURLs {
+		bar.Set(i)
+
+		// Check for existing cached transcript first (before expensive metadata fetch)
+		_, youtubeID := ParseArg(videoURL)
+		existingTranscriptPath := filepath.Join(app.config.TranscriptsDir, youtubeID+".txt")
+
+		var transcript string
+		var metadata *VideoMetadata
+
+		if FileExists(existingTranscriptPath) {
+			// Use cached transcript
+			if app.config.Verbose {
+				fmt.Printf("\nUsing cached transcript for video %d\n", i+1)
+			}
+			text, readErr := os.ReadFile(existingTranscriptPath)
+			if readErr != nil {
+				if app.config.Verbose {
+					fmt.Printf("Failed to read cached transcript: %v\n", readErr)
+				}
+				skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d (cache read error)", i+1))
+				continue
+			}
+			transcript = string(text)
+
+			// Try to load cached metadata
+			cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir)
+			if err != nil {
+				if app.config.Verbose {
+					fmt.Printf("No cached metadata for video %d, fetching...\n", i+1)
+				}
+				// Fetch and cache metadata
+				metadata, err = app.Metadata(ctx, videoURL)
+				if err != nil {
+					if app.config.Verbose {
+						fmt.Printf("Failed to get metadata for video %d: %v\n", i+1, err)
+					}
+					// Use placeholder metadata as fallback
+					metadata = &VideoMetadata{
+						Title:       fmt.Sprintf("Video %d", i+1),
+						Channel:     "Unknown",
+						Duration:    0,
+						Description: "Metadata fetch failed",
+					}
+				} else {
+					// Save metadata to cache for next time
+					if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
+						if app.config.Verbose {
+							fmt.Printf("Warning: Failed to cache metadata: %v\n", err)
+						}
+					}
+				}
+			} else {
+				// Use cached metadata
+				if app.config.Verbose {
+					fmt.Printf("Using cached metadata for video %d: %s\n", i+1, cachedMetadata.Title)
+				}
+				metadata = cachedMetadata
+			}
+		} else {
+			// Need to fetch transcript - get metadata first
+			var err error
+			metadata, err = app.Metadata(ctx, videoURL)
+			if err != nil {
+				if app.config.Verbose {
+					fmt.Printf("Failed to get metadata for video %d: %v\n", i+1, err)
+				}
+				skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d (metadata error)", i+1))
+				continue
+			}
+
+			// Try to get transcript from YouTube
+			transcript, err := app.GetTranscript(ctx, videoURL)
+			if err != nil {
+				// If transcript fails and user wants fallback, ask per video
+				if !fallbackWhisper {
+					// Clear progress bar line before showing user prompt
+					fmt.Print("\r\033[K")
+
+					if !AskUser(fmt.Sprintf("Video %d (%s): '%s' has no captions. Use Whisper ($$$)?", i+1, youtubeID, metadata.Title)) {
+						skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s", i+1, metadata.Title))
+						continue
+					}
+				}
+
+				// Try audio transcription
+				audioFile, err := app.DownloadAudio(ctx, videoURL)
+				if err != nil {
+					if app.config.Verbose {
+						fmt.Printf("Failed to download audio for video %d: %v\n", i+1, err)
+					}
+					skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s (audio error)", i+1, metadata.Title))
+					continue
+				}
+
+				transcript, err = app.TranscribeAudio(ctx, audioFile)
+				if err != nil {
+					if app.config.Verbose {
+						fmt.Printf("Failed to transcribe audio for video %d: %v\n", i+1, err)
+					}
+					skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s (transcription error)", i+1, metadata.Title))
+					continue
+				}
+
+				// Save transcript for future use
+				if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+				}
+			}
+		}
+
+		// Truncate description if too long
+		description := metadata.Description
+		if len(description) > 150 {
+			description = description[:147] + "..."
+		}
+
+		videoTranscripts = append(videoTranscripts, VideoTranscript{
+			URL:         videoURL,
+			Title:       metadata.Title,
+			Channel:     metadata.Channel,
+			Duration:    metadata.Duration,
+			Description: description,
+			Transcript:  transcript,
+		})
+	}
+
+	bar.Finish()
+	fmt.Println()
+
+	// Check if we have any transcripts to work with
+	if len(videoTranscripts) == 0 {
+		return fmt.Errorf("no video transcripts could be obtained")
+	}
+
+	// Report processing results
+	fmt.Printf("Successfully processed %d out of %d videos\n", len(videoTranscripts), len(playlistInfo.VideoURLs))
+	if len(skippedVideos) > 0 {
+		fmt.Printf("Skipped %d videos:\n", len(skippedVideos))
+		for _, skipped := range skippedVideos {
+			fmt.Printf("  - %s\n", skipped)
+		}
+	}
+	fmt.Println()
+
+	// Build combined transcript with structured format
+	combinedTranscript := app.buildPlaylistTranscript(playlistInfo.Title, videoTranscripts)
+
+	// Generate summary using the combined transcript
+	summary, err := app.GenerateSummary(ctx, playlistURL, combinedTranscript)
+	if err != nil {
+		return fmt.Errorf("generating playlist summary: %w", err)
+	}
+
+	fmt.Println(summary)
+	return nil
+}
+
+// buildPlaylistTranscript creates a structured transcript from all videos
+func (app *App) buildPlaylistTranscript(playlistTitle string, videos []VideoTranscript) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("Playlist: %s\n\n", playlistTitle))
+
+	for i, video := range videos {
+		// Format duration as minutes:seconds
+		minutes := int(video.Duration / 60)
+		seconds := int(video.Duration) % 60
+		duration := fmt.Sprintf("%d:%02d", minutes, seconds)
+
+		sb.WriteString(fmt.Sprintf("Video %d of %d: %s\n", i+1, len(videos), video.Title))
+		sb.WriteString(fmt.Sprintf("Duration: %s | Channel: %s\n", duration, video.Channel))
+		if video.Description != "" {
+			sb.WriteString(fmt.Sprintf("Description: %s\n", video.Description))
+		}
+		sb.WriteString(video.Transcript)
+
+		// Add separator between videos (except for the last one)
+		if i < len(videos)-1 {
+			sb.WriteString("\n\n---\n\n")
+		}
+	}
+
+	return sb.String()
 }
