@@ -592,11 +592,27 @@ func (app *App) transcribeVideoWithStatusSpinner(ctx context.Context, youtubeURL
 		return app.TranscribeAudio(ctx, audioFile)
 	}
 
-	// Stage 1: Download audio
-	var spinner ProgressBar
-	spinner = app.ui.NewSpinner("Downloading audio...")
+	// Stage 1: Download audio with progress feedback
+	spinner := app.ui.NewSpinner("Downloading audio...")
+
+	// Use a goroutine to advance spinner during download
+	done := make(chan bool)
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				spinner.Advance()
+			}
+		}
+	}()
 
 	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
+	done <- true // Stop the spinner advancement
+
 	if err != nil {
 		spinner.Finish()
 		return "", err
@@ -604,9 +620,23 @@ func (app *App) transcribeVideoWithStatusSpinner(ctx context.Context, youtubeURL
 
 	// Stage 2: Transcription
 	spinner.Describe("Transcribing with OpenAI Whisper...")
-	spinner.Advance()
+
+	// Restart spinner advancement for transcription
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				spinner.Advance()
+			}
+		}
+	}()
 
 	transcript, err := app.TranscribeAudio(ctx, audioFile)
+	done <- true // Stop the spinner advancement
 	if err != nil {
 		spinner.Finish()
 		return "", err
