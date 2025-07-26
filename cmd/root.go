@@ -47,9 +47,15 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   tldw tAP1eZYEuKA --prompt "tldr: {{.Transcript}}"
 
   # Fallback to Whisper if no captions available (costs money)
-  tldw "https://youtu.be/tAP1eZYEuKA" --fallback-whisper`,
+  tldw "https://youtu.be/tAP1eZYEuKA" --fallback-whisper
+
+  # Run quietly without progress bars or extra output
+  tldw "https://youtu.be/tAP1eZYEuKA" --quiet`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return internal.HandleVerboseFlag(cmd, config)
+		if err := internal.HandleVerboseFlag(cmd, config); err != nil {
+			return err
+		}
+		return internal.HandleQuietFlag(cmd, config)
 	},
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -166,9 +172,11 @@ func init() {
 	internal.AddTranscriptionFlags(rootCmd)
 	internal.AddOpenAIFlags(rootCmd)
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output for debugging")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress progress bars and non-essential output")
 	rootCmd.PersistentFlags().StringP("config", "c", "", "Config file (default is $XDG_CONFIG_HOME/tldw/config.toml)")
 
 	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
 	_ = viper.BindPFlag("config", rootCmd.PersistentFlags().Lookup("config"))
 	_ = viper.BindPFlag("tldr_model", rootCmd.Flags().Lookup("model"))
 	_ = viper.BindPFlag("prompt", rootCmd.Flags().Lookup("prompt"))

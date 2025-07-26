@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
-	"github.com/schollz/progressbar/v3"
 )
 
 // ErrDownloadFailed indicates a retryable download failure from yt-dlp
@@ -117,12 +116,12 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 
 // Audio gets mp3 audio from a YouTube video
 func (yt *YouTube) Audio(ctx context.Context, youtubeURL string) (string, error) {
-	return yt.AudioWithProgress(ctx, youtubeURL, false)
+	return yt.AudioWithProgress(ctx, youtubeURL, nil)
 }
 
 // AudioWithProgress downloads audio with optional progress tracking
-func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, showProgress bool) (string, error) {
-	if yt.verbose && !showProgress {
+func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, progressBar ProgressBar) (string, error) {
+	if yt.verbose && progressBar == nil {
 		fmt.Println("Downloading audio...")
 	}
 
@@ -151,10 +150,10 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, sho
 		youtubeURL, // The YouTube URL or ID
 	}
 
-	if showProgress && !yt.verbose {
+	if progressBar != nil && !yt.verbose {
 		// Add progress flags for progress bar mode
 		args = append(args, "--newline", "--progress")
-		err = yt.runWithProgress(ctx, args)
+		err = yt.runWithProgress(ctx, args, progressBar)
 	} else {
 		// Use existing command runner for verbose or non-progress mode
 		output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
@@ -181,7 +180,7 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, sho
 }
 
 // AudioWithSharedProgress downloads audio and updates a shared progress bar within specified range
-func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL string, bar *progressbar.ProgressBar, startPercent, endPercent int) (string, error) {
+func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL string, bar ProgressBar, startPercent, endPercent int) (string, error) {
 	// Extract video ID to construct the output filename
 	videoID, err := getVideoID(youtubeURL)
 	if err != nil {
@@ -534,31 +533,18 @@ func extractSubtitleInfo(rawData map[string]any) bool {
 }
 
 // runWithProgress executes yt-dlp with real-time progress tracking
-func (yt *YouTube) runWithProgress(ctx context.Context, args []string) error {
-	// Create unified progress bar for download stages
-	bar := progressbar.NewOptions(100,
-		progressbar.OptionSetDescription("Downloading audio"),
-		progressbar.OptionSetWidth(30),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetPredictTime(false),
-		progressbar.OptionClearOnFinish(),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "=",
-			SaucerHead:    ">",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
+// This method should receive a progress bar from the caller, not create one
+func (yt *YouTube) runWithProgress(ctx context.Context, args []string, progressBar ProgressBar) error {
 
 	// Create command
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-	
+
 	// Get combined output pipe
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
-	
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("creating stderr pipe: %w", err)
@@ -570,45 +556,47 @@ func (yt *YouTube) runWithProgress(ctx context.Context, args []string) error {
 	}
 
 	// Parse progress from both stdout and stderr
-	go yt.parseProgress(stdout, bar)
-	go yt.parseProgress(stderr, bar)
+	go yt.parseProgress(stdout, progressBar)
+	go yt.parseProgress(stderr, progressBar)
 
 	// Wait for command to complete
 	err = cmd.Wait()
-	bar.Finish()
-	
+	if progressBar != nil {
+		progressBar.Finish()
+	}
+
 	return err
 }
 
 // parseProgress parses yt-dlp progress output and updates the progress bar
-func (yt *YouTube) parseProgress(pipe io.ReadCloser, bar *progressbar.ProgressBar) {
+func (yt *YouTube) parseProgress(pipe io.ReadCloser, progressBar ProgressBar) {
 	defer pipe.Close()
 	scanner := bufio.NewScanner(pipe)
-	
+
 	// Regex patterns for different stages
 	downloadRegex := regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%`)
 	extractRegex := regexp.MustCompile(`\[ExtractAudio\]`)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Parse download progress (0-80%)
 		if matches := downloadRegex.FindStringSubmatch(line); matches != nil {
-			if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			if percent, err := strconv.ParseFloat(matches[1], 64); err == nil && progressBar != nil {
 				// Map download progress to 0-80% of total progress
 				progress := int(percent * 0.8)
-				bar.Set(progress)
+				progressBar.Set(progress)
 			}
 		}
-		
+
 		// Detect audio extraction stage (80-100%)
-		if extractRegex.MatchString(line) {
-			bar.Describe("Converting audio")
-			bar.Set(80)
-			
+		if extractRegex.MatchString(line) && progressBar != nil {
+			progressBar.Describe("Converting audio")
+			progressBar.Set(80)
+
 			// Simulate conversion progress 80-100%
 			for i := 80; i <= 100; i += 5 {
-				bar.Set(i)
+				progressBar.Set(i)
 				// Small delay to show conversion progress
 				// Note: This is a simulation since yt-dlp doesn't provide extraction progress
 			}
@@ -617,16 +605,16 @@ func (yt *YouTube) parseProgress(pipe io.ReadCloser, bar *progressbar.ProgressBa
 }
 
 // runWithSharedProgress executes yt-dlp with shared progress bar within specified range
-func (yt *YouTube) runWithSharedProgress(ctx context.Context, args []string, bar *progressbar.ProgressBar, startPercent, endPercent int) error {
+func (yt *YouTube) runWithSharedProgress(ctx context.Context, args []string, bar ProgressBar, startPercent, endPercent int) error {
 	// Create command
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-	
+
 	// Get combined output pipe
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("creating stdout pipe: %w", err)
 	}
-	
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("creating stderr pipe: %w", err)
@@ -646,37 +634,37 @@ func (yt *YouTube) runWithSharedProgress(ctx context.Context, args []string, bar
 }
 
 // parseSharedProgress parses yt-dlp progress output and updates shared progress bar within range
-func (yt *YouTube) parseSharedProgress(pipe io.ReadCloser, bar *progressbar.ProgressBar, startPercent, endPercent int) {
+func (yt *YouTube) parseSharedProgress(pipe io.ReadCloser, bar ProgressBar, startPercent, endPercent int) {
 	defer pipe.Close()
 	scanner := bufio.NewScanner(pipe)
-	
+
 	// Regex patterns for different stages
 	downloadRegex := regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%`)
 	extractRegex := regexp.MustCompile(`\[ExtractAudio\]`)
-	
+
 	progressRange := endPercent - startPercent
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Parse download progress (maps to 0-80% of our range)
 		if matches := downloadRegex.FindStringSubmatch(line); matches != nil {
 			if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
 				// Map download progress to 0-80% of our allocated range
 				localProgress := percent * 0.8 // 0-80%
-				globalProgress := startPercent + int(localProgress * float64(progressRange) / 100)
+				globalProgress := startPercent + int(localProgress*float64(progressRange)/100)
 				bar.Set(globalProgress)
 			}
 		}
-		
+
 		// Detect audio extraction stage (maps to 80-100% of our range)
 		if extractRegex.MatchString(line) {
 			bar.Describe("Converting audio")
-			
+
 			// Map conversion to 80-100% of our allocated range
-			conversionStart := startPercent + int(0.8 * float64(progressRange))
+			conversionStart := startPercent + int(0.8*float64(progressRange))
 			conversionEnd := endPercent
-			
+
 			// Simulate conversion progress 80-100%
 			for i := conversionStart; i <= conversionEnd; i += (conversionEnd - conversionStart) / 10 {
 				bar.Set(i)

@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/schollz/progressbar/v3"
 )
 
 // App holds the application state and dependencies
@@ -19,6 +17,7 @@ type App struct {
 	ai            *AI
 	promptManager *PromptManager
 	config        *Config
+	ui            UIManager
 }
 
 // NewApp initializes the application
@@ -28,12 +27,15 @@ func NewApp(config *Config, options ...AppOption) *App {
 	promptManager := NewPromptManager(config.ConfigDir, config.Prompt)
 	audio := NewAudio(cmdRunner, config.TempDir, config.Verbose)
 
+	ui := NewUIManager(config.Verbose, config.Quiet)
+
 	app := &App{
 		youtube:       NewYouTube(os.DirFS("."), config.TranscriptsDir, config.Verbose),
 		audio:         audio,
 		ai:            NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose),
 		promptManager: promptManager,
 		config:        config,
+		ui:            ui,
 	}
 
 	// Apply any custom options
@@ -84,7 +86,12 @@ func (app *App) DownloadAudioWithProgress(ctx context.Context, youtubeURL string
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	audioFile, err := app.youtube.AudioWithProgress(ctx, youtubeURL, showProgress)
+	var progressBar ProgressBar
+	if showProgress {
+		progressBar = app.ui.NewProgressBar(100, "Downloading audio")
+	}
+
+	audioFile, err := app.youtube.AudioWithProgress(ctx, youtubeURL, progressBar)
 	if err != nil {
 		return "", fmt.Errorf("downloading audio: %w", err)
 	}
@@ -99,7 +106,13 @@ func (app *App) TranscribeAudio(ctx context.Context, audioFile string) (string, 
 
 // TranscribeAudioWithProgress transcribes an audio file with optional progress bar
 func (app *App) TranscribeAudioWithProgress(ctx context.Context, audioFile string, showProgress bool) (string, error) {
-	transcript, err := app.ai.TranscribeWithProgress(ctx, audioFile, showProgress)
+	var progressBar ProgressBar
+	if showProgress {
+		// Create progress bar through UIManager
+		progressBar = app.ui.NewProgressBar(100, "Transcribing audio") // Will adjust total based on chunks
+	}
+
+	transcript, err := app.ai.TranscribeWithProgress(ctx, audioFile, progressBar)
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +255,9 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 		}
 
 		// Use unified progress bar for all stages (download -> conversion -> transcription)
-		transcript, err = app.transcribeVideoWithUnifiedProgress(ctx, youtubeURL, !app.config.Verbose)
+		// Show progress if not verbose and not quiet
+		showProgress := !app.config.Verbose && !app.config.Quiet
+		transcript, err = app.transcribeVideoWithUnifiedProgress(ctx, youtubeURL, showProgress)
 		if err != nil {
 			return err
 		}
@@ -289,22 +304,10 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 		return fmt.Errorf("no videos found in playlist")
 	}
 
-	fmt.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
+	app.ui.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
 
 	// Create progress bar - clean display without confusing rate for cached content
-	bar := progressbar.NewOptions(len(playlistInfo.VideoURLs),
-		progressbar.OptionSetDescription("Gathering transcripts"),
-		progressbar.OptionSetWidth(30),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetPredictTime(false),
-		progressbar.OptionClearOnFinish(),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "=",
-			SaucerHead:    ">",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
+	bar := app.ui.NewProgressBar(len(playlistInfo.VideoURLs), "Gathering transcripts")
 
 	// Collect all video transcripts
 	var videoTranscripts []VideoTranscript
@@ -446,14 +449,14 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	}
 
 	// Report processing results
-	fmt.Printf("Successfully processed %d out of %d videos\n", len(videoTranscripts), len(playlistInfo.VideoURLs))
+	app.ui.Printf("Successfully processed %d out of %d videos\n", len(videoTranscripts), len(playlistInfo.VideoURLs))
 	if len(skippedVideos) > 0 {
-		fmt.Printf("Skipped %d videos:\n", len(skippedVideos))
+		app.ui.Printf("Skipped %d videos:\n", len(skippedVideos))
 		for _, skipped := range skippedVideos {
-			fmt.Printf("  - %s\n", skipped)
+			app.ui.Printf("  - %s\n", skipped)
 		}
 	}
-	fmt.Println()
+	app.ui.Println()
 
 	// Build combined transcript with structured format
 	combinedTranscript := app.buildPlaylistTranscript(playlistInfo.Title, videoTranscripts)
@@ -508,19 +511,7 @@ func (app *App) transcribeVideoWithUnifiedProgress(ctx context.Context, youtubeU
 	}
 
 	// Create unified progress bar for all stages
-	bar := progressbar.NewOptions(100,
-		progressbar.OptionSetDescription("Downloading audio"),
-		progressbar.OptionSetWidth(30),
-		progressbar.OptionShowCount(),
-		progressbar.OptionSetPredictTime(false),
-		progressbar.OptionClearOnFinish(),
-		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "=",
-			SaucerHead:    ">",
-			SaucerPadding: " ",
-			BarStart:      "[",
-			BarEnd:        "]",
-		}))
+	bar := app.ui.NewSharedProgressBar(100, "Downloading audio")
 
 	// Stage 1: Download (0-50%)
 	audioFile, err := app.downloadAudioWithSharedProgress(ctx, youtubeURL, bar, 0, 50)
@@ -542,7 +533,7 @@ func (app *App) transcribeVideoWithUnifiedProgress(ctx context.Context, youtubeU
 }
 
 // downloadAudioWithSharedProgress downloads audio and updates a shared progress bar within specified range
-func (app *App) downloadAudioWithSharedProgress(ctx context.Context, youtubeURL string, bar *progressbar.ProgressBar, startPercent, endPercent int) (string, error) {
+func (app *App) downloadAudioWithSharedProgress(ctx context.Context, youtubeURL string, bar ProgressBar, startPercent, endPercent int) (string, error) {
 	if err := EnsureDirs(app.config.CacheDir); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -551,6 +542,6 @@ func (app *App) downloadAudioWithSharedProgress(ctx context.Context, youtubeURL 
 }
 
 // transcribeAudioWithSharedProgress transcribes audio and updates a shared progress bar within specified range
-func (app *App) transcribeAudioWithSharedProgress(ctx context.Context, audioFile string, bar *progressbar.ProgressBar, startPercent, endPercent int) (string, error) {
+func (app *App) transcribeAudioWithSharedProgress(ctx context.Context, audioFile string, bar ProgressBar, startPercent, endPercent int) (string, error) {
 	return app.ai.TranscribeWithSharedProgress(ctx, audioFile, bar, startPercent, endPercent)
 }

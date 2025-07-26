@@ -35,6 +35,7 @@ type Config struct {
 	SummaryTimeout time.Duration
 	WhisperTimeout time.Duration
 	Verbose        bool
+	Quiet          bool
 	OpenAIAPIKey   string
 	Prompt         string
 
@@ -118,6 +119,7 @@ func InitConfig() (*Config, error) {
 	v.SetDefault("summary_timeout", 2*time.Minute)
 	v.SetDefault("whisper_timeout", 10*time.Minute)
 	v.SetDefault("verbose", false)
+	v.SetDefault("quiet", false)
 	v.SetDefault("prompt", "") // if empty will use default prompt template
 
 	// Set config name and paths
@@ -149,6 +151,7 @@ func InitConfig() (*Config, error) {
 		SummaryTimeout: v.GetDuration("summary_timeout"),
 		WhisperTimeout: v.GetDuration("whisper_timeout"),
 		Verbose:        v.GetBool("verbose"),
+		Quiet:          v.GetBool("quiet"),
 		OpenAIAPIKey:   v.GetString("openai_api_key"),
 		Prompt:         v.GetString("prompt"),
 

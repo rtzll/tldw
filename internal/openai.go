@@ -11,7 +11,6 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
-	"github.com/schollz/progressbar/v3"
 )
 
 // OpenAIClientInterface defines the interface for OpenAI client operations
@@ -131,11 +130,12 @@ func (ai *AI) ensureClient() error {
 
 // Transcribe transcribes audio using OpenAI's Whisper API
 func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) {
-	return ai.TranscribeWithProgress(ctx, audioFile, false)
+	return ai.TranscribeWithProgress(ctx, audioFile, nil)
 }
 
 // TranscribeWithProgress transcribes audio with optional progress bar
-func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, showProgress bool) (string, error) {
+// The progress bar should be created by the caller and passed in
+func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, progressBar ProgressBar) (string, error) {
 	if err := ai.ensureClient(); err != nil {
 		return "", err
 	}
@@ -169,7 +169,7 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, show
 		}
 	}()
 
-	transcript, err := ai.processAudioChunksWithProgress(ctx, chunks, showProgress)
+	transcript, err := ai.processAudioChunksWithProgress(ctx, chunks, progressBar)
 	if err != nil {
 		return "", fmt.Errorf("transcribing audio: %w", err)
 	}
@@ -178,42 +178,27 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, show
 
 // processAudioChunks transcribes audio chunks sequentially
 func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
-	return ai.processAudioChunksWithProgress(ctx, chunks, false)
+	return ai.processAudioChunksWithProgress(ctx, chunks, nil)
 }
 
 // processAudioChunksWithProgress transcribes audio chunks with optional progress bar
 // NOTE: tried to do it concurrently but one chunk returned broken transcript
 // not use if issue with the invocation of the API or just a glitch
 // trying it sequentially worked
-func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []string, showProgress bool) (string, error) {
+func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []string, progressBar ProgressBar) (string, error) {
 	numChunks := len(chunks)
 
 	if ai.verbose {
 		fmt.Printf("Transcribing chunks (%d)\n", numChunks)
 	}
 
-	// Create progress bar for non-verbose mode
-	var bar *progressbar.ProgressBar
-	if showProgress && !ai.verbose {
-		bar = progressbar.NewOptions(numChunks,
-			progressbar.OptionSetDescription("Transcribing audio"),
-			progressbar.OptionSetWidth(30),
-			progressbar.OptionShowCount(),
-			progressbar.OptionSetPredictTime(false),
-			progressbar.OptionClearOnFinish(),
-			progressbar.OptionSetTheme(progressbar.Theme{
-				Saucer:        "=",
-				SaucerHead:    ">",
-				SaucerPadding: " ",
-				BarStart:      "[",
-				BarEnd:        "]",
-			}))
-	}
+	// Progress bar should be created by UIManager and passed in
+	// This method should not create UI elements directly
 
 	var sb strings.Builder
 	for i, chunkPath := range chunks {
-		if bar != nil {
-			bar.Set(i)
+		if progressBar != nil {
+			progressBar.Set(i)
 		}
 		file, err := os.Open(chunkPath)
 		if err != nil {
@@ -239,8 +224,8 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 	}
 
 	// Complete progress bar
-	if bar != nil {
-		bar.Finish()
+	if progressBar != nil {
+		progressBar.Finish()
 	}
 
 	return sb.String(), nil
@@ -264,7 +249,7 @@ func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
 }
 
 // TranscribeWithSharedProgress transcribes audio with shared progress bar within specified range
-func (ai *AI) TranscribeWithSharedProgress(ctx context.Context, audioFile string, bar *progressbar.ProgressBar, startPercent, endPercent int) (string, error) {
+func (ai *AI) TranscribeWithSharedProgress(ctx context.Context, audioFile string, bar ProgressBar, startPercent, endPercent int) (string, error) {
 	if err := ai.ensureClient(); err != nil {
 		return "", err
 	}
@@ -302,7 +287,7 @@ func (ai *AI) TranscribeWithSharedProgress(ctx context.Context, audioFile string
 }
 
 // processAudioChunksWithSharedProgress transcribes audio chunks with shared progress bar within range
-func (ai *AI) processAudioChunksWithSharedProgress(ctx context.Context, chunks []string, bar *progressbar.ProgressBar, startPercent, endPercent int) (string, error) {
+func (ai *AI) processAudioChunksWithSharedProgress(ctx context.Context, chunks []string, bar ProgressBar, startPercent, endPercent int) (string, error) {
 	numChunks := len(chunks)
 	progressRange := endPercent - startPercent
 
