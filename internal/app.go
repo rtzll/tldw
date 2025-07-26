@@ -255,8 +255,8 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 		}
 
 		// Use unified progress bar for all stages (download -> conversion -> transcription)
-		// Show progress if not verbose and not quiet
-		showProgress := !app.config.Verbose && !app.config.Quiet
+		// Show progress unless explicitly quiet (verbose is independent)
+		showProgress := !app.config.Quiet
 		transcript, err = app.transcribeVideoWithUnifiedProgress(ctx, youtubeURL, showProgress)
 		if err != nil {
 			return err
@@ -441,7 +441,6 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	}
 
 	bar.Finish()
-	fmt.Println()
 
 	// Check if we have any transcripts to work with
 	if len(videoTranscripts) == 0 {
@@ -456,7 +455,6 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 			app.ui.Printf("  - %s\n", skipped)
 		}
 	}
-	app.ui.Println()
 
 	// Build combined transcript with structured format
 	combinedTranscript := app.buildPlaylistTranscript(playlistInfo.Title, videoTranscripts)
