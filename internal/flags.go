@@ -62,6 +62,22 @@ func HandleVerboseFlag(cmd *cobra.Command, config *Config) error {
 	return nil
 }
 
+// HandleQuietFlag processes the --quiet flag to update config
+func HandleQuietFlag(cmd *cobra.Command, config *Config) error {
+	quiet, err := cmd.Flags().GetBool("quiet")
+	if err != nil {
+		return fmt.Errorf("failed to get quiet flag: %w", err)
+	}
+	config.Quiet = quiet
+
+	// Quiet and verbose are mutually exclusive - quiet takes precedence
+	if config.Quiet {
+		config.Verbose = false
+	}
+
+	return nil
+}
+
 // ValidateOpenAIRequirements validates OpenAI API key and model from command flags and config
 func ValidateOpenAIRequirements(cmd *cobra.Command, config *Config) error {
 	// Check OpenAI API key

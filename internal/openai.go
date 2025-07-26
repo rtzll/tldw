@@ -130,6 +130,12 @@ func (ai *AI) ensureClient() error {
 
 // Transcribe transcribes audio using OpenAI's Whisper API
 func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) {
+	return ai.TranscribeWithProgress(ctx, audioFile, nil)
+}
+
+// TranscribeWithProgress transcribes audio with optional progress bar
+// The progress bar should be created by the caller and passed in
+func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, progressBar ProgressBar) (string, error) {
 	if err := ai.ensureClient(); err != nil {
 		return "", err
 	}
@@ -163,7 +169,7 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 		}
 	}()
 
-	transcript, err := ai.processAudioChunks(ctx, chunks)
+	transcript, err := ai.processAudioChunksWithProgress(ctx, chunks, progressBar)
 	if err != nil {
 		return "", fmt.Errorf("transcribing audio: %w", err)
 	}
@@ -171,18 +177,29 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 }
 
 // processAudioChunks transcribes audio chunks sequentially
+func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
+	return ai.processAudioChunksWithProgress(ctx, chunks, nil)
+}
+
+// processAudioChunksWithProgress transcribes audio chunks with optional progress bar
 // NOTE: tried to do it concurrently but one chunk returned broken transcript
 // not use if issue with the invocation of the API or just a glitch
 // trying it sequentially worked
-func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
+func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []string, progressBar ProgressBar) (string, error) {
 	numChunks := len(chunks)
 
 	if ai.verbose {
 		fmt.Printf("Transcribing chunks (%d)\n", numChunks)
 	}
 
+	// Progress bar should be created by UIManager and passed in
+	// This method should not create UI elements directly
+
 	var sb strings.Builder
 	for i, chunkPath := range chunks {
+		if progressBar != nil {
+			progressBar.Set(i)
+		}
 		file, err := os.Open(chunkPath)
 		if err != nil {
 			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)
@@ -206,6 +223,11 @@ func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, 
 		}
 	}
 
+	// Complete progress bar
+	if progressBar != nil {
+		progressBar.Finish()
+	}
+
 	return sb.String(), nil
 }
 
@@ -224,4 +246,77 @@ func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
 	}
 
 	return content, nil
+}
+
+// TranscribeWithSharedProgress transcribes audio with shared progress bar within specified range
+func (ai *AI) TranscribeWithSharedProgress(ctx context.Context, audioFile string, bar ProgressBar, startPercent, endPercent int) (string, error) {
+	if err := ai.ensureClient(); err != nil {
+		return "", err
+	}
+
+	info, err := os.Stat(audioFile)
+	if err != nil {
+		return "", fmt.Errorf("getting audio file info: %w", err)
+	}
+
+	fileSize := info.Size()
+	numChunks := int(math.Ceil(float64(fileSize) / float64(ai.whisperLimit)))
+
+	var chunks []string
+	if numChunks > 1 {
+		chunks, err = ai.audio.Split(ctx, audioFile, numChunks)
+		if err != nil {
+			return "", fmt.Errorf("splitting audio: %w", err)
+		}
+	} else {
+		chunks = []string{audioFile}
+	}
+
+	defer func() {
+		cleanupFiles(chunks...)
+		if len(chunks) > 1 {
+			cleanupFiles(audioFile)
+		}
+	}()
+
+	transcript, err := ai.processAudioChunksWithSharedProgress(ctx, chunks, bar, startPercent, endPercent)
+	if err != nil {
+		return "", fmt.Errorf("transcribing audio: %w", err)
+	}
+	return transcript, nil
+}
+
+// processAudioChunksWithSharedProgress transcribes audio chunks with shared progress bar within range
+func (ai *AI) processAudioChunksWithSharedProgress(ctx context.Context, chunks []string, bar ProgressBar, startPercent, endPercent int) (string, error) {
+	numChunks := len(chunks)
+	progressRange := endPercent - startPercent
+
+	var sb strings.Builder
+	for i, chunkPath := range chunks {
+		// Calculate progress within our allocated range
+		chunkProgress := startPercent + (i * progressRange / numChunks)
+		bar.Set(chunkProgress)
+
+		file, err := os.Open(chunkPath)
+		if err != nil {
+			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)
+		}
+
+		text, err := ai.client.CreateTranscription(ctx, file)
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close file %s: %v\n", chunkPath, closeErr)
+		}
+		if err != nil {
+			return "", fmt.Errorf("transcribing chunk %d: %w", i+1, err)
+		}
+
+		sb.WriteString(text)
+		if i < numChunks-1 {
+			sb.WriteString("\n")
+		}
+	}
+
+	// Set final progress to end percent
+	bar.Set(endPercent)
+	return sb.String(), nil
 }
