@@ -149,3 +149,11 @@ func (s *SilentProgressBar) Finish() {
 func (s *SilentProgressBar) Advance() {
 	s.bar.Add(1)
 }
+
+// NoOpProgressBar implements a no-operation progress bar for when status is disabled
+type NoOpProgressBar struct{}
+
+func (n *NoOpProgressBar) Set(current int)             {}
+func (n *NoOpProgressBar) Describe(description string) {}
+func (n *NoOpProgressBar) Finish()                     {}
+func (n *NoOpProgressBar) Advance()                    {}
