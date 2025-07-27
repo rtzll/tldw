@@ -1,7 +1,9 @@
 package internal
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/schollz/progressbar/v3"
 )
@@ -27,6 +29,12 @@ type ProgressBar interface {
 	Describe(description string)
 	Finish()
 	Advance() // For spinners
+}
+
+// AutoSpinner interface for spinners that advance themselves
+type AutoSpinner interface {
+	ProgressBar
+	Stop() // Stop auto-advancement
 }
 
 // StandardUIManager handles normal UI operations
@@ -157,3 +165,90 @@ func (n *NoOpProgressBar) Set(current int)             {}
 func (n *NoOpProgressBar) Describe(description string) {}
 func (n *NoOpProgressBar) Finish()                     {}
 func (n *NoOpProgressBar) Advance()                    {}
+
+// AutoAdvancingSpinner implements a spinner that advances itself in a background goroutine
+type AutoAdvancingSpinner struct {
+	bar    *progressbar.ProgressBar
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func NewAutoAdvancingSpinner(description string, quiet bool) AutoSpinner {
+	if quiet {
+		return &NoOpAutoSpinner{}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	bar := progressbar.NewOptions(-1,
+		progressbar.OptionSetDescription(description),
+		progressbar.OptionSpinnerType(11),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "=",
+			SaucerHead:    ">",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+
+	spinner := &AutoAdvancingSpinner{
+		bar:    bar,
+		ctx:    ctx,
+		cancel: cancel,
+		done:   make(chan struct{}),
+	}
+
+	// Start auto-advancement
+	go spinner.autoAdvance()
+
+	return spinner
+}
+
+func (a *AutoAdvancingSpinner) autoAdvance() {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	defer close(a.done)
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			a.bar.Add(1)
+		}
+	}
+}
+
+func (a *AutoAdvancingSpinner) Set(current int) {
+	a.bar.Set(current)
+}
+
+func (a *AutoAdvancingSpinner) Describe(description string) {
+	a.bar.Describe(description)
+}
+
+func (a *AutoAdvancingSpinner) Advance() {
+	// No-op since we auto-advance
+}
+
+func (a *AutoAdvancingSpinner) Stop() {
+	a.cancel()
+	<-a.done // Wait for goroutine to finish
+}
+
+func (a *AutoAdvancingSpinner) Finish() {
+	a.Stop()
+	a.bar.Finish()
+}
+
+// NoOpAutoSpinner implements AutoSpinner as no-ops
+type NoOpAutoSpinner struct{}
+
+func (n *NoOpAutoSpinner) Set(current int)             {}
+func (n *NoOpAutoSpinner) Describe(description string) {}
+func (n *NoOpAutoSpinner) Finish()                     {}
+func (n *NoOpAutoSpinner) Advance()                    {}
+func (n *NoOpAutoSpinner) Stop()                       {}

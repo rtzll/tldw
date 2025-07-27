@@ -88,6 +88,55 @@ func (app *App) newSpinner(description string) ProgressBar {
 	return &NoOpProgressBar{}
 }
 
+// newAutoSpinner returns an auto-advancing spinner if status should be shown
+func (app *App) newAutoSpinner(description string) AutoSpinner {
+	return NewAutoAdvancingSpinner(description, !app.shouldShowStatus())
+}
+
+// WorkflowProgress manages all console output for a single workflow
+type WorkflowProgress struct {
+	spinner ProgressBar
+	verbose bool
+	quiet   bool
+}
+
+// newWorkflowProgress creates a workflow progress manager - SINGLE point of console control
+func (app *App) newWorkflowProgress(initialDescription string) *WorkflowProgress {
+	var spinner ProgressBar
+	if app.shouldShowStatus() {
+		spinner = app.ui.NewSpinner(initialDescription)
+	} else {
+		spinner = &NoOpProgressBar{}
+	}
+
+	return &WorkflowProgress{
+		spinner: spinner,
+		verbose: app.config.Verbose,
+		quiet:   app.config.Quiet,
+	}
+}
+
+// UpdateStatus updates the workflow status (replaces all spinner.Describe calls)
+func (wp *WorkflowProgress) UpdateStatus(description string) {
+	wp.spinner.Describe(description)
+	if wp.verbose {
+		// In verbose mode, also print to stdout for logging
+		fmt.Printf("[Status] %s\n", description)
+	}
+}
+
+// Log outputs verbose information (replaces all fmt.Printf calls)
+func (wp *WorkflowProgress) Log(format string, args ...interface{}) {
+	if wp.verbose {
+		fmt.Printf(format, args...)
+	}
+}
+
+// Finish completes the workflow
+func (wp *WorkflowProgress) Finish() {
+	wp.spinner.Finish()
+}
+
 // DownloadAudio downloads audio from a YouTube URL and returns the file path
 func (app *App) DownloadAudio(ctx context.Context, youtubeURL string) (string, error) {
 	return app.DownloadAudioWithProgress(ctx, youtubeURL, false)
@@ -318,16 +367,25 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 		return app.SummarizePlaylist(ctx, youtubeURL, fallbackWhisper)
 	}
 
-	transcript, err := app.getTranscriptWithFallback(ctx, youtubeURL, fallbackWhisper)
+	// Create SINGLE workflow progress manager - consolidates ALL console output
+	progress := app.newWorkflowProgress("Processing video...")
+	defer progress.Finish()
+
+	// Get transcript with consolidated progress
+	progress.UpdateStatus("Getting transcript...")
+	transcript, err := app.getTranscriptWithProgressManager(ctx, youtubeURL, fallbackWhisper, progress)
 	if err != nil {
 		return err
 	}
 
-	summary, err := app.GenerateSummaryWithStatus(ctx, youtubeURL, transcript, app.shouldShowStatus())
+	// Generate summary with consolidated progress
+	progress.UpdateStatus("Generating summary with OpenAI...")
+	summary, err := app.generateSummaryWithProgressManager(ctx, youtubeURL, transcript, progress)
 	if err != nil {
 		return err
 	}
 
+	progress.UpdateStatus("Complete")
 	fmt.Println(summary)
 	return nil
 }
@@ -338,6 +396,15 @@ func (app *App) getTranscriptWithFallback(ctx context.Context, youtubeURL string
 	transcript, err := app.GetTranscriptWithStatus(ctx, youtubeURL, showStatus)
 	if err != nil {
 		return app.handleTranscriptFallback(ctx, youtubeURL, fallbackWhisper)
+	}
+	return transcript, nil
+}
+
+// getTranscriptWithFallbackNoStatus attempts to get transcript without showing status (used when parent has spinner)
+func (app *App) getTranscriptWithFallbackNoStatus(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
+	transcript, err := app.GetTranscript(ctx, youtubeURL)
+	if err != nil {
+		return app.handleTranscriptFallbackNoStatus(ctx, youtubeURL, fallbackWhisper)
 	}
 	return transcript, nil
 }
@@ -359,6 +426,185 @@ func (app *App) handleTranscriptFallback(ctx context.Context, youtubeURL string,
 	_, youtubeID := ParseArg(youtubeURL)
 	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+
+	return transcript, nil
+}
+
+// handleTranscriptFallbackNoStatus handles the Whisper transcription fallback without status
+func (app *App) handleTranscriptFallbackNoStatus(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
+	if !fallbackWhisper {
+		if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
+			return "", fmt.Errorf("transcription declined by user")
+		}
+	}
+
+	// Download and transcribe without status since parent manages spinner
+	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
+	if err != nil {
+		return "", err
+	}
+
+	transcript, err := app.TranscribeAudio(ctx, audioFile)
+	if err != nil {
+		return "", err
+	}
+
+	// Save transcript for future use
+	_, youtubeID := ParseArg(youtubeURL)
+	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+
+	return transcript, nil
+}
+
+// getTranscriptWithProgressManager gets transcript using consolidated progress manager
+func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL string, fallbackWhisper bool, progress *WorkflowProgress) (string, error) {
+	_, youtubeID := ParseArg(youtubeURL)
+
+	// Check for existing transcript
+	if err := EnsureDirs(app.config.TranscriptsDir); err != nil {
+		return "", fmt.Errorf("creating transcripts directory: %w", err)
+	}
+
+	existingTranscriptPath := filepath.Join(app.config.TranscriptsDir, youtubeID+".txt")
+	if FileExists(existingTranscriptPath) {
+		progress.Log("Found existing transcript for %s\n", youtubeID)
+		text, err := os.ReadFile(existingTranscriptPath)
+		if err != nil {
+			return "", fmt.Errorf("reading existing transcript: %w", err)
+		}
+		return string(text), nil
+	}
+
+	// Check if captions are available
+	progress.UpdateStatus("Checking caption availability...")
+	metadata, err := app.metadataWithProgressManager(ctx, youtubeURL, progress)
+	if err != nil {
+		return "", fmt.Errorf("checking video metadata: %w", err)
+	}
+
+	if !metadata.HasCaptions {
+		// No captions, fall back to Whisper
+		return app.handleWhisperFallbackWithProgressManager(ctx, youtubeURL, fallbackWhisper, progress)
+	}
+
+	// Try to get transcript from YouTube
+	progress.UpdateStatus("Fetching YouTube captions...")
+	progress.Log("Fetching transcript for %s\n", youtubeID)
+
+	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL)
+	if err != nil || transcript == "" {
+		// Retry once if download failed
+		if errors.Is(err, ErrDownloadFailed) {
+			progress.UpdateStatus("Download failed, retrying...")
+			progress.Log("Download failed, retrying in 1 second...\n")
+			time.Sleep(1 * time.Second)
+			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL)
+		}
+
+		if err != nil || transcript == "" {
+			return "", fmt.Errorf("no transcript available for %s", youtubeID)
+		}
+	}
+
+	// Save transcript
+	progress.UpdateStatus("Saving transcript...")
+	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
+		progress.Log("Warning: %v\n", err)
+	}
+
+	return transcript, nil
+}
+
+// generateSummaryWithProgressManager generates summary using consolidated progress manager
+func (app *App) generateSummaryWithProgressManager(ctx context.Context, youtubeURL, transcript string, progress *WorkflowProgress) (string, error) {
+	if transcript == "" {
+		return "", fmt.Errorf("transcript is empty")
+	}
+
+	// Get metadata
+	metadata, err := app.metadataWithProgressManager(ctx, youtubeURL, progress)
+	if err != nil {
+		progress.Log("Failed to extract video metadata: %v\n", err)
+	}
+
+	// Create prompt
+	progress.UpdateStatus("Creating prompt...")
+	prompt, err := app.promptManager.CreatePrompt(transcript, metadata)
+	if err != nil {
+		return "", fmt.Errorf("creating prompt: %w", err)
+	}
+
+	// Generate summary
+	progress.UpdateStatus("Generating summary with OpenAI...")
+	summaryContent, err := app.ai.Summary(ctx, prompt)
+	if err != nil {
+		return "", fmt.Errorf("generating summary: %w", err)
+	}
+
+	// Render markdown
+	progress.UpdateStatus("Rendering summary...")
+	renderedSummary, err := RenderMarkdown(summaryContent)
+	if err != nil {
+		return "", fmt.Errorf("rendering markdown: %w", err)
+	}
+
+	return renderedSummary, nil
+}
+
+// metadataWithProgressManager gets metadata using consolidated progress manager
+func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL string, progress *WorkflowProgress) (*VideoMetadata, error) {
+	_, youtubeID := ParseArg(youtubeURL)
+
+	// Try cached metadata first
+	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
+		progress.Log("Using cached metadata for %s\n", youtubeID)
+		return cachedMetadata, nil
+	}
+
+	// Fetch from YouTube
+	progress.Log("Fetching fresh metadata for %s\n", youtubeID)
+	metadata, err := app.youtube.Metadata(ctx, youtubeURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache metadata
+	if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
+		progress.Log("Warning: Failed to cache metadata: %v\n", err)
+	}
+
+	return metadata, nil
+}
+
+// handleWhisperFallbackWithProgressManager handles Whisper fallback with progress manager
+func (app *App) handleWhisperFallbackWithProgressManager(ctx context.Context, youtubeURL string, fallbackWhisper bool, progress *WorkflowProgress) (string, error) {
+	if !fallbackWhisper {
+		if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
+			return "", fmt.Errorf("transcription declined by user")
+		}
+	}
+
+	// Download audio
+	progress.UpdateStatus("Downloading audio...")
+	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Transcribe audio
+	progress.UpdateStatus("Transcribing with OpenAI Whisper...")
+	transcript, err := app.TranscribeAudio(ctx, audioFile)
+	if err != nil {
+		return "", err
+	}
+
+	// Save transcript
+	_, youtubeID := ParseArg(youtubeURL)
+	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
+		progress.Log("Warning: %v\n", err)
 	}
 
 	return transcript, nil
@@ -545,8 +791,11 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	// Build combined transcript with structured format
 	combinedTranscript := app.buildPlaylistTranscript(playlistInfo.Title, videoTranscripts)
 
-	// Generate summary using the combined transcript
-	summary, err := app.GenerateSummaryWithStatus(ctx, playlistURL, combinedTranscript, app.shouldShowStatus())
+	// Generate summary using the combined transcript - use single workflow spinner
+	if app.shouldShowStatus() {
+		app.ui.Printf("Generating playlist summary with OpenAI...\n")
+	}
+	summary, err := app.GenerateSummary(ctx, playlistURL, combinedTranscript)
 	if err != nil {
 		return fmt.Errorf("generating playlist summary: %w", err)
 	}
@@ -594,58 +843,26 @@ func (app *App) transcribeVideoWithStatusSpinner(ctx context.Context, youtubeURL
 		return app.TranscribeAudio(ctx, audioFile)
 	}
 
-	// Stage 1: Download audio with progress feedback
-	spinner := app.ui.NewSpinner("Downloading audio...")
+	// Create auto-advancing spinner - much cleaner!
+	spinner := app.newAutoSpinner("Downloading audio...")
+	defer spinner.Finish()
 
-	// Use a goroutine to advance spinner during download
-	done := make(chan bool)
-	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				spinner.Advance()
-			}
-		}
-	}()
-
+	// Stage 1: Download audio
 	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
-	done <- true // Stop the spinner advancement
-
 	if err != nil {
-		spinner.Finish()
 		return "", err
 	}
 
-	// Stage 2: Transcription
+	// Stage 2: Transcription - just update description, spinner keeps advancing
 	spinner.Describe("Transcribing with OpenAI Whisper...")
 
-	// Restart spinner advancement for transcription
-	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				spinner.Advance()
-			}
-		}
-	}()
-
 	transcript, err := app.TranscribeAudio(ctx, audioFile)
-	done <- true // Stop the spinner advancement
 	if err != nil {
-		spinner.Finish()
 		return "", err
 	}
 
+	// Stage 3: Complete
 	spinner.Describe("Transcription complete")
-	spinner.Finish()
 	return transcript, nil
 }
 
