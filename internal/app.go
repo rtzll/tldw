@@ -288,8 +288,18 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 
 // GenerateSummary creates a summary from transcript and returns it
 func (app *App) GenerateSummary(ctx context.Context, youtubeURL, transcript string) (string, error) {
+	return app.GenerateSummaryWithStatus(ctx, youtubeURL, transcript, false)
+}
+
+// GenerateSummaryWithStatus creates a summary with optional status display
+func (app *App) GenerateSummaryWithStatus(ctx context.Context, youtubeURL, transcript string, showStatus bool) (string, error) {
 	if transcript == "" {
 		return "", fmt.Errorf("transcript is empty")
+	}
+
+	var spinner ProgressBar
+	if showStatus {
+		spinner = app.ui.NewSpinner("Generating summary with OpenAI...")
 	}
 
 	var metadata *VideoMetadata
@@ -300,22 +310,50 @@ func (app *App) GenerateSummary(ctx context.Context, youtubeURL, transcript stri
 		}
 	}
 
+	if spinner != nil {
+		spinner.Describe("Creating prompt...")
+		spinner.Advance()
+	}
+
 	// Create the prompt using the PromptManager
 	prompt, err := app.promptManager.CreatePrompt(transcript, metadata)
 	if err != nil {
+		if spinner != nil {
+			spinner.Finish()
+		}
 		return "", fmt.Errorf("creating prompt: %w", err)
+	}
+
+	if spinner != nil {
+		spinner.Describe("Generating summary with OpenAI...")
+		spinner.Advance()
 	}
 
 	// Get raw summary content from AI
 	summaryContent, err := app.ai.Summary(ctx, prompt)
 	if err != nil {
+		if spinner != nil {
+			spinner.Finish()
+		}
 		return "", fmt.Errorf("generating summary: %w", err)
+	}
+
+	if spinner != nil {
+		spinner.Describe("Rendering summary...")
+		spinner.Advance()
 	}
 
 	// Render the summary content with glamour
 	renderedSummary, err := RenderMarkdown(summaryContent)
 	if err != nil {
+		if spinner != nil {
+			spinner.Finish()
+		}
 		return "", fmt.Errorf("rendering markdown: %w", err)
+	}
+
+	if spinner != nil {
+		spinner.Finish()
 	}
 
 	return renderedSummary, nil
@@ -353,7 +391,8 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 		}
 	}
 
-	summary, err := app.GenerateSummary(ctx, youtubeURL, transcript)
+	// Generate summary with status (reuse showStatus from above)
+	summary, err := app.GenerateSummaryWithStatus(ctx, youtubeURL, transcript, showStatus)
 	if err != nil {
 		return err
 	}
@@ -544,7 +583,9 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	combinedTranscript := app.buildPlaylistTranscript(playlistInfo.Title, videoTranscripts)
 
 	// Generate summary using the combined transcript
-	summary, err := app.GenerateSummary(ctx, playlistURL, combinedTranscript)
+	// Show status unless explicitly quiet
+	showStatus := !app.config.Quiet
+	summary, err := app.GenerateSummaryWithStatus(ctx, playlistURL, combinedTranscript, showStatus)
 	if err != nil {
 		return fmt.Errorf("generating playlist summary: %w", err)
 	}
