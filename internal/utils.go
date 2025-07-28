@@ -22,8 +22,9 @@ var (
 	// Video ID pattern: 11 characters, alphanumeric with - and _
 	videoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
-	// Playlist ID patterns with specific prefixes
-	playlistIDPattern = regexp.MustCompile(`^(PL|UU|FL|RD|LP|BP|QL|SV|EL|LL|UC)[A-Za-z0-9_-]+$`)
+	// Playlist ID pattern - only regular playlists (PL)
+	// PL + 16 chars (18 total) or PL + 32 chars (34 total)
+	playlistIDPattern = regexp.MustCompile(`^PL[A-Za-z0-9_-]{16}$|^PL[A-Za-z0-9_-]{32}$`)
 
 	// Channel ID pattern: UC followed by 22 characters
 	channelIDPattern = regexp.MustCompile(`^UC[A-Za-z0-9_-]{22}$`)
@@ -44,20 +45,8 @@ func detectVideoID(s string) bool {
 
 // detectPlaylistID checks if a string looks like a YouTube playlist ID
 func detectPlaylistID(s string) bool {
-	if !playlistIDPattern.MatchString(s) {
-		return false
-	}
-
-	// Additional length validation for different playlist types
-	prefix := s[:2]
-	switch prefix {
-	case "PL", "UU", "FL", "RD", "LP", "BP", "QL", "SV", "EL", "LL":
-		return len(s) == 18 || len(s) == 34 || len(s) == 36
-	case "UC":
-		return len(s) == 24 // UC prefix + 22 chars for channel uploads playlist
-	default:
-		return false
-	}
+	// Only regular playlists (PL) - pattern already includes length validation
+	return playlistIDPattern.MatchString(s)
 }
 
 // detectChannelID checks if a string looks like a YouTube channel ID
