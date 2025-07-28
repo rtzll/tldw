@@ -94,6 +94,11 @@ func (app *App) Println(args ...interface{}) {
 	}
 }
 
+// PrintResult outputs the final result - always shows
+func (app *App) PrintResult(args ...interface{}) {
+	fmt.Println(args...)
+}
+
 // VerbosePrintf outputs formatted text only if verbose mode is enabled and not quiet
 func (app *App) VerbosePrintf(format string, args ...interface{}) {
 	if app.config.Verbose && !app.config.Quiet {
@@ -393,7 +398,7 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 	}
 
 	progress.UpdateStatus("Complete")
-	app.Println(summary)
+	app.PrintResult(summary)
 	return nil
 }
 
@@ -785,7 +790,7 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 		return fmt.Errorf("generating playlist summary: %w", err)
 	}
 
-	app.Println(summary)
+	app.PrintResult(summary)
 	return nil
 }
 
