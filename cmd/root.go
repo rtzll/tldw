@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -68,28 +67,27 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return err
 		}
 
-		// Validate argument before processing
-		arg := args[0]
-		if internal.IsLikelyCommand(arg) {
-			// Check if it's a valid YouTube video ID or playlist ID
-			if !internal.IsValidYouTubeID(arg) && !internal.IsValidPlaylistID(arg) {
-				// Check if it's similar to any available commands
-				availableCommands := []string{"mcp", "transcribe", "version", "paths", "help"}
-				var suggestions []string
-				for _, cmdName := range availableCommands {
-					if strings.Contains(cmdName, arg) || (len(arg) <= len(cmdName) && strings.Contains(arg, cmdName[:len(arg)])) {
-						suggestions = append(suggestions, cmdName)
-					}
-				}
+		// Parse and validate argument using enhanced parser
+		parsed := internal.ParseArgNew(args[0])
 
-				if len(suggestions) > 0 {
-					return fmt.Errorf("%s doesn't look like a YouTube URL, video ID, or playlist ID; did you mean %s", arg, strings.Join(suggestions, ", "))
-				}
-				return fmt.Errorf("%s doesn't look like a YouTube URL, video ID, or playlist ID; use --help", arg)
+		if parsed.Error != nil {
+			// Handle command-like inputs with suggestions
+			if parsed.ContentType == internal.ContentTypeCommand {
+				availableCommands := []string{"mcp", "transcribe", "version", "paths", "help"}
+				suggestion := parsed.SuggestCorrection(availableCommands)
+				return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
 			}
+
+			// Handle other parsing errors
+			return fmt.Errorf("invalid input '%s': %v", args[0], parsed.Error)
 		}
 
-		youtubeURL, _ := internal.ParseArg(args[0])
+		// Ensure we have valid YouTube content for summarization
+		if !parsed.IsValid() {
+			return fmt.Errorf("'%s' is not valid YouTube content (got %s)", args[0], parsed.ContentType)
+		}
+
+		youtubeURL := parsed.NormalizedURL
 		fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
 		return app.SummarizeYouTube(cmd.Context(), youtubeURL, fallbackWhisper)
 	},
