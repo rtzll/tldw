@@ -38,8 +38,9 @@ Transport options:
   # Set up Claude Desktop integration
   tldw mcp setup-claude`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
-		// MCP uses stdio protocol, so disable verbose logging
+		// MCP uses stdio protocol, so disable all UI output including spinners
 		config.Verbose = false
+		config.Quiet = true
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {

@@ -82,12 +82,13 @@ type AI struct {
 	whisperLimit int64
 	timeout      time.Duration
 	verbose      bool
+	quiet        bool
 	apiKey       string
 	clientOnce   sync.Once
 }
 
 // NewAI creates a new AI processor
-func NewAI(client OpenAIClientInterface, audio *Audio, model string, whisperLimit int64, timeout time.Duration, verbose bool) *AI {
+func NewAI(client OpenAIClientInterface, audio *Audio, model string, whisperLimit int64, timeout time.Duration, verbose bool, quiet bool) *AI {
 	return &AI{
 		client:       client,
 		audio:        audio,
@@ -95,11 +96,12 @@ func NewAI(client OpenAIClientInterface, audio *Audio, model string, whisperLimi
 		whisperLimit: whisperLimit,
 		timeout:      timeout,
 		verbose:      verbose,
+		quiet:        quiet,
 	}
 }
 
 // NewAIWithKey creates a new AI processor with lazy client initialization
-func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64, timeout time.Duration, verbose bool) *AI {
+func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64, timeout time.Duration, verbose bool, quiet bool) *AI {
 	return &AI{
 		client:       nil,
 		audio:        audio,
@@ -107,6 +109,7 @@ func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64,
 		whisperLimit: whisperLimit,
 		timeout:      timeout,
 		verbose:      verbose,
+		quiet:        quiet,
 		apiKey:       apiKey,
 	}
 }
@@ -140,7 +143,7 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, prog
 		return "", err
 	}
 
-	if ai.verbose {
+	if ai.verbose && !ai.quiet {
 		fmt.Printf("Transcribing audio file: %s\n", audioFile)
 	}
 
@@ -188,7 +191,7 @@ func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, 
 func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []string, progressBar ProgressBar) (string, error) {
 	numChunks := len(chunks)
 
-	if ai.verbose {
+	if ai.verbose && !ai.quiet {
 		fmt.Printf("Transcribing chunks (%d)\n", numChunks)
 	}
 
@@ -218,7 +221,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 			sb.WriteString("\n")
 		}
 
-		if ai.verbose {
+		if ai.verbose && !ai.quiet {
 			fmt.Printf("Transcribed chunk %d/%d\n", i+1, numChunks)
 		}
 	}

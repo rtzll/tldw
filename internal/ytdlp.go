@@ -45,22 +45,24 @@ type YouTube struct {
 	fs             fs.FS
 	transcriptsDir string
 	verbose        bool
+	quiet          bool
 	cmdRunner      CommandRunner
 }
 
 // NewYouTube creates a new YouTube downloader
-func NewYouTube(filesystem fs.FS, transcriptsDir string, verbose bool) *YouTube {
+func NewYouTube(filesystem fs.FS, transcriptsDir string, verbose bool, quiet bool) *YouTube {
 	return &YouTube{
 		fs:             filesystem,
 		transcriptsDir: transcriptsDir,
 		verbose:        verbose,
+		quiet:          quiet,
 		cmdRunner:      &DefaultCommandRunner{},
 	}
 }
 
 // Metadata fetches video details using direct yt-dlp command execution
 func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Println("Extracting video metadata...")
 	}
 
@@ -104,7 +106,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	// Extract subtitle availability information
 	metadata.HasCaptions = extractSubtitleInfo(rawData)
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Println("Metadata extraction completed")
 		fmt.Printf("Title: %s\n", metadata.Title)
 		fmt.Printf("Channel: %s\n", metadata.Channel)
@@ -121,7 +123,7 @@ func (yt *YouTube) Audio(ctx context.Context, youtubeURL string) (string, error)
 
 // AudioWithProgress downloads audio with optional progress tracking
 func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, progressBar ProgressBar) (string, error) {
-	if yt.verbose && progressBar == nil {
+	if yt.verbose && !yt.quiet && progressBar == nil {
 		fmt.Println("Downloading audio...")
 	}
 
@@ -165,7 +167,7 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, pro
 			return "", fmt.Errorf("yt-dlp failed: %w\nOutput: %s", err, string(output))
 		}
 
-		if yt.verbose {
+		if yt.verbose && !yt.quiet {
 			fmt.Println("Audio download completed")
 		}
 	}
@@ -219,7 +221,7 @@ func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL strin
 
 // Transcript fetches subtitles using yt-dlp
 func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Println("Downloading subtitles...")
 	}
 
@@ -259,7 +261,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 		return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
 	}
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Println("Subtitle download completed")
 	}
 
@@ -274,7 +276,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 		return fmt.Errorf("no subtitle files found after download")
 	}
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Printf("Found %d subtitle file(s): %v\n", len(files), files)
 	}
 
@@ -288,7 +290,7 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string) (stri
 		return "", fmt.Errorf("extracting video ID: %w", err)
 	}
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Printf("Looking for existing transcript for video ID: %s\n", youtubeID)
 	}
 
@@ -299,14 +301,14 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string) (stri
 	}
 
 	if transcriptPath != "" {
-		if yt.verbose {
+		if yt.verbose && !yt.quiet {
 			fmt.Printf("Found existing transcript: %s\n", transcriptPath)
 		}
 		// Process the existing transcript
 		return yt.processSrtTranscript(transcriptPath)
 	}
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Println("No existing transcript found, attempting to download...")
 	}
 
@@ -326,7 +328,7 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string) (stri
 		return "", fmt.Errorf("downloaded transcript not found")
 	}
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Printf("Successfully downloaded transcript: %s\n", transcriptPath)
 	}
 
@@ -367,7 +369,7 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 
 // processSrtTranscript converts SRT to clean plain text
 func (yt *YouTube) processSrtTranscript(filePath string) (string, error) {
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Printf("Processing SRT transcript: %s\n", filePath)
 	}
 
@@ -463,7 +465,7 @@ type PlaylistInfo struct {
 
 // PlaylistVideoURLs fetches all video URLs from a YouTube playlist
 func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Println("Extracting playlist video URLs...")
 	}
 
@@ -503,7 +505,7 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 		}
 	}
 
-	if yt.verbose {
+	if yt.verbose && !yt.quiet {
 		fmt.Printf("Found %d videos in playlist: %s\n", len(videoURLs), playlist.Title)
 	}
 

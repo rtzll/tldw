@@ -30,9 +30,9 @@ func NewApp(config *Config, options ...AppOption) *App {
 	ui := NewUIManager(config.Verbose, config.Quiet)
 
 	app := &App{
-		youtube:       NewYouTube(os.DirFS("."), config.TranscriptsDir, config.Verbose),
+		youtube:       NewYouTube(os.DirFS("."), config.TranscriptsDir, config.Verbose, config.Quiet),
 		audio:         audio,
-		ai:            NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose),
+		ai:            NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet),
 		promptManager: promptManager,
 		config:        config,
 		ui:            ui,
@@ -78,6 +78,27 @@ func (app *App) SetPromptManager(pm *PromptManager) {
 // shouldShowStatus returns true if status indicators should be shown
 func (app *App) shouldShowStatus() bool {
 	return !app.config.Quiet
+}
+
+// Printf outputs formatted text only if not in quiet mode
+func (app *App) Printf(format string, args ...interface{}) {
+	if !app.config.Quiet {
+		fmt.Printf(format, args...)
+	}
+}
+
+// Println outputs text only if not in quiet mode
+func (app *App) Println(args ...interface{}) {
+	if !app.config.Quiet {
+		fmt.Println(args...)
+	}
+}
+
+// VerbosePrintf outputs formatted text only if verbose mode is enabled and not quiet
+func (app *App) VerbosePrintf(format string, args ...interface{}) {
+	if app.config.Verbose && !app.config.Quiet {
+		fmt.Printf(format, args...)
+	}
 }
 
 // newSpinner returns a spinner if status should be shown, otherwise a no-op progress bar
@@ -202,9 +223,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 	// Check for cached transcript
 	if FileExists(existingTranscriptPath) {
 		spinner.Describe("Found cached transcript")
-		if app.config.Verbose {
-			fmt.Printf("Found existing transcript for %s\n", youtubeID)
-		}
+		app.VerbosePrintf("Found existing transcript for %s\n", youtubeID)
 		text, err := os.ReadFile(existingTranscriptPath)
 		if err != nil {
 			return "", fmt.Errorf("reading existing transcript: %w", err)
@@ -228,9 +247,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 
 	spinner.Describe("Fetching YouTube captions...")
 	spinner.Advance()
-	if app.config.Verbose {
-		fmt.Printf("Fetching transcript for %s\n", youtubeID)
-	}
+	app.VerbosePrintf("Fetching transcript for %s\n", youtubeID)
 
 	// Try to get transcript from YouTube (we know captions exist)
 	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL)
@@ -238,9 +255,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 		// Only retry if it's a download failure (not other errors like invalid ID)
 		if errors.Is(err, ErrDownloadFailed) {
 			spinner.Describe("Download failed, retrying...")
-			if app.config.Verbose {
-				fmt.Println("Download failed, retrying in 1 second...")
-			}
+			app.VerbosePrintf("Download failed, retrying in 1 second...\n")
 			time.Sleep(1 * time.Second)
 
 			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL)
@@ -277,18 +292,14 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 	// Try to load cached metadata first
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		spinner.Describe("Found cached metadata")
-		if app.config.Verbose {
-			fmt.Printf("Using cached metadata for %s\n", youtubeID)
-		}
+		app.VerbosePrintf("Using cached metadata for %s\n", youtubeID)
 		return cachedMetadata, nil
 	}
 
 	// No cache found, fetch from YouTube
 	spinner.Describe("Fetching video metadata from YouTube...")
 	spinner.Advance()
-	if app.config.Verbose {
-		fmt.Printf("Fetching fresh metadata for %s\n", youtubeID)
-	}
+	app.VerbosePrintf("Fetching fresh metadata for %s\n", youtubeID)
 
 	metadata, err := app.youtube.Metadata(ctx, youtubeURL)
 	if err != nil {
@@ -299,9 +310,7 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 	spinner.Describe("Caching metadata...")
 	spinner.Advance()
 	if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
-		if app.config.Verbose {
-			fmt.Printf("Warning: Failed to cache metadata: %v\n", err)
-		}
+		app.VerbosePrintf("Warning: Failed to cache metadata: %v\n", err)
 	}
 
 	return metadata, nil
@@ -324,9 +333,7 @@ func (app *App) GenerateSummaryWithStatus(ctx context.Context, youtubeURL, trans
 	var metadata *VideoMetadata
 	metadata, err := app.Metadata(ctx, youtubeURL)
 	if err != nil {
-		if app.config.Verbose {
-			fmt.Printf("Failed to extract video metadata: %v\n", err)
-		}
+		app.VerbosePrintf("Failed to extract video metadata: %v\n", err)
 	}
 
 	spinner.Describe("Creating prompt...")
@@ -386,7 +393,7 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 	}
 
 	progress.UpdateStatus("Complete")
-	fmt.Println(summary)
+	app.Println(summary)
 	return nil
 }
 
@@ -622,9 +629,7 @@ type VideoTranscript struct {
 
 // SummarizePlaylist summarizes all videos in a YouTube playlist
 func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallbackWhisper bool) error {
-	if app.config.Verbose {
-		fmt.Println("Processing playlist...")
-	}
+	app.VerbosePrintf("Processing playlist...\n")
 
 	// Get playlist information
 	playlistInfo, err := app.youtube.PlaylistVideoURLs(ctx, playlistURL)
@@ -636,7 +641,7 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 		return fmt.Errorf("no videos found in playlist")
 	}
 
-	app.ui.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
+	app.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
 
 	// Create progress bar - clean display without confusing rate for cached content
 	bar := app.ui.NewProgressBar(len(playlistInfo.VideoURLs), "Gathering transcripts")
@@ -657,14 +662,10 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 
 		if FileExists(existingTranscriptPath) {
 			// Use cached transcript
-			if app.config.Verbose {
-				fmt.Printf("\nUsing cached transcript for video %d\n", i+1)
-			}
+			app.VerbosePrintf("\nUsing cached transcript for video %d\n", i+1)
 			text, readErr := os.ReadFile(existingTranscriptPath)
 			if readErr != nil {
-				if app.config.Verbose {
-					fmt.Printf("Failed to read cached transcript: %v\n", readErr)
-				}
+				app.VerbosePrintf("Failed to read cached transcript: %v\n", readErr)
 				skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d (cache read error)", i+1))
 				continue
 			}
@@ -673,15 +674,11 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 			// Try to load cached metadata
 			cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir)
 			if err != nil {
-				if app.config.Verbose {
-					fmt.Printf("No cached metadata for video %d, fetching...\n", i+1)
-				}
+				app.VerbosePrintf("No cached metadata for video %d, fetching...\n", i+1)
 				// Fetch and cache metadata
 				metadata, err = app.Metadata(ctx, videoURL)
 				if err != nil {
-					if app.config.Verbose {
-						fmt.Printf("Failed to get metadata for video %d: %v\n", i+1, err)
-					}
+					app.VerbosePrintf("Failed to get metadata for video %d: %v\n", i+1, err)
 					// Use placeholder metadata as fallback
 					metadata = &VideoMetadata{
 						Title:       fmt.Sprintf("Video %d", i+1),
@@ -692,16 +689,12 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 				} else {
 					// Save metadata to cache for next time
 					if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
-						if app.config.Verbose {
-							fmt.Printf("Warning: Failed to cache metadata: %v\n", err)
-						}
+						app.VerbosePrintf("Warning: Failed to cache metadata: %v\n", err)
 					}
 				}
 			} else {
 				// Use cached metadata
-				if app.config.Verbose {
-					fmt.Printf("Using cached metadata for video %d: %s\n", i+1, cachedMetadata.Title)
-				}
+				app.VerbosePrintf("Using cached metadata for video %d: %s\n", i+1, cachedMetadata.Title)
 				metadata = cachedMetadata
 			}
 		} else {
@@ -709,9 +702,7 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 			var err error
 			metadata, err = app.Metadata(ctx, videoURL)
 			if err != nil {
-				if app.config.Verbose {
-					fmt.Printf("Failed to get metadata for video %d: %v\n", i+1, err)
-				}
+				app.VerbosePrintf("Failed to get metadata for video %d: %v\n", i+1, err)
 				skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d (metadata error)", i+1))
 				continue
 			}
@@ -733,18 +724,14 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 				// Try audio transcription
 				audioFile, err := app.DownloadAudio(ctx, videoURL)
 				if err != nil {
-					if app.config.Verbose {
-						fmt.Printf("Failed to download audio for video %d: %v\n", i+1, err)
-					}
+					app.VerbosePrintf("Failed to download audio for video %d: %v\n", i+1, err)
 					skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s (audio error)", i+1, metadata.Title))
 					continue
 				}
 
 				transcript, err = app.TranscribeAudio(ctx, audioFile)
 				if err != nil {
-					if app.config.Verbose {
-						fmt.Printf("Failed to transcribe audio for video %d: %v\n", i+1, err)
-					}
+					app.VerbosePrintf("Failed to transcribe audio for video %d: %v\n", i+1, err)
 					skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s (transcription error)", i+1, metadata.Title))
 					continue
 				}
@@ -780,11 +767,11 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	}
 
 	// Report processing results
-	app.ui.Printf("Successfully processed %d out of %d videos\n", len(videoTranscripts), len(playlistInfo.VideoURLs))
+	app.Printf("Successfully processed %d out of %d videos\n", len(videoTranscripts), len(playlistInfo.VideoURLs))
 	if len(skippedVideos) > 0 {
-		app.ui.Printf("Skipped %d videos:\n", len(skippedVideos))
+		app.Printf("Skipped %d videos:\n", len(skippedVideos))
 		for _, skipped := range skippedVideos {
-			app.ui.Printf("  - %s\n", skipped)
+			app.Printf("  - %s\n", skipped)
 		}
 	}
 
@@ -792,15 +779,13 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	combinedTranscript := app.buildPlaylistTranscript(playlistInfo.Title, videoTranscripts)
 
 	// Generate summary using the combined transcript - use single workflow spinner
-	if app.shouldShowStatus() {
-		app.ui.Printf("Generating playlist summary with OpenAI...\n")
-	}
+	app.Printf("Generating playlist summary with OpenAI...\n")
 	summary, err := app.GenerateSummary(ctx, playlistURL, combinedTranscript)
 	if err != nil {
 		return fmt.Errorf("generating playlist summary: %w", err)
 	}
 
-	fmt.Println(summary)
+	app.Println(summary)
 	return nil
 }
 
