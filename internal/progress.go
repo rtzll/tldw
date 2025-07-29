@@ -3,8 +3,10 @@ package internal
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -44,6 +46,12 @@ type StandardUIManager struct {
 }
 
 func NewUIManager(verbose, quiet bool) UIManager {
+	// If stdout is not a TTY (e.g., output is piped), treat it as quiet mode
+	// to prevent spinners and progress bars from appearing in piped output
+	if !isatty.IsTerminal(os.Stdout.Fd()) {
+		quiet = true
+	}
+	
 	return &StandardUIManager{
 		verbose: verbose,
 		quiet:   quiet,
