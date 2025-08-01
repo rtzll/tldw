@@ -15,11 +15,16 @@ type MCPServer struct {
 	mcpServer *server.MCPServer
 }
 
+const mcpServerVersion = "1.0.0"
+
 // NewMCPServer creates a new MCP server instance
 func NewMCPServer(app *App) *MCPServer {
+	InitMCPLogging(app.config)
+	MCPLogInfo("Initializing MCP server (tldw-server v%s)", mcpServerVersion)
+
 	mcpServer := server.NewMCPServer(
 		"tldw-server",
-		"1.0.0",
+		mcpServerVersion,
 		server.WithToolCapabilities(true),
 	)
 
@@ -28,9 +33,8 @@ func NewMCPServer(app *App) *MCPServer {
 		mcpServer: mcpServer,
 	}
 
-	// Register tools
 	s.registerTools()
-
+	MCPLogInfo("MCP server initialized with %d tools", 3)
 	return s
 }
 
@@ -69,14 +73,21 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, request mcp.CallToolR
 	// Extract URL from arguments
 	url, err := request.RequireString("url")
 	if err != nil {
+		MCPLogError("Tool: get_youtube_metadata - missing or invalid URL parameter")
 		return mcp.NewToolResultError("url parameter is required and must be a string"), nil
 	}
+
+	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
 
 	// Get metadata from YouTube
 	metadata, err := s.app.youtube.Metadata(ctx, url)
 	if err != nil {
+		MCPLogError("Tool: get_youtube_metadata failed - %v", err)
 		return mcp.NewToolResultErrorFromErr("metadata error", err), nil
 	}
+
+	MCPLogInfo("Tool: get_youtube_metadata succeeded - Title: %s, Duration: %.0fs, HasCaptions: %t",
+		metadata.Title, metadata.Duration, metadata.HasCaptions)
 
 	// Format metadata as text
 	var buf strings.Builder
@@ -110,14 +121,20 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, request mcp.CallToo
 	// Extract URL from arguments
 	url, err := request.RequireString("url")
 	if err != nil {
+		MCPLogError("Tool: get_youtube_transcript - missing or invalid URL parameter")
 		return mcp.NewToolResultError("url parameter is required and must be a string"), nil
 	}
+
+	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
 
 	// Try to get transcript from YouTube captions only (no Whisper fallback)
 	transcript, err := s.app.GetTranscript(ctx, url)
 	if err != nil {
+		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
 		return mcp.NewToolResultErrorFromErr("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid)", err), nil
 	}
+
+	MCPLogInfo("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{mcp.NewTextContent(transcript)},
@@ -129,19 +146,28 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 	// Extract URL from arguments
 	url, err := request.RequireString("url")
 	if err != nil {
+		MCPLogError("Tool: transcribe_youtube_whisper - missing or invalid URL parameter")
 		return mcp.NewToolResultError("url parameter is required and must be a string"), nil
 	}
+
+	MCPLogInfo("Tool: transcribe_youtube_whisper - URL: %s (PAID OPERATION)", url)
 
 	// Download audio and transcribe using Whisper (this costs money)
 	audioFile, err := s.app.DownloadAudio(ctx, url)
 	if err != nil {
+		MCPLogError("Tool: transcribe_youtube_whisper - audio download failed: %v", err)
 		return mcp.NewToolResultErrorFromErr("failed to download audio", err), nil
 	}
 
+	MCPLogInfo("Tool: transcribe_youtube_whisper - audio downloaded, starting transcription")
+
 	transcript, err := s.app.TranscribeAudio(ctx, audioFile)
 	if err != nil {
+		MCPLogError("Tool: transcribe_youtube_whisper - transcription failed: %v", err)
 		return mcp.NewToolResultErrorFromErr("failed to transcribe audio with Whisper", err), nil
 	}
+
+	MCPLogInfo("Tool: transcribe_youtube_whisper succeeded - transcript length: %d characters", len(transcript))
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{mcp.NewTextContent(transcript)},
@@ -151,16 +177,27 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 // Start starts the MCP server using the specified transport
 func (s *MCPServer) Start(ctx context.Context, transport string, port int) error {
 	if transport == "http" {
+		MCPLogInfo("Starting MCP server with HTTP transport on port %d", port)
 		httpServer := server.NewStreamableHTTPServer(s.mcpServer)
 		addr := fmt.Sprintf(":%d", port)
 		if ctx.Err() != nil {
+			MCPLogError("Context cancelled before HTTP server start")
 			return ctx.Err()
 		}
-		return httpServer.Start(addr)
+		err := httpServer.Start(addr)
+		if err != nil {
+			MCPLogError("HTTP server failed to start: %v", err)
+		}
+		return err
 	}
 
 	// Default to stdio transport
-	return server.ServeStdio(s.mcpServer)
+	MCPLogInfo("Starting MCP server with stdio transport")
+	err := server.ServeStdio(s.mcpServer)
+	if err != nil {
+		MCPLogError("Stdio server failed: %v", err)
+	}
+	return err
 }
 
 // GetServer returns the underlying MCP server for advanced configuration

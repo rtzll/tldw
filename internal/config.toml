@@ -16,6 +16,11 @@ whisper_timeout = "10m" # Timeout for Whisper transcription
 # Verbose mode (enables additional logging)
 verbose = false
 
+# MCP logging (optional, for debugging MCP server issues)
+# Logs MCP tool calls and errors to ~/.cache/tldw/mcp.log
+# Can also be enabled with TLDW_MCP_LOG=true environment variable
+mcp_log_enabled = false
+
 # Custom prompt template (optional)
 # By default, uses the embedded prompt.txt template
 # Can be a file path or a prompt string

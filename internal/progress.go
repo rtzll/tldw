@@ -51,7 +51,7 @@ func NewUIManager(verbose, quiet bool) UIManager {
 	if !isatty.IsTerminal(os.Stdout.Fd()) {
 		quiet = true
 	}
-	
+
 	return &StandardUIManager{
 		verbose: verbose,
 		quiet:   quiet,

@@ -53,6 +53,7 @@ type Config struct {
 	Quiet          bool
 	OpenAIAPIKey   string
 	Prompt         string
+	MCPLogEnabled  bool
 
 	// Fixed XDG paths (not configurable)
 	ConfigDir string
@@ -136,6 +137,7 @@ func InitConfig() (*Config, error) {
 	v.SetDefault("verbose", false)
 	v.SetDefault("quiet", false)
 	v.SetDefault("prompt", "") // if empty will use default prompt template
+	v.SetDefault("mcp_log_enabled", false)
 
 	// Set config name and paths
 	v.SetConfigName("config")
@@ -150,6 +152,9 @@ func InitConfig() (*Config, error) {
 
 	// Special case for OpenAI API Key - check both Viper and direct env var
 	_ = v.BindEnv("openai_api_key", "OPENAI_API_KEY")
+
+	// Special case for MCP logging - check environment variable
+	_ = v.BindEnv("mcp_log_enabled", "TLDW_MCP_LOG")
 
 	// Read config file
 	if err := v.ReadInConfig(); err != nil {
@@ -169,6 +174,7 @@ func InitConfig() (*Config, error) {
 		Quiet:          v.GetBool("quiet"),
 		OpenAIAPIKey:   v.GetString("openai_api_key"),
 		Prompt:         v.GetString("prompt"),
+		MCPLogEnabled:  v.GetBool("mcp_log_enabled"),
 
 		// Fixed XDG paths
 		ConfigDir: configDir,
