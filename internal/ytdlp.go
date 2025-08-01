@@ -68,10 +68,12 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 
 	// Build arguments for yt-dlp command
 	args := []string{
-		"--skip-download",    // Don't download the actual video
-		"--dump-single-json", // Get all info in JSON format
-		"--no-playlist",      // Don't process playlists
-		"-q",                 // Quiet mode
+		"--skip-download",       // Don't download the actual video
+		"--dump-single-json",    // Get all info in JSON format
+		"--no-playlist",         // Don't process playlists
+		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
+		"--max-sleep-interval", "3",
+		"-q", // Quiet mode
 		youtubeURL,
 	}
 
@@ -246,8 +248,10 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 		"--write-auto-subs", // Enable auto-generated subtitle writing
 		"--sub-langs", "en", // Download all English subtitle variants
 		"--convert-subs", "srt", // Convert subtitles to SRT format
-		"--skip-download", // Skip downloading the video
-		"-o", outputPath,  // Output to XDG cache directory
+		"--skip-download",       // Skip downloading the video
+		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
+		"--max-sleep-interval", "3",
+		"-o", outputPath, // Output to XDG cache directory
 		youtubeURL, // The YouTube URL or ID
 	}
 
@@ -471,9 +475,11 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 
 	// Build arguments for yt-dlp command
 	args := []string{
-		"--flat-playlist",    // Only extract video URLs, don't download
-		"--dump-single-json", // Get all info in JSON format
-		"-q",                 // Quiet mode
+		"--flat-playlist",       // Only extract video URLs, don't download
+		"--dump-single-json",    // Get all info in JSON format
+		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
+		"--max-sleep-interval", "3",
+		"-q", // Quiet mode
 		playlistURL,
 	}
 
