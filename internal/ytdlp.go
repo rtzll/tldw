@@ -73,6 +73,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 		"--no-playlist",         // Don't process playlists
 		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
 		"--max-sleep-interval", "3",
+		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
 		"-q", // Quiet mode
 		youtubeURL,
 	}
@@ -251,6 +252,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 		"--skip-download",       // Skip downloading the video
 		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
 		"--max-sleep-interval", "3",
+		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
 		"-o", outputPath, // Output to XDG cache directory
 		youtubeURL, // The YouTube URL or ID
 	}
@@ -479,6 +481,7 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 		"--dump-single-json",    // Get all info in JSON format
 		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
 		"--max-sleep-interval", "3",
+		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
 		"-q", // Quiet mode
 		playlistURL,
 	}
