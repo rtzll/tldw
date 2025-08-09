@@ -634,10 +634,12 @@ func ValidateModel(model string) error {
 }
 
 // EnsureDirs creates directories if needed
-func EnsureDirs(dir ...string) error {
-	for _, dir := range dir {
-		if !FileExists(dir) {
-			return os.MkdirAll(dir, 0755)
+func EnsureDirs(dirs ...string) error {
+	for _, d := range dirs {
+		if !FileExists(d) {
+			if err := os.MkdirAll(d, 0755); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
