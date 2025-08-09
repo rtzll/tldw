@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/muesli/termenv"
+	"github.com/openai/openai-go/v2"
 	"golang.org/x/term"
 )
 
@@ -622,15 +623,29 @@ func ValidateModel(model string) error {
 	if !modelNamePattern.MatchString(model) {
 		return fmt.Errorf("invalid model format: %s (allowed: lowercase letters, digits, dot, underscore, hyphen)", model)
 	}
-	supportedModels := []string{
-		"gpt-4o", "gpt-4o-mini", "o4-mini", "gpt-4.1-nano",
-		// GPT-5 family (from openai-go v2)
-		"gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-chat-latest",
+	supported := []openai.ChatModel{
+		openai.ChatModelO1,
+		openai.ChatModelO1Mini,
+		openai.ChatModelO3,
+		openai.ChatModelO3Mini,
+		openai.ChatModelO4Mini,
+		openai.ChatModelGPT4o,
+		openai.ChatModelGPT4oMini,
+		openai.ChatModelGPT4_1,
+		openai.ChatModelGPT4_1Mini,
+		openai.ChatModelGPT4_1Nano,
+		openai.ChatModelGPT5,
+		openai.ChatModelGPT5Mini,
+		openai.ChatModelGPT5Nano,
 	}
-	if slices.Contains(supportedModels, model) {
+	if slices.Contains(supported, openai.ChatModel(model)) {
 		return nil
 	}
-	return fmt.Errorf("unsupported model: %s (supported: %s)", model, strings.Join(supportedModels, ", "))
+	supportedStrings := make([]string, 0, len(supported))
+	for _, m := range supported {
+		supportedStrings = append(supportedStrings, string(m))
+	}
+	return fmt.Errorf("unsupported model: %s (supported: %s)", model, strings.Join(supportedStrings, ", "))
 }
 
 // EnsureDirs creates directories if needed
