@@ -102,7 +102,7 @@ tldw paths  # Shows config, data, and cache directories
 
 ```toml
 openai_api_key = "your-key"
-tldr_model = "gpt-4.1-nano"
+tldr_model = "gpt-5-nano"
 prompt = "tldr: {{.Transcript}}"
 ```
 
@@ -113,6 +113,6 @@ summary prompt.
 
 ```bash
 export OPENAI_API_KEY="your-key"
-export TLDW_TLDR_MODEL="gpt-4.1-nano"
+export TLDW_TLDR_MODEL="gpt-5-nano"
 export TLDW_PROMPT="tldr: {{.Transcript}}"
 ```

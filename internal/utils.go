@@ -34,6 +34,10 @@ var (
 
 	// Command pattern: short strings that might be commands
 	commandPattern = regexp.MustCompile(`^[a-z]{2,15}$`)
+
+	// Model name pattern: allow lowercase letters, digits, dots, underscores, hyphens
+	// Examples: gpt-4o, gpt-4.1-nano, gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-chat-latest
+	modelNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,}$`)
 )
 
 // Content type detection functions
@@ -612,7 +616,17 @@ func FileExists(filename string) bool {
 
 // ValidateModel checks if the model is supported
 func ValidateModel(model string) error {
-	supportedModels := []string{"gpt-4o", "gpt-4o-mini", "o4-mini", "gpt-4.1-nano"}
+	if strings.TrimSpace(model) == "" {
+		return fmt.Errorf("model cannot be empty")
+	}
+	if !modelNamePattern.MatchString(model) {
+		return fmt.Errorf("invalid model format: %s (allowed: lowercase letters, digits, dot, underscore, hyphen)", model)
+	}
+	supportedModels := []string{
+		"gpt-4o", "gpt-4o-mini", "o4-mini", "gpt-4.1-nano",
+		// GPT-5 family (from openai-go v2)
+		"gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-chat-latest",
+	}
 	if slices.Contains(supportedModels, model) {
 		return nil
 	}

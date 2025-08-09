@@ -130,7 +130,7 @@ func InitConfig() (*Config, error) {
 	v := viper.New()
 
 	// Set default values for configurable settings
-	v.SetDefault("tldr_model", "gpt-4.1-nano")
+	v.SetDefault("tldr_model", "gpt-5-nano")
 	v.SetDefault("transcripts_dir", transcriptsDir)
 	v.SetDefault("summary_timeout", 2*time.Minute)
 	v.SetDefault("whisper_timeout", 10*time.Minute)

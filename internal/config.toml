@@ -3,7 +3,7 @@
 openai_api_key = ""
 
 # Model used for generating summaries
-tldr_model = "gpt-4.1-nano"
+tldr_model = "gpt-5-nano"
 
 # Custom transcripts directory (optional)
 # By default, transcripts are stored in the XDG data directory

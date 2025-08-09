@@ -8,7 +8,7 @@ require (
 	github.com/mark3labs/mcp-go v0.37.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/muesli/termenv v0.16.0
-	github.com/openai/openai-go v1.12.0
+	github.com/openai/openai-go/v2 v2.0.1
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1

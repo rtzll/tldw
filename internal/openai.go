@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/v2"
+	"github.com/openai/openai-go/v2/option"
 )
 
 // OpenAIClientInterface defines the interface for OpenAI client operations
@@ -44,20 +44,7 @@ func (c *OpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (
 
 // CreateChatCompletion implements the chat completion method
 func (c *OpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
-	// Map model string to openai model constant
-	var oaiModel openai.ChatModel
-	switch model {
-	case "gpt-4o":
-		oaiModel = openai.ChatModelGPT4o
-	case "gpt-4o-mini":
-		oaiModel = openai.ChatModelGPT4oMini
-	case "o4-mini":
-		oaiModel = openai.ChatModelO4Mini
-	case "gpt-4.1-nano":
-		oaiModel = openai.ChatModelGPT4_1Nano
-	default:
-		return "", fmt.Errorf("unsupported model: %s", model)
-	}
+	oaiModel := openai.ChatModel(model)
 
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: oaiModel,
