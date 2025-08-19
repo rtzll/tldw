@@ -145,6 +145,10 @@ func (v *VisibleProgressBar) Advance() {
 	v.bar.Add(1)
 }
 
+func (v *VisibleProgressBar) Clear() {
+	v.bar.Clear()
+}
+
 // SilentProgressBar implements a silent progress bar
 type SilentProgressBar struct {
 	bar *progressbar.ProgressBar

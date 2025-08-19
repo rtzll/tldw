@@ -163,6 +163,14 @@ func (wp *WorkflowProgress) Finish() {
 	wp.spinner.Finish()
 }
 
+// PauseForUserInput temporarily clears the spinner (useful before user prompts)
+func (wp *WorkflowProgress) PauseForUserInput() {
+	// Clear the spinner display without finishing it
+	if visibleSpinner, ok := wp.spinner.(*VisibleProgressBar); ok {
+		visibleSpinner.Clear()
+	}
+}
+
 // DownloadAudio downloads audio from a YouTube URL and returns the file path
 func (app *App) DownloadAudio(ctx context.Context, youtubeURL string) (string, error) {
 	return app.DownloadAudioWithProgress(ctx, youtubeURL, false)
@@ -332,7 +340,12 @@ func (app *App) GenerateSummaryWithStatus(ctx context.Context, youtubeURL, trans
 		return "", fmt.Errorf("transcript is empty")
 	}
 
-	spinner := app.newSpinner("Generating summary with OpenAI...")
+	var spinner ProgressBar
+	if showStatus {
+		spinner = app.newSpinner("Generating summary with OpenAI...")
+	} else {
+		spinner = &NoOpProgressBar{}
+	}
 	defer spinner.Finish()
 
 	var metadata *VideoMetadata
@@ -397,7 +410,7 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 		return err
 	}
 
-	progress.UpdateStatus("Complete")
+	progress.Finish() // Finish spinner before printing result
 	app.PrintResult(summary)
 	return nil
 }
@@ -405,11 +418,29 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 // getTranscriptWithFallback attempts to get transcript, with optional Whisper fallback
 func (app *App) getTranscriptWithFallback(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
 	showStatus := app.shouldShowStatus()
-	transcript, err := app.GetTranscriptWithStatus(ctx, youtubeURL, showStatus)
-	if err != nil {
-		return app.handleTranscriptFallback(ctx, youtubeURL, fallbackWhisper)
+
+	// First try to get transcript - we need to handle spinner management ourselves
+	// to avoid interference with user prompts
+	if showStatus {
+		spinner := app.newSpinner("Checking for existing captions...")
+		defer spinner.Finish()
+
+		transcript, err := app.GetTranscript(ctx, youtubeURL) // Use non-status version
+		if err != nil {
+			// Clear spinner display before user prompt
+			if visibleSpinner, ok := spinner.(*VisibleProgressBar); ok {
+				visibleSpinner.Clear()
+			}
+			return app.handleTranscriptFallback(ctx, youtubeURL, fallbackWhisper)
+		}
+		return transcript, nil
+	} else {
+		transcript, err := app.GetTranscript(ctx, youtubeURL)
+		if err != nil {
+			return app.handleTranscriptFallback(ctx, youtubeURL, fallbackWhisper)
+		}
+		return transcript, nil
 	}
-	return transcript, nil
 }
 
 // getTranscriptWithFallbackNoStatus attempts to get transcript without showing status (used when parent has spinner)
@@ -594,6 +625,7 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 // handleWhisperFallbackWithProgressManager handles Whisper fallback with progress manager
 func (app *App) handleWhisperFallbackWithProgressManager(ctx context.Context, youtubeURL string, fallbackWhisper bool, progress *WorkflowProgress) (string, error) {
 	if !fallbackWhisper {
+		progress.PauseForUserInput() // Clear spinner display before user prompt
 		if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
 			return "", fmt.Errorf("transcription declined by user")
 		}
