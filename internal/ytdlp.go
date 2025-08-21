@@ -245,16 +245,16 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 
 	// Build arguments for yt-dlp command
 	args := []string{
-		"--write-subs",      // Enable subtitle writing
-		"--write-auto-subs", // Enable auto-generated subtitle writing
+		"--write-subs",            // Enable subtitle writing
+		"--write-auto-subs",       // Enable auto-generated subtitle writing
 		"--sub-langs", "en.*,all", // Prioritize English variants, fallback to any available language
 		"--convert-subs", "srt", // Convert subtitles to SRT format
 		"--skip-download",       // Skip downloading the video
-		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
-		"--max-sleep-interval", "3",
-		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
+		"--sleep-interval", "2", // Sleep 2-5 seconds between requests to avoid rate limiting
+		"--max-sleep-interval", "5",
+		"--extractor-args", "youtube:player_client=web,ios",
 		"-o", outputPath, // Output to XDG cache directory
-		youtubeURL, // The YouTube URL or ID
+		youtubeURL,
 	}
 
 	// Run the command
