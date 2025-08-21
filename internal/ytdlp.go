@@ -247,7 +247,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 	args := []string{
 		"--write-subs",      // Enable subtitle writing
 		"--write-auto-subs", // Enable auto-generated subtitle writing
-		"--sub-langs", "en", // Download all English subtitle variants
+		"--sub-langs", "en.*,all", // Prioritize English variants, fallback to any available language
 		"--convert-subs", "srt", // Convert subtitles to SRT format
 		"--skip-download",       // Skip downloading the video
 		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
