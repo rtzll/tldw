@@ -77,7 +77,7 @@ func (app *App) SetPromptManager(pm *PromptManager) {
 
 // shouldShowStatus returns true if status indicators should be shown
 func (app *App) shouldShowStatus() bool {
-	return !app.config.Quiet
+	return !app.config.Quiet && !app.config.Verbose
 }
 
 // Printf outputs formatted text only if not in quiet mode
