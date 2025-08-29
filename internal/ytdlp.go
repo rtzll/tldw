@@ -243,11 +243,11 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 	// Set output path in cache directory
 	outputPath := filepath.Join(cacheDir, "%(id)s")
 
-	// Build arguments for yt-dlp command
+	// Try simple "en" first to avoid multiple downloads and rate limiting
 	args := []string{
-		"--write-subs",        // Enable subtitle writing
-		"--write-auto-subs",   // Enable auto-generated subtitle writing
-		"--sub-langs", "en.*", // Choose any English variant
+		"--write-subs",      // Enable subtitle writing
+		"--write-auto-subs", // Enable auto-generated subtitle writing
+		"--sub-langs", "en", // Try simple English first
 		"--convert-subs", "srt", // Convert subtitles to SRT format
 		"--skip-download",       // Skip downloading the video
 		"--sleep-interval", "2", // Sleep 2-5 seconds between requests to avoid rate limiting
@@ -261,10 +261,29 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
 	if err != nil {
 		if yt.verbose {
-			fmt.Printf("Subtitle download error: %v\n", err)
+			fmt.Printf("Simple 'en' subtitle download error: %v\n", err)
 			fmt.Printf("Command output: %s\n", string(output))
 		}
-		return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+
+		// Check if this was a rate limit error - if so, don't retry with more variants
+		if strings.Contains(string(output), "429") || strings.Contains(string(output), "Too Many Requests") {
+			return fmt.Errorf("%w: rate limited", ErrDownloadFailed)
+		}
+
+		// If not rate limited, try with more English variants
+		if yt.verbose && !yt.quiet {
+			fmt.Println("Trying fallback with multiple English variants...")
+		}
+
+		args[4] = "en.*" // Change from "en" to "en.*"
+		output, err = yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+		if err != nil {
+			if yt.verbose {
+				fmt.Printf("Fallback subtitle download error: %v\n", err)
+				fmt.Printf("Command output: %s\n", string(output))
+			}
+			return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+		}
 	}
 
 	if yt.verbose && !yt.quiet {
