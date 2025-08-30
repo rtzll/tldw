@@ -1,6 +1,6 @@
 module github.com/rtzll/tldw
 
-go 1.24.3
+go 1.25
 
 require (
 	github.com/adrg/xdg v0.5.3
