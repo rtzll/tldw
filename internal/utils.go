@@ -718,27 +718,6 @@ func IsValidPlaylistID(id string) bool {
 }
 
 // getPlaylistID extracts playlist ID from YouTube URLs
-func getPlaylistID(youtubeURL string) (string, error) {
-	youtubeURL = strings.TrimSpace(youtubeURL)
-	u, err := url.Parse(youtubeURL)
-	if err != nil {
-		return "", fmt.Errorf("parsing URL: %w", err)
-	}
-
-	if u.Host != "www.youtube.com" && u.Host != "youtube.com" {
-		return "", fmt.Errorf("not a YouTube URL: %s", youtubeURL)
-	}
-
-	if list := u.Query().Get("list"); list != "" {
-		if IsValidPlaylistID(list) {
-			return list, nil
-		}
-		return "", fmt.Errorf("invalid playlist ID format: %s", list)
-	}
-
-	return "", fmt.Errorf("could not extract playlist ID from URL: %s", youtubeURL)
-}
-
 // ValidateOpenAIAPIKey checks if the OpenAI API key is set and returns a standardized error if not
 func ValidateOpenAIAPIKey(apiKey string) error {
 	if apiKey == "" {

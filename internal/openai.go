@@ -167,10 +167,6 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, prog
 }
 
 // processAudioChunks transcribes audio chunks sequentially
-func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
-	return ai.processAudioChunksWithProgress(ctx, chunks, nil)
-}
-
 // processAudioChunksWithProgress transcribes audio chunks with optional progress bar
 // NOTE: tried to do it concurrently but one chunk returned broken transcript
 // not use if issue with the invocation of the API or just a glitch

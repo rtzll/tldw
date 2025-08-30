@@ -114,11 +114,6 @@ func (app *App) newSpinner(description string) ProgressBar {
 	return &NoOpProgressBar{}
 }
 
-// newAutoSpinner returns an auto-advancing spinner if status should be shown
-func (app *App) newAutoSpinner(description string) AutoSpinner {
-	return NewAutoAdvancingSpinner(description, !app.shouldShowStatus())
-}
-
 // WorkflowProgress manages all console output for a single workflow
 type WorkflowProgress struct {
 	spinner ProgressBar
@@ -415,93 +410,6 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 	return nil
 }
 
-// getTranscriptWithFallback attempts to get transcript, with optional Whisper fallback
-func (app *App) getTranscriptWithFallback(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
-	showStatus := app.shouldShowStatus()
-
-	// First try to get transcript - we need to handle spinner management ourselves
-	// to avoid interference with user prompts
-	if showStatus {
-		spinner := app.newSpinner("Checking for existing captions...")
-		defer spinner.Finish()
-
-		transcript, err := app.GetTranscript(ctx, youtubeURL) // Use non-status version
-		if err != nil {
-			// Clear spinner display before user prompt
-			if visibleSpinner, ok := spinner.(*VisibleProgressBar); ok {
-				visibleSpinner.Clear()
-			}
-			return app.handleTranscriptFallback(ctx, youtubeURL, fallbackWhisper)
-		}
-		return transcript, nil
-	} else {
-		transcript, err := app.GetTranscript(ctx, youtubeURL)
-		if err != nil {
-			return app.handleTranscriptFallback(ctx, youtubeURL, fallbackWhisper)
-		}
-		return transcript, nil
-	}
-}
-
-// getTranscriptWithFallbackNoStatus attempts to get transcript without showing status (used when parent has spinner)
-func (app *App) getTranscriptWithFallbackNoStatus(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
-	transcript, err := app.GetTranscript(ctx, youtubeURL)
-	if err != nil {
-		return app.handleTranscriptFallbackNoStatus(ctx, youtubeURL, fallbackWhisper)
-	}
-	return transcript, nil
-}
-
-// handleTranscriptFallback handles the Whisper transcription fallback
-func (app *App) handleTranscriptFallback(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
-	if !fallbackWhisper {
-		if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
-			return "", fmt.Errorf("transcription declined by user")
-		}
-	}
-
-	transcript, err := app.transcribeVideoWithStatusSpinner(ctx, youtubeURL, app.shouldShowStatus())
-	if err != nil {
-		return "", err
-	}
-
-	// Save transcript for future use
-	_, youtubeID := ParseArg(youtubeURL)
-	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
-
-	return transcript, nil
-}
-
-// handleTranscriptFallbackNoStatus handles the Whisper transcription fallback without status
-func (app *App) handleTranscriptFallbackNoStatus(ctx context.Context, youtubeURL string, fallbackWhisper bool) (string, error) {
-	if !fallbackWhisper {
-		if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
-			return "", fmt.Errorf("transcription declined by user")
-		}
-	}
-
-	// Download and transcribe without status since parent manages spinner
-	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
-	if err != nil {
-		return "", err
-	}
-
-	transcript, err := app.TranscribeAudio(ctx, audioFile)
-	if err != nil {
-		return "", err
-	}
-
-	// Save transcript for future use
-	_, youtubeID := ParseArg(youtubeURL)
-	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
-
-	return transcript, nil
-}
-
 // getTranscriptWithProgressManager gets transcript using consolidated progress manager
 func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL string, fallbackWhisper bool, progress *WorkflowProgress) (string, error) {
 	_, youtubeID := ParseArg(youtubeURL)
@@ -745,7 +653,7 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 			}
 
 			// Try to get transcript from YouTube
-			transcript, err := app.GetTranscript(ctx, videoURL)
+			transcript, err := app.GetTranscript(ctx, videoURL) //nolint:staticcheck,ineffassign // transcript is used later or reassigned in error case
 			if err != nil {
 				// If transcript fails and user wants fallback, ask per video
 				if !fallbackWhisper {
@@ -854,50 +762,3 @@ func (app *App) buildPlaylistTranscript(playlistTitle string, videos []VideoTran
 	return sb.String()
 }
 
-// transcribeVideoWithStatusSpinner handles the complete transcription workflow with status spinners
-func (app *App) transcribeVideoWithStatusSpinner(ctx context.Context, youtubeURL string, showStatus bool) (string, error) {
-	if !showStatus || app.config.Verbose {
-		// Fall back to non-status approach for verbose mode
-		audioFile, err := app.DownloadAudio(ctx, youtubeURL)
-		if err != nil {
-			return "", err
-		}
-		return app.TranscribeAudio(ctx, audioFile)
-	}
-
-	// Create auto-advancing spinner - much cleaner!
-	spinner := app.newAutoSpinner("Downloading audio...")
-	defer spinner.Finish()
-
-	// Stage 1: Download audio
-	audioFile, err := app.DownloadAudio(ctx, youtubeURL)
-	if err != nil {
-		return "", err
-	}
-
-	// Stage 2: Transcription - just update description, spinner keeps advancing
-	spinner.Describe("Transcribing with OpenAI Whisper...")
-
-	transcript, err := app.TranscribeAudio(ctx, audioFile)
-	if err != nil {
-		return "", err
-	}
-
-	// Stage 3: Complete
-	spinner.Describe("Transcription complete")
-	return transcript, nil
-}
-
-// downloadAudioWithSharedProgress downloads audio and updates a shared progress bar within specified range
-func (app *App) downloadAudioWithSharedProgress(ctx context.Context, youtubeURL string, bar ProgressBar, startPercent, endPercent int) (string, error) {
-	if err := EnsureDirs(app.config.CacheDir); err != nil {
-		return "", fmt.Errorf("creating cache directory: %w", err)
-	}
-
-	return app.youtube.AudioWithSharedProgress(ctx, youtubeURL, bar, startPercent, endPercent)
-}
-
-// transcribeAudioWithSharedProgress transcribes audio and updates a shared progress bar within specified range
-func (app *App) transcribeAudioWithSharedProgress(ctx context.Context, audioFile string, bar ProgressBar, startPercent, endPercent int) (string, error) {
-	return app.ai.TranscribeWithSharedProgress(ctx, audioFile, bar, startPercent, endPercent)
-}

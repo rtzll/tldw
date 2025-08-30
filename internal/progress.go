@@ -130,7 +130,7 @@ type VisibleProgressBar struct {
 }
 
 func (v *VisibleProgressBar) Set(current int) {
-	v.bar.Set(current)
+	_ = v.bar.Set(current)
 }
 
 func (v *VisibleProgressBar) Describe(description string) {
@@ -138,15 +138,15 @@ func (v *VisibleProgressBar) Describe(description string) {
 }
 
 func (v *VisibleProgressBar) Finish() {
-	v.bar.Finish()
+	_ = v.bar.Finish()
 }
 
 func (v *VisibleProgressBar) Advance() {
-	v.bar.Add(1)
+	_ = v.bar.Add(1)
 }
 
 func (v *VisibleProgressBar) Clear() {
-	v.bar.Clear()
+	_ = v.bar.Clear()
 }
 
 // SilentProgressBar implements a silent progress bar
@@ -155,7 +155,7 @@ type SilentProgressBar struct {
 }
 
 func (s *SilentProgressBar) Set(current int) {
-	s.bar.Set(current)
+	_ = s.bar.Set(current)
 }
 
 func (s *SilentProgressBar) Describe(description string) {
@@ -163,11 +163,11 @@ func (s *SilentProgressBar) Describe(description string) {
 }
 
 func (s *SilentProgressBar) Finish() {
-	s.bar.Finish()
+	_ = s.bar.Finish()
 }
 
 func (s *SilentProgressBar) Advance() {
-	s.bar.Add(1)
+	_ = s.bar.Add(1)
 }
 
 // NoOpProgressBar implements a no-operation progress bar for when status is disabled
@@ -229,13 +229,13 @@ func (a *AutoAdvancingSpinner) autoAdvance() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			a.bar.Add(1)
+			_ = a.bar.Add(1)
 		}
 	}
 }
 
 func (a *AutoAdvancingSpinner) Set(current int) {
-	a.bar.Set(current)
+	_ = a.bar.Set(current)
 }
 
 func (a *AutoAdvancingSpinner) Describe(description string) {
@@ -253,7 +253,7 @@ func (a *AutoAdvancingSpinner) Stop() {
 
 func (a *AutoAdvancingSpinner) Finish() {
 	a.Stop()
-	a.bar.Finish()
+	_ = a.bar.Finish()
 }
 
 // NoOpAutoSpinner implements AutoSpinner as no-ops
