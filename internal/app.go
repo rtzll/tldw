@@ -761,4 +761,3 @@ func (app *App) buildPlaylistTranscript(playlistTitle string, videos []VideoTran
 
 	return sb.String()
 }
-
