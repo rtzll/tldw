@@ -692,14 +692,19 @@ func IsLikelyCommand(arg string) bool {
 
 // IsValidPlaylistID checks if a string looks like a valid YouTube playlist ID
 func IsValidPlaylistID(id string) bool {
-	// Common playlist prefixes: PL, UU, FL, RD, etc.
-	playlistPrefixes := []string{"PL", "UU", "FL", "RD", "LP", "BP", "QL", "SV", "EL", "LL", "UC"}
+	// For PL-prefixed playlists (regular user playlists), use the same logic as detectPlaylistID
+	if strings.HasPrefix(id, "PL") {
+		return detectPlaylistID(id)
+	}
 
-	// Check for standard prefixes with appropriate lengths
-	for _, prefix := range playlistPrefixes {
+	// Common non-PL playlist prefixes: UU, FL, RD, etc.
+	nonPLPrefixes := []string{"UU", "FL", "RD", "LP", "BP", "QL", "SV", "EL", "LL", "UC"}
+
+	// Check for standard non-PL prefixes with appropriate lengths
+	for _, prefix := range nonPLPrefixes {
 		if strings.HasPrefix(id, prefix) {
-			// Standard playlist IDs are typically 16, 32, or 34 characters
-			if len(id) == 18 || len(id) == 34 || len(id) == 36 {
+			// Standard playlist IDs are typically 18, 34 characters total
+			if len(id) == 18 || len(id) == 34 {
 				matched, _ := regexp.MatchString(`^[A-Za-z0-9_-]+$`, id)
 				return matched
 			}
