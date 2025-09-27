@@ -545,10 +545,12 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 
 // extractSubtitleInfo extracts subtitle availability from yt-dlp JSON output
 func extractSubtitleInfo(rawData map[string]any) bool {
-	// Check for manual subtitles
+	// Check for manual subtitles (excluding live_chat which is not actual captions)
 	if subtitles, ok := rawData["subtitles"].(map[string]any); ok && subtitles != nil {
-		if len(subtitles) > 0 {
-			return true
+		for lang := range subtitles {
+			if lang != "live_chat" {
+				return true
+			}
 		}
 	}
 
