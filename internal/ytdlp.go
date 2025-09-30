@@ -222,6 +222,19 @@ func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL strin
 	return outputFile, nil
 }
 
+const subLangsFlag = "--sub-langs"
+
+// setSubLangsArg updates the value that follows the --sub-langs flag in-place
+func setSubLangsArg(args []string, value string) error {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == subLangsFlag {
+			args[i+1] = value
+			return nil
+		}
+	}
+	return fmt.Errorf("sub-langs flag %q not found", subLangsFlag)
+}
+
 // Transcript fetches subtitles using yt-dlp
 func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 	if yt.verbose && !yt.quiet {
@@ -275,7 +288,9 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 			fmt.Println("Trying fallback with multiple English variants...")
 		}
 
-		args[4] = "en.*" // Change from "en" to "en.*"
+		if err := setSubLangsArg(args, "en.*,en"); err != nil {
+			return fmt.Errorf("configuring fallback subtitle languages: %w", err)
+		}
 		output, err = yt.cmdRunner.Run(ctx, "yt-dlp", args...)
 		if err != nil {
 			if yt.verbose {
