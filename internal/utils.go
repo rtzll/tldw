@@ -81,7 +81,7 @@ func detectCommand(s string) bool {
 
 	// Check against known commands and common command patterns
 	knownCommands := []string{
-		"help", "version", "transcribe", "metadata", "mcp",
+		"help", "version", "transcribe", "cp", "metadata", "mcp",
 		"config", "paths", "init", "list", "show", "get", "set",
 		"run", "start", "stop", "status", "info", "debug",
 	}

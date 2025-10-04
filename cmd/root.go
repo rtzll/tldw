@@ -73,7 +73,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		if parsed.Error != nil {
 			// Handle command-like inputs with suggestions
 			if parsed.ContentType == internal.ContentTypeCommand {
-				availableCommands := []string{"mcp", "transcribe", "version", "paths", "help"}
+				availableCommands := []string{"mcp", "transcribe", "cp", "version", "paths", "help"}
 				suggestion := parsed.SuggestCorrection(availableCommands)
 				return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
 			}

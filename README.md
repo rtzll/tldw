@@ -52,6 +52,10 @@ tldw transcribe "https://youtu.be/tAP1eZYEuKA"
 tldw transcribe tAP1eZYEuKA -o transcript.txt  # Save to file
 tldw transcribe tAP1eZYEuKA --fallback-whisper # Use Whisper if video has no captions
 
+# Copy transcript to clipboard
+tldw cp "https://youtu.be/tAP1eZYEuKA"
+tldw cp tAP1eZYEuKA --fallback-whisper        # Whisper fallback supported
+
 # Generate summary (requires API key)
 tldw "https://youtu.be/tAP1eZYEuKA"
 tldw tAP1eZYEuKA -m gpt-4o-mini -p "tldr: {{.Transcript}}"

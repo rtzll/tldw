@@ -25,36 +25,12 @@ var transcribeCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app := internal.NewApp(config)
-		youtubeURL, _ := internal.ParseArg(args[0])
 
-		// Try to get transcript first
-		transcript, err := app.GetTranscript(cmd.Context(), youtubeURL)
+		transcript, err := fetchTranscript(cmd, app, args[0])
 		if err != nil {
-			// Check if fallback to Whisper is allowed
-			fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-			if !fallbackWhisper {
-				return err
-			}
-
-			// Download audio and transcribe with Whisper
-			audioFile, err := app.DownloadAudio(cmd.Context(), youtubeURL)
-			if err != nil {
-				return err
-			}
-
-			transcript, err = app.TranscribeAudio(cmd.Context(), audioFile)
-			if err != nil {
-				return err
-			}
-
-			// Save transcript for future use
-			_, youtubeID := internal.ParseArg(youtubeURL)
-			if err := internal.SaveTranscript(youtubeID, transcript, config.TranscriptsDir); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-			}
+			return err
 		}
 
-		// Handle output flag
 		outputFile, _ := cmd.Flags().GetString("output")
 		if outputFile != "" {
 			return os.WriteFile(outputFile, []byte(transcript), 0644)
