@@ -213,12 +213,17 @@ func (app *App) TranscribeAudioWithProgress(ctx context.Context, audioFile strin
 
 // GetTranscript gets transcript from YouTube (cached or downloaded)
 func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, error) {
-	return app.GetTranscriptWithStatus(ctx, youtubeURL, false)
+	return app.GetTranscriptWithStatus(ctx, youtubeURL, app.shouldShowStatus())
 }
 
 // GetTranscriptWithStatus gets transcript with optional status spinner
 func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, showStatus bool) (string, error) {
-	spinner := app.newSpinner("Checking for existing captions...")
+	var spinner ProgressBar
+	if showStatus {
+		spinner = app.newSpinner("Checking for existing captions...")
+	} else {
+		spinner = &NoOpProgressBar{}
+	}
 	defer spinner.Finish()
 
 	if err := EnsureDirs(app.config.TranscriptsDir); err != nil {
@@ -287,12 +292,17 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 
 // Metadata gets metadata from YouTube (cached or fresh)
 func (app *App) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
-	return app.MetadataWithStatus(ctx, youtubeURL, false)
+	return app.MetadataWithStatus(ctx, youtubeURL, app.shouldShowStatus())
 }
 
 // MetadataWithStatus gets metadata with optional status spinner
 func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showStatus bool) (*VideoMetadata, error) {
-	spinner := app.newSpinner("Fetching video metadata...")
+	var spinner ProgressBar
+	if showStatus {
+		spinner = app.newSpinner("Fetching video metadata...")
+	} else {
+		spinner = &NoOpProgressBar{}
+	}
 	defer spinner.Finish()
 
 	_, youtubeID := ParseArg(youtubeURL)
