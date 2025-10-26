@@ -265,7 +265,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string) error {
 		"--skip-download",       // Skip downloading the video
 		"--sleep-interval", "2", // Sleep 2-5 seconds between requests to avoid rate limiting
 		"--max-sleep-interval", "5",
-		"--extractor-args", "youtube:player_client=web,ios",
+		"--extractor-args", "youtube:player_client=web,android,-tv",
 		"-o", outputPath, // Output to XDG cache directory
 		youtubeURL,
 	}
