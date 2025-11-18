@@ -279,14 +279,6 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 		}
 	}
 
-	spinner.Describe("Saving transcript...")
-	spinner.Advance()
-
-	// Save transcript for future use
-	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
-
 	return transcript, nil
 }
 
@@ -468,12 +460,6 @@ func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL
 		if err != nil || transcript == "" {
 			return "", fmt.Errorf("no transcript available for %s", youtubeID)
 		}
-	}
-
-	// Save transcript
-	progress.UpdateStatus("Saving transcript...")
-	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
-		progress.Log("Warning: %v\n", err)
 	}
 
 	return transcript, nil
