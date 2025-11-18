@@ -318,7 +318,7 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 
 	_, youtubeID := ParseArg(youtubeURL)
 
-	// Check in-memory cache first
+	// In-memory cache first
 	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
 		if showStatus {
 			spinner.Describe("Using in-memory metadata")
@@ -327,7 +327,7 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 		return cachedMetadata, nil
 	}
 
-	// Try to load cached metadata first
+	// On-disk cache next
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		spinner.Describe("Found cached metadata")
 		app.VerbosePrintf("Using cached metadata for %s\n", youtubeID)
@@ -541,7 +541,7 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 		return cachedMetadata, nil
 	}
 
-	// Try cached metadata first
+	// On-disk cache next
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		progress.Log("Using cached metadata for %s\n", youtubeID)
 		app.setCachedMetadata(youtubeID, cachedMetadata)
