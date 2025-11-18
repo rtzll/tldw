@@ -553,7 +553,7 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	}, nil
 }
 
-// captionsAvailable returns true if either manual or automatic captions exist
+// captionsAvailable returns true if either manual or automatic captions exist.
 func captionsAvailable(subtitles, autoCaptions map[string]any) bool {
 	// Manual subtitles (excluding live_chat which is not actual captions)
 	if len(subtitles) > 0 {

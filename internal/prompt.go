@@ -9,7 +9,7 @@ import (
 	"text/template"
 )
 
-// PromptData for template injection
+// PromptData supplies template fields.
 type PromptData struct {
 	Title       string
 	Channel     string
@@ -17,7 +17,7 @@ type PromptData struct {
 	Transcript  string
 }
 
-// PromptManager handles loading and processing prompt templates
+// PromptManager handles loading and processing prompt templates.
 type PromptManager struct {
 	promptFile   string
 	promptString string
@@ -30,7 +30,7 @@ func NewPromptManager(configDir, promptSetting string) *PromptManager {
 		configDir: configDir,
 	}
 
-	// Configure prompt based on config setting
+	// Configure prompt based on config setting.
 	if promptSetting != "" {
 		if IsLikelyFilePath(promptSetting) && FileExists(promptSetting) {
 			pm.promptFile = promptSetting
@@ -42,18 +42,18 @@ func NewPromptManager(configDir, promptSetting string) *PromptManager {
 	return pm
 }
 
-// CreatePrompt builds a prompt from a transcript and metadata
+// CreatePrompt builds a prompt from a transcript and metadata.
 func (pm *PromptManager) CreatePrompt(transcript string, metadata *VideoMetadata) (string, error) {
 	var tmplContent string
 
 	if pm.promptString != "" {
-		// Use custom prompt string
+		// Use custom prompt string.
 		tmplContent = pm.promptString
 	} else {
-		// Use prompt file (custom or default from config directory)
+		// Use prompt file (custom or default from config directory).
 		promptFile := pm.promptFile
 		if promptFile == "" {
-			// Use default prompt from config directory
+			// Use default prompt from config directory.
 			promptFile = filepath.Join(pm.configDir, "prompt.txt")
 		}
 
@@ -67,7 +67,7 @@ func (pm *PromptManager) CreatePrompt(transcript string, metadata *VideoMetadata
 	return pm.buildPromptFromTemplate(tmplContent, transcript, metadata)
 }
 
-// buildPromptFromTemplate builds the AI prompt from template content
+// buildPromptFromTemplate builds the AI prompt from template content.
 func (pm *PromptManager) buildPromptFromTemplate(templateContent, transcript string, metadata *VideoMetadata) (string, error) {
 	// Parse the template
 	tmpl, err := template.New("prompt").Parse(templateContent)

@@ -129,34 +129,34 @@ func InitConfig() (*Config, error) {
 	// Initialize viper
 	v := viper.New()
 
-	// Set default values for configurable settings
+	// Set default values for configurable settings.
 	v.SetDefault("tldr_model", "gpt-5-nano")
 	v.SetDefault("transcripts_dir", transcriptsDir)
 	v.SetDefault("summary_timeout", 2*time.Minute)
 	v.SetDefault("whisper_timeout", 10*time.Minute)
 	v.SetDefault("verbose", false)
 	v.SetDefault("quiet", false)
-	v.SetDefault("prompt", "") // if empty will use default prompt template
+	v.SetDefault("prompt", "") // empty => use default prompt template
 	v.SetDefault("mcp_log_enabled", false)
 
-	// Set config name and paths
+	// Set config name and paths.
 	v.SetConfigName("config")
 	v.SetConfigType("toml")
 	v.AddConfigPath(configDir)
 	v.AddConfigPath(".")
 
-	// Environment variables
+	// Environment variables.
 	v.SetEnvPrefix("TLDW")
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer("_", "_"))
 
-	// Special case for OpenAI API Key - check both Viper and direct env var
+	// Special case for OpenAI API Key - check both Viper and direct env var.
 	_ = v.BindEnv("openai_api_key", "OPENAI_API_KEY")
 
-	// Special case for MCP logging - check environment variable
+	// Special case for MCP logging - check environment variable.
 	_ = v.BindEnv("mcp_log_enabled", "TLDW_MCP_LOG")
 
-	// Read config file
+	// Read config file.
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			fmt.Fprintf(os.Stderr, "Warning: Error reading config file: %v\n", err)
@@ -165,7 +165,7 @@ func InitConfig() (*Config, error) {
 
 	// Create config struct from viper
 	config := &Config{
-		// User configurable settings
+		// User configurable settings.
 		TLDRModel:      v.GetString("tldr_model"),
 		TranscriptsDir: v.GetString("transcripts_dir"),
 		SummaryTimeout: v.GetDuration("summary_timeout"),
@@ -176,7 +176,7 @@ func InitConfig() (*Config, error) {
 		Prompt:         v.GetString("prompt"),
 		MCPLogEnabled:  v.GetBool("mcp_log_enabled"),
 
-		// Fixed XDG paths
+		// Fixed XDG paths.
 		ConfigDir: configDir,
 		DataDir:   dataDir,
 		CacheDir:  cacheDir,
