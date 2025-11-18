@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,8 @@ type App struct {
 	promptManager *PromptManager
 	config        *Config
 	ui            UIManager
+	metadataCache map[string]*VideoMetadata
+	metadataMu    sync.RWMutex
 }
 
 // NewApp initializes the application
@@ -36,6 +39,7 @@ func NewApp(config *Config, options ...AppOption) *App {
 		promptManager: promptManager,
 		config:        config,
 		ui:            ui,
+		metadataCache: make(map[string]*VideoMetadata),
 	}
 
 	// Apply any custom options
@@ -135,6 +139,21 @@ func (app *App) newWorkflowProgress(initialDescription string) *WorkflowProgress
 		verbose: app.config.Verbose,
 		quiet:   app.config.Quiet,
 	}
+}
+
+// getCachedMetadata returns metadata from the in-memory cache if available
+func (app *App) getCachedMetadata(id string) (*VideoMetadata, bool) {
+	app.metadataMu.RLock()
+	defer app.metadataMu.RUnlock()
+	metadata, ok := app.metadataCache[id]
+	return metadata, ok
+}
+
+// setCachedMetadata stores metadata in the in-memory cache
+func (app *App) setCachedMetadata(id string, metadata *VideoMetadata) {
+	app.metadataMu.Lock()
+	defer app.metadataMu.Unlock()
+	app.metadataCache[id] = metadata
 }
 
 // UpdateStatus updates the workflow status (replaces all spinner.Describe calls)
@@ -299,10 +318,20 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 
 	_, youtubeID := ParseArg(youtubeURL)
 
+	// Check in-memory cache first
+	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
+		if showStatus {
+			spinner.Describe("Using in-memory metadata")
+		}
+		app.VerbosePrintf("Using in-memory metadata for %s\n", youtubeID)
+		return cachedMetadata, nil
+	}
+
 	// Try to load cached metadata first
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		spinner.Describe("Found cached metadata")
 		app.VerbosePrintf("Using cached metadata for %s\n", youtubeID)
+		app.setCachedMetadata(youtubeID, cachedMetadata)
 		return cachedMetadata, nil
 	}
 
@@ -322,6 +351,7 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 	if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
 		app.VerbosePrintf("Warning: Failed to cache metadata: %v\n", err)
 	}
+	app.setCachedMetadata(youtubeID, metadata)
 
 	return metadata, nil
 }
@@ -505,9 +535,16 @@ func (app *App) generateSummaryWithProgressManager(ctx context.Context, youtubeU
 func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL string, progress *WorkflowProgress) (*VideoMetadata, error) {
 	_, youtubeID := ParseArg(youtubeURL)
 
+	// In-memory cache first
+	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
+		progress.Log("Using in-memory metadata for %s\n", youtubeID)
+		return cachedMetadata, nil
+	}
+
 	// Try cached metadata first
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		progress.Log("Using cached metadata for %s\n", youtubeID)
+		app.setCachedMetadata(youtubeID, cachedMetadata)
 		return cachedMetadata, nil
 	}
 
@@ -522,6 +559,7 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 	if err := SaveMetadata(youtubeID, metadata, app.config.TranscriptsDir); err != nil {
 		progress.Log("Warning: Failed to cache metadata: %v\n", err)
 	}
+	app.setCachedMetadata(youtubeID, metadata)
 
 	return metadata, nil
 }

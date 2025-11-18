@@ -88,26 +88,21 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 		return nil, fmt.Errorf("extracting video metadata: %w", err)
 	}
 
-	// Parse the JSON output into a raw map first to extract subtitle info
-	var rawData map[string]any
-	if err := json.Unmarshal(output, &rawData); err != nil {
+	// Parse JSON once to populate metadata and caption availability
+	var raw struct {
+		VideoMetadata
+		Subtitles         map[string]any `json:"subtitles"`
+		AutomaticCaptions map[string]any `json:"automatic_captions"`
+	}
+	if err := json.Unmarshal(output, &raw); err != nil {
 		if yt.verbose {
 			fmt.Printf("Failed to parse metadata JSON: %v\n", err)
 		}
 		return nil, fmt.Errorf("parsing video metadata: %w", err)
 	}
 
-	// Parse the JSON output into our struct
-	var metadata VideoMetadata
-	if err := json.Unmarshal(output, &metadata); err != nil {
-		if yt.verbose {
-			fmt.Printf("Failed to parse metadata JSON: %v\n", err)
-		}
-		return nil, fmt.Errorf("parsing video metadata: %w", err)
-	}
-
-	// Extract subtitle availability information
-	metadata.HasCaptions = extractSubtitleInfo(rawData)
+	raw.VideoMetadata.HasCaptions = captionsAvailable(raw.Subtitles, raw.AutomaticCaptions)
+	metadata := raw.VideoMetadata
 
 	if yt.verbose && !yt.quiet {
 		fmt.Println("Metadata extraction completed")
@@ -558,10 +553,10 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	}, nil
 }
 
-// extractSubtitleInfo extracts subtitle availability from yt-dlp JSON output
-func extractSubtitleInfo(rawData map[string]any) bool {
-	// Check for manual subtitles (excluding live_chat which is not actual captions)
-	if subtitles, ok := rawData["subtitles"].(map[string]any); ok && subtitles != nil {
+// captionsAvailable returns true if either manual or automatic captions exist
+func captionsAvailable(subtitles, autoCaptions map[string]any) bool {
+	// Manual subtitles (excluding live_chat which is not actual captions)
+	if len(subtitles) > 0 {
 		for lang := range subtitles {
 			if lang != "live_chat" {
 				return true
@@ -569,11 +564,9 @@ func extractSubtitleInfo(rawData map[string]any) bool {
 		}
 	}
 
-	// Check for automatic captions
-	if autoCaptions, ok := rawData["automatic_captions"].(map[string]any); ok && autoCaptions != nil {
-		if len(autoCaptions) > 0 {
-			return true
-		}
+	// Automatic captions
+	if len(autoCaptions) > 0 {
+		return true
 	}
 
 	return false
