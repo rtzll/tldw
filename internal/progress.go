@@ -18,11 +18,11 @@ type UIManager interface {
 	NewSpinner(description string) ProgressBar
 
 	// Verbose output
-	Verbose(format string, args ...interface{})
+	Verbose(format string, args ...any)
 
 	// Status messages
-	Printf(format string, args ...interface{})
-	Println(args ...interface{})
+	Printf(format string, args ...any)
+	Println(args ...any)
 }
 
 // ProgressBar interface abstracts progress bar operations
@@ -105,20 +105,20 @@ func (ui *StandardUIManager) NewSpinner(description string) ProgressBar {
 }
 
 // Verbose Output Methods
-func (ui *StandardUIManager) Verbose(format string, args ...interface{}) {
+func (ui *StandardUIManager) Verbose(format string, args ...any) {
 	if ui.verbose {
 		fmt.Printf(format, args...)
 	}
 }
 
 // Status Message Methods
-func (ui *StandardUIManager) Printf(format string, args ...interface{}) {
+func (ui *StandardUIManager) Printf(format string, args ...any) {
 	if !ui.quiet {
 		fmt.Printf(format, args...)
 	}
 }
 
-func (ui *StandardUIManager) Println(args ...interface{}) {
+func (ui *StandardUIManager) Println(args ...any) {
 	if !ui.quiet {
 		fmt.Println(args...)
 	}

@@ -85,26 +85,26 @@ func (app *App) shouldShowStatus() bool {
 }
 
 // Printf outputs formatted text only if not in quiet mode
-func (app *App) Printf(format string, args ...interface{}) {
+func (app *App) Printf(format string, args ...any) {
 	if !app.config.Quiet {
 		fmt.Printf(format, args...)
 	}
 }
 
 // Println outputs text only if not in quiet mode
-func (app *App) Println(args ...interface{}) {
+func (app *App) Println(args ...any) {
 	if !app.config.Quiet {
 		fmt.Println(args...)
 	}
 }
 
 // PrintResult outputs the final result - always shows
-func (app *App) PrintResult(args ...interface{}) {
+func (app *App) PrintResult(args ...any) {
 	fmt.Println(args...)
 }
 
 // VerbosePrintf outputs formatted text only if verbose mode is enabled and not quiet
-func (app *App) VerbosePrintf(format string, args ...interface{}) {
+func (app *App) VerbosePrintf(format string, args ...any) {
 	if app.config.Verbose && !app.config.Quiet {
 		fmt.Printf(format, args...)
 	}
@@ -166,7 +166,7 @@ func (wp *WorkflowProgress) UpdateStatus(description string) {
 }
 
 // Log outputs verbose information (replaces all fmt.Printf calls)
-func (wp *WorkflowProgress) Log(format string, args ...interface{}) {
+func (wp *WorkflowProgress) Log(format string, args ...any) {
 	if wp.verbose {
 		fmt.Printf(format, args...)
 	}

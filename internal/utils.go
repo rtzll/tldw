@@ -129,10 +129,8 @@ func isLikelyYouTubeChannelHandle(s string) bool {
 		"user", "admin", "system", "server", "client", "local",
 	}
 
-	for _, word := range commonWords {
-		if word == strings.ToLower(handle) {
-			return false
-		}
+	if slices.Contains(commonWords, strings.ToLower(handle)) {
+		return false
 	}
 
 	// Apply stricter rules for longer handles without numbers
@@ -182,13 +180,7 @@ func isCommonWordPattern(s string) bool {
 		"exampletext", "sampledata", "placeholder", "randomtext",
 	}
 
-	for _, pattern := range commonPatterns {
-		if pattern == s {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(commonPatterns, s)
 }
 
 // detectContentType determines the most likely content type for a string
