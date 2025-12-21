@@ -734,29 +734,31 @@ func SaveTranscript(youtubeID, transcript, transcriptsDir string) error {
 
 // CachedVideoMetadata extends VideoMetadata with cache information
 type CachedVideoMetadata struct {
-	Title       string         `json:"title"`
-	Description string         `json:"description"`
-	Channel     string         `json:"channel"`
-	Duration    float64        `json:"duration"`
-	Categories  []string       `json:"categories"`
-	Tags        []string       `json:"tags"`
-	Chapters    []VideoChapter `json:"chapters"`
-	HasCaptions bool           `json:"has_captions"`
-	CachedAt    time.Time      `json:"cached_at"`
+	Title            string         `json:"title"`
+	Description      string         `json:"description"`
+	Channel          string         `json:"channel"`
+	Duration         float64        `json:"duration"`
+	Categories       []string       `json:"categories"`
+	Tags             []string       `json:"tags"`
+	Chapters         []VideoChapter `json:"chapters"`
+	HasCaptions      bool           `json:"has_captions"`
+	CaptionLanguages []string       `json:"caption_languages"`
+	CachedAt         time.Time      `json:"cached_at"`
 }
 
 // SaveMetadata saves video metadata to cache as JSON
 func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir string) error {
 	cached := CachedVideoMetadata{
-		Title:       metadata.Title,
-		Description: metadata.Description,
-		Channel:     metadata.Channel,
-		Duration:    metadata.Duration,
-		Categories:  metadata.Categories,
-		Tags:        metadata.Tags,
-		Chapters:    metadata.Chapters,
-		HasCaptions: metadata.HasCaptions,
-		CachedAt:    time.Now(),
+		Title:            metadata.Title,
+		Description:      metadata.Description,
+		Channel:          metadata.Channel,
+		Duration:         metadata.Duration,
+		Categories:       metadata.Categories,
+		Tags:             metadata.Tags,
+		Chapters:         metadata.Chapters,
+		HasCaptions:      metadata.HasCaptions,
+		CaptionLanguages: metadata.CaptionLanguages,
+		CachedAt:         time.Now(),
 	}
 
 	metadataPath := filepath.Join(transcriptsDir, youtubeID+".meta.json")
@@ -791,13 +793,14 @@ func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error
 	}
 
 	return &VideoMetadata{
-		Title:       cached.Title,
-		Description: cached.Description,
-		Channel:     cached.Channel,
-		Duration:    cached.Duration,
-		Categories:  cached.Categories,
-		Tags:        cached.Tags,
-		Chapters:    cached.Chapters,
-		HasCaptions: cached.HasCaptions,
+		Title:            cached.Title,
+		Description:      cached.Description,
+		Channel:          cached.Channel,
+		Duration:         cached.Duration,
+		Categories:       cached.Categories,
+		Tags:             cached.Tags,
+		Chapters:         cached.Chapters,
+		HasCaptions:      cached.HasCaptions,
+		CaptionLanguages: cached.CaptionLanguages,
 	}, nil
 }

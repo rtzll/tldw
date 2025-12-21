@@ -282,7 +282,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 	app.VerbosePrintf("Fetching transcript for %s\n", youtubeID)
 
 	// Try to get transcript from YouTube (we know captions exist)
-	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL)
+	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
 	if err != nil || transcript == "" {
 		// Only retry if it's a download failure (not other errors like invalid ID)
 		if errors.Is(err, ErrDownloadFailed) {
@@ -290,7 +290,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 			app.VerbosePrintf("Download failed, retrying in 1 second...\n")
 			time.Sleep(1 * time.Second)
 
-			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL)
+			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
 		}
 
 		if err != nil || transcript == "" {
@@ -324,6 +324,21 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 			spinner.Describe("Using in-memory metadata")
 		}
 		app.VerbosePrintf("Using in-memory metadata for %s\n", youtubeID)
+		// If captions are known but languages are missing, refresh metadata to capture languages.
+		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
+			if showStatus {
+				spinner.Describe("Refreshing metadata to include caption languages...")
+			}
+			app.VerbosePrintf("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+			refreshed, err := app.youtube.Metadata(ctx, youtubeURL)
+			if err == nil {
+				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
+					app.VerbosePrintf("Warning: Failed to cache refreshed metadata: %v\n", err)
+				}
+				app.setCachedMetadata(youtubeID, refreshed)
+				return refreshed, nil
+			}
+		}
 		return cachedMetadata, nil
 	}
 
@@ -331,6 +346,21 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		spinner.Describe("Found cached metadata")
 		app.VerbosePrintf("Using cached metadata for %s\n", youtubeID)
+		// If captions are known but languages are missing, refresh metadata to capture languages.
+		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
+			if showStatus {
+				spinner.Describe("Refreshing metadata to include caption languages...")
+			}
+			app.VerbosePrintf("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+			refreshed, err := app.youtube.Metadata(ctx, youtubeURL)
+			if err == nil {
+				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
+					app.VerbosePrintf("Warning: Failed to cache refreshed metadata: %v\n", err)
+				}
+				app.setCachedMetadata(youtubeID, refreshed)
+				return refreshed, nil
+			}
+		}
 		app.setCachedMetadata(youtubeID, cachedMetadata)
 		return cachedMetadata, nil
 	}
@@ -477,14 +507,14 @@ func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL
 	progress.UpdateStatus("Fetching YouTube captions...")
 	progress.Log("Fetching transcript for %s\n", youtubeID)
 
-	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL)
+	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
 	if err != nil || transcript == "" {
 		// Retry once if download failed
 		if errors.Is(err, ErrDownloadFailed) {
 			progress.UpdateStatus("Download failed, retrying...")
 			progress.Log("Download failed, retrying in 1 second...\n")
 			time.Sleep(1 * time.Second)
-			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL)
+			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
 		}
 
 		if err != nil || transcript == "" {
@@ -538,12 +568,32 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 	// In-memory cache first.
 	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
 		progress.Log("Using in-memory metadata for %s\n", youtubeID)
+		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
+			progress.Log("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+			if refreshed, err := app.youtube.Metadata(ctx, youtubeURL); err == nil {
+				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
+					progress.Log("Warning: Failed to cache refreshed metadata: %v\n", err)
+				}
+				app.setCachedMetadata(youtubeID, refreshed)
+				return refreshed, nil
+			}
+		}
 		return cachedMetadata, nil
 	}
 
 	// On-disk cache next.
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		progress.Log("Using cached metadata for %s\n", youtubeID)
+		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
+			progress.Log("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+			if refreshed, err := app.youtube.Metadata(ctx, youtubeURL); err == nil {
+				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
+					progress.Log("Warning: Failed to cache refreshed metadata: %v\n", err)
+				}
+				app.setCachedMetadata(youtubeID, refreshed)
+				return refreshed, nil
+			}
+		}
 		app.setCachedMetadata(youtubeID, cachedMetadata)
 		return cachedMetadata, nil
 	}
