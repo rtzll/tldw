@@ -28,6 +28,7 @@ type VideoMetadata struct {
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`
 	Duration         float64        `json:"duration"`
+	Language         string         `json:"language"`
 	Categories       []string       `json:"categories"`
 	Tags             []string       `json:"tags"`
 	Chapters         []VideoChapter `json:"chapters"`
@@ -222,9 +223,12 @@ func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL strin
 }
 
 const (
-	subLangsFlag            = "--sub-langs"
-	englishFallbackSubLangs = "en.*,en"
+	subLangsFlag             = "--sub-langs"
+	englishFallbackSubLangs  = "en.*,en"
+	maxPreferredCaptionLangs = 5
 )
+
+var englishCaptionPreference = []string{"en-US", "en", "en-GB", "en-CA", "en-AU", "en-NZ", "en-orig"}
 
 // setSubLangsArg updates the value that follows the --sub-langs flag in-place
 func setSubLangsArg(args []string, value string) error {
@@ -240,30 +244,17 @@ func setSubLangsArg(args []string, value string) error {
 // buildSubLangs selects the primary --sub-langs value and an optional fallback.
 // The fallback is the broad English wildcard, used when the primary language
 // set does not yield any files.
-func buildSubLangs(preferred []string) (primary string, fallback string) {
+func buildSubLangs(preferred []string, originalLang string) (primary string, fallback string) {
 	if len(preferred) == 0 {
 		return englishFallbackSubLangs, ""
 	}
 
-	seen := make(map[string]struct{})
-	var langs []string
-	for _, lang := range preferred {
-		lang = strings.TrimSpace(lang)
-		if lang == "" || lang == "live_chat" {
-			continue
-		}
-		if _, exists := seen[lang]; exists {
-			continue
-		}
-		seen[lang] = struct{}{}
-		langs = append(langs, lang)
-	}
+	langs := prioritizeCaptionLanguages(preferred, originalLang)
 
 	if len(langs) == 0 {
 		return englishFallbackSubLangs, ""
 	}
 
-	sort.Strings(langs)
 	primary = strings.Join(langs, ",")
 
 	if primary == englishFallbackSubLangs {
@@ -273,9 +264,60 @@ func buildSubLangs(preferred []string) (primary string, fallback string) {
 	return primary, englishFallbackSubLangs
 }
 
+// prioritizeCaptionLanguages deduplicates languages, prefers English variants,
+// and limits the count to avoid enormous --sub-langs lists that can trigger rate limits.
+func prioritizeCaptionLanguages(preferred []string, originalLang string) []string {
+	seen := make(map[string]struct{})
+	var cleaned []string
+
+	for _, lang := range preferred {
+		lang = strings.TrimSpace(lang)
+		if lang == "" || lang == "live_chat" {
+			continue
+		}
+		if _, exists := seen[lang]; exists {
+			continue
+		}
+		seen[lang] = struct{}{}
+		cleaned = append(cleaned, lang)
+	}
+
+	// Put English variants first if present.
+	var ordered []string
+	for _, lang := range englishCaptionPreference {
+		if _, ok := seen[lang]; ok {
+			ordered = append(ordered, lang)
+		}
+	}
+
+	// If we found any English variants, return just the first match to keep
+	// requests minimal.
+	if len(ordered) > 0 {
+		return ordered[:1]
+	}
+
+	// If we have a declared original language and it exists in the captions,
+	// prefer that single language.
+	if originalLang != "" {
+		if _, ok := seen[originalLang]; ok {
+			return []string{originalLang}
+		}
+	}
+
+	// Otherwise, take the first non-English language (if any) to keep the list
+	// to a single entry.
+	for _, lang := range cleaned {
+		ordered = append(ordered, lang)
+		break
+	}
+
+	return ordered
+}
+
 // Transcript fetches subtitles using yt-dlp
 // preferredLangs allows us to target known caption languages (from metadata) instead of hardcoding English.
-func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredLangs []string) error {
+// originalLang is the video's declared language; when English captions are absent we prefer this.
+func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredLangs []string, originalLang string) error {
 	if yt.verbose && !yt.quiet {
 		fmt.Println("Downloading subtitles...")
 	}
@@ -296,7 +338,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 	outputPath := filepath.Join(cacheDir, "%(id)s")
 	pattern := filepath.Join(cacheDir, fmt.Sprintf("%s*.srt", videoID))
 
-	primarySubLangs, fallbackSubLangs := buildSubLangs(preferredLangs)
+	primarySubLangs, fallbackSubLangs := buildSubLangs(preferredLangs, originalLang)
 
 	args := []string{
 		"--write-subs",      // Enable subtitle writing
@@ -417,7 +459,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 }
 
 // FetchTranscript gets a transcript, using cached version if available
-func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLangs []string) (string, error) {
+func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (string, error) {
 	youtubeID, err := getVideoID(youtubeURL)
 	if err != nil {
 		return "", fmt.Errorf("extracting video ID: %w", err)
@@ -446,7 +488,7 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLa
 	}
 
 	// No existing transcript found, try to download one
-	err = yt.Transcript(ctx, youtubeURL, subLangs)
+	err = yt.Transcript(ctx, youtubeURL, subLangs, originalLang)
 	if err != nil {
 		// Preserve the error type for retry logic
 		return "", err

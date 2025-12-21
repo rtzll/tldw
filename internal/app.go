@@ -282,7 +282,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 	app.VerbosePrintf("Fetching transcript for %s\n", youtubeID)
 
 	// Try to get transcript from YouTube (we know captions exist)
-	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
+	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 	if err != nil || transcript == "" {
 		// Only retry if it's a download failure (not other errors like invalid ID)
 		if errors.Is(err, ErrDownloadFailed) {
@@ -290,7 +290,7 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 			app.VerbosePrintf("Download failed, retrying in 1 second...\n")
 			time.Sleep(1 * time.Second)
 
-			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
+			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 		}
 
 		if err != nil || transcript == "" {
@@ -507,14 +507,14 @@ func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL
 	progress.UpdateStatus("Fetching YouTube captions...")
 	progress.Log("Fetching transcript for %s\n", youtubeID)
 
-	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
+	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 	if err != nil || transcript == "" {
 		// Retry once if download failed
 		if errors.Is(err, ErrDownloadFailed) {
 			progress.UpdateStatus("Download failed, retrying...")
 			progress.Log("Download failed, retrying in 1 second...\n")
 			time.Sleep(1 * time.Second)
-			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages)
+			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 		}
 
 		if err != nil || transcript == "" {

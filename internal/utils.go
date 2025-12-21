@@ -738,6 +738,7 @@ type CachedVideoMetadata struct {
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`
 	Duration         float64        `json:"duration"`
+	Language         string         `json:"language"`
 	Categories       []string       `json:"categories"`
 	Tags             []string       `json:"tags"`
 	Chapters         []VideoChapter `json:"chapters"`
@@ -753,6 +754,7 @@ func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir stri
 		Description:      metadata.Description,
 		Channel:          metadata.Channel,
 		Duration:         metadata.Duration,
+		Language:         metadata.Language,
 		Categories:       metadata.Categories,
 		Tags:             metadata.Tags,
 		Chapters:         metadata.Chapters,
@@ -797,6 +799,7 @@ func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error
 		Description:      cached.Description,
 		Channel:          cached.Channel,
 		Duration:         cached.Duration,
+		Language:         cached.Language,
 		Categories:       cached.Categories,
 		Tags:             cached.Tags,
 		Chapters:         cached.Chapters,
