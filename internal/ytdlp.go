@@ -230,6 +230,11 @@ const (
 
 var englishCaptionPreference = []string{"en-US", "en", "en-GB", "en-CA", "en-AU", "en-NZ", "en-orig"}
 
+var (
+	assOverrideTagRegex = regexp.MustCompile(`\{\\[^}]*\}`)
+	htmlTagRegex        = regexp.MustCompile(`<[^>]+>`)
+)
+
 // setSubLangsArg updates the value that follows the --sub-langs flag in-place
 func setSubLangsArg(args []string, value string) error {
 	for i := 0; i < len(args)-1; i++ {
@@ -593,14 +598,31 @@ func parseSRT(content string) []string {
 		if len(blockLines) >= 3 {
 			// Skip sequence number and timestamp, get text lines
 			for i := 2; i < len(blockLines); i++ {
-				if strings.TrimSpace(blockLines[i]) != "" {
-					lines = append(lines, strings.TrimSpace(blockLines[i]))
+				if cleaned := normalizeSubtitleLine(blockLines[i]); cleaned != "" {
+					lines = append(lines, cleaned)
 				}
 			}
 		}
 	}
 
 	return lines
+}
+
+// normalizeSubtitleLine removes subtitle control tokens and normalizes spacing.
+func normalizeSubtitleLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+
+	// ASS/SSA override tags (e.g., {\an8}) and inline escapes can leak into SRT output.
+	line = assOverrideTagRegex.ReplaceAllString(line, " ")
+	line = strings.ReplaceAll(line, `\h`, " ")
+	line = strings.ReplaceAll(line, `\N`, " ")
+	line = strings.ReplaceAll(line, `\n`, " ")
+	line = htmlTagRegex.ReplaceAllString(line, " ")
+
+	return strings.Join(strings.Fields(line), " ")
 }
 
 // removeDuplicates eliminates consecutive repeated lines
