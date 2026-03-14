@@ -20,6 +20,9 @@ export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & Whispe
 - **`transcribe_youtube_whisper`**: Paid Whisper transcription (supports
   playlists)
 
+`get_youtube_transcript` accepts `include_timestamps=true` to return caption
+lines with timestamps when timing data is available.
+
 ### Claude Desktop Setup
 
 **Easy setup:**
@@ -50,6 +53,7 @@ ChatGPT Desktop will support MCP servers in the
 # Get transcript (free with captions)
 tldw transcribe "https://youtu.be/tAP1eZYEuKA"
 tldw transcribe tAP1eZYEuKA -o transcript.txt  # Save to file
+tldw transcribe tAP1eZYEuKA --timestamps       # Include caption timestamps
 tldw transcribe tAP1eZYEuKA --fallback-whisper # Use Whisper if video has no captions
 
 # Copy transcript to clipboard

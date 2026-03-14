@@ -9,6 +9,7 @@ import (
 // AddTranscriptionFlags adds flags related to transcription functionality
 func AddTranscriptionFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("fallback-whisper", false, "Fallback to Whisper if no captions available (costs money)")
+	cmd.Flags().Bool("timestamps", false, "Include timestamps in transcript output when caption timing data is available")
 }
 
 // AddOpenAIFlags adds flags related to OpenAI API functionality

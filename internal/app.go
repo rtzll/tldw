@@ -209,34 +209,89 @@ func (app *App) DownloadAudioWithProgress(ctx context.Context, youtubeURL string
 	return audioFile, nil
 }
 
-// TranscribeAudio transcribes an audio file and returns the transcript
+// TranscribeAudio transcribes an audio file and returns the plain-text transcript.
 func (app *App) TranscribeAudio(ctx context.Context, audioFile string) (string, error) {
 	return app.TranscribeAudioWithProgress(ctx, audioFile, false)
 }
 
-// TranscribeAudioWithProgress transcribes an audio file with optional progress bar
+// TranscribeAudioWithProgress transcribes an audio file with optional progress bar.
 func (app *App) TranscribeAudioWithProgress(ctx context.Context, audioFile string, showProgress bool) (string, error) {
+	transcript, err := app.TranscribeAudioStructuredWithProgress(ctx, audioFile, showProgress)
+	if err != nil {
+		return "", err
+	}
+
+	return transcript.Render(TranscriptRenderFormatPlain)
+}
+
+// TranscribeAudioStructured transcribes an audio file and returns the canonical transcript.
+func (app *App) TranscribeAudioStructured(ctx context.Context, audioFile string) (*Transcript, error) {
+	return app.TranscribeAudioStructuredWithProgress(ctx, audioFile, false)
+}
+
+// TranscribeAudioStructuredWithProgress transcribes an audio file with optional progress bar.
+func (app *App) TranscribeAudioStructuredWithProgress(ctx context.Context, audioFile string, showProgress bool) (*Transcript, error) {
 	var progressBar ProgressBar
 	if showProgress {
 		// Create progress bar through UIManager
 		progressBar = app.ui.NewProgressBar(100, "Transcribing audio") // Will adjust total based on chunks
 	}
 
-	transcript, err := app.ai.TranscribeWithProgress(ctx, audioFile, progressBar)
+	text, err := app.ai.TranscribeWithProgress(ctx, audioFile, progressBar)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return transcript, nil
+	return &Transcript{
+		Source: TranscriptSourceWhisper,
+		Text:   strings.TrimSpace(text),
+	}, nil
 }
 
-// GetTranscript gets transcript from YouTube (cached or downloaded)
+// GetTranscript gets transcript from YouTube (cached or downloaded).
 func (app *App) GetTranscript(ctx context.Context, youtubeURL string) (string, error) {
 	return app.GetTranscriptWithStatus(ctx, youtubeURL, app.shouldShowStatus())
 }
 
-// GetTranscriptWithStatus gets transcript with optional status spinner
+// GetTranscriptWithStatus gets a plain-text transcript with optional status spinner.
 func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, showStatus bool) (string, error) {
+	return app.GetTranscriptOutputWithStatus(ctx, youtubeURL, TranscriptRenderFormatPlain, showStatus)
+}
+
+// GetTranscriptOutput gets a transcript rendered in the requested format.
+func (app *App) GetTranscriptOutput(ctx context.Context, youtubeURL string, format TranscriptRenderFormat) (string, error) {
+	return app.GetTranscriptOutputWithStatus(ctx, youtubeURL, format, app.shouldShowStatus())
+}
+
+// GetTranscriptOutputWithStatus gets a transcript rendered in the requested format with optional status spinner.
+func (app *App) GetTranscriptOutputWithStatus(ctx context.Context, youtubeURL string, format TranscriptRenderFormat, showStatus bool) (string, error) {
+	_, youtubeID := ParseArg(youtubeURL)
+	existingTranscriptPath := filepath.Join(app.config.TranscriptsDir, youtubeID+".txt")
+
+	if format == TranscriptRenderFormatPlain && FileExists(existingTranscriptPath) {
+		app.VerbosePrintf("Found existing plain-text transcript for %s\n", youtubeID)
+		text, err := os.ReadFile(existingTranscriptPath)
+		if err != nil {
+			return "", fmt.Errorf("reading existing transcript: %w", err)
+		}
+		return string(text), nil
+	}
+
+	transcript, err := app.GetStructuredTranscriptWithStatus(ctx, youtubeURL, showStatus)
+	if err != nil {
+		return "", err
+	}
+
+	return transcript.Render(format)
+}
+
+// GetStructuredTranscript gets the canonical transcript representation from YouTube captions.
+func (app *App) GetStructuredTranscript(ctx context.Context, youtubeURL string) (*Transcript, error) {
+	return app.GetStructuredTranscriptWithStatus(ctx, youtubeURL, app.shouldShowStatus())
+}
+
+// GetStructuredTranscriptWithStatus gets the canonical transcript representation with optional status spinner.
+func (app *App) GetStructuredTranscriptWithStatus(ctx context.Context, youtubeURL string, showStatus bool) (*Transcript, error) {
 	var spinner ProgressBar
 	if showStatus {
 		spinner = app.newSpinner("Checking for existing captions...")
@@ -246,21 +301,21 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 	defer spinner.Finish()
 
 	if err := EnsureDirs(app.config.TranscriptsDir); err != nil {
-		return "", fmt.Errorf("creating transcripts directory: %w", err)
+		return nil, fmt.Errorf("creating transcripts directory: %w", err)
 	}
 
 	_, youtubeID := ParseArg(youtubeURL)
-	existingTranscriptPath := filepath.Join(app.config.TranscriptsDir, youtubeID+".txt")
+	existingStructuredTranscriptPath := structuredTranscriptPath(youtubeID, app.config.TranscriptsDir)
 
-	// Check for cached transcript
-	if FileExists(existingTranscriptPath) {
+	// Check for structured transcript cache.
+	if FileExists(existingStructuredTranscriptPath) {
 		spinner.Describe("Found cached transcript")
 		app.VerbosePrintf("Found existing transcript for %s\n", youtubeID)
-		text, err := os.ReadFile(existingTranscriptPath)
+		transcript, err := LoadStructuredTranscript(youtubeID, app.config.TranscriptsDir)
 		if err != nil {
-			return "", fmt.Errorf("reading existing transcript: %w", err)
+			return nil, err
 		}
-		return string(text), nil
+		return transcript, nil
 	}
 
 	spinner.Describe("Checking caption availability...")
@@ -269,12 +324,12 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 	// Check metadata first to see if captions are available (faster than attempting download)
 	metadata, err := app.MetadataWithStatus(ctx, youtubeURL, false) // Don't show nested spinner
 	if err != nil {
-		return "", fmt.Errorf("checking video metadata: %w", err)
+		return nil, fmt.Errorf("checking video metadata: %w", err)
 	}
 
 	// If no captions available, skip the expensive download attempt
 	if !metadata.HasCaptions {
-		return "", fmt.Errorf("no captions available for %s", youtubeID)
+		return nil, fmt.Errorf("no captions available for %s", youtubeID)
 	}
 
 	spinner.Describe("Fetching YouTube captions...")
@@ -282,19 +337,19 @@ func (app *App) GetTranscriptWithStatus(ctx context.Context, youtubeURL string, 
 	app.VerbosePrintf("Fetching transcript for %s\n", youtubeID)
 
 	// Try to get transcript from YouTube (we know captions exist)
-	transcript, err := app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
-	if err != nil || transcript == "" {
+	transcript, err := app.youtube.FetchStructuredTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
+	if err != nil || transcript == nil {
 		// Only retry if it's a download failure (not other errors like invalid ID)
 		if errors.Is(err, ErrDownloadFailed) {
 			spinner.Describe("Download failed, retrying...")
 			app.VerbosePrintf("Download failed, retrying in 1 second...\n")
 			time.Sleep(1 * time.Second)
 
-			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
+			transcript, err = app.youtube.FetchStructuredTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 		}
 
-		if err != nil || transcript == "" {
-			return "", fmt.Errorf("no transcript available for %s", youtubeID)
+		if err != nil || transcript == nil {
+			return nil, fmt.Errorf("no transcript available for %s", youtubeID)
 		}
 	}
 
@@ -632,13 +687,22 @@ func (app *App) handleWhisperFallbackWithProgressManager(ctx context.Context, yo
 
 	// Transcribe audio
 	progress.UpdateStatus("Transcribing with OpenAI Whisper...")
-	transcript, err := app.TranscribeAudio(ctx, audioFile)
+	structuredTranscript, err := app.TranscribeAudioStructured(ctx, audioFile)
+	if err != nil {
+		return "", err
+	}
+
+	transcript, err := structuredTranscript.Render(TranscriptRenderFormatPlain)
 	if err != nil {
 		return "", err
 	}
 
 	// Save transcript
 	_, youtubeID := ParseArg(youtubeURL)
+	structuredTranscript.VideoID = youtubeID
+	if err := SaveStructuredTranscript(structuredTranscript, app.config.TranscriptsDir); err != nil {
+		progress.Log("Warning: %v\n", err)
+	}
 	if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
 		progress.Log("Warning: %v\n", err)
 	}
@@ -758,14 +822,25 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 					continue
 				}
 
-				transcript, err = app.TranscribeAudio(ctx, audioFile)
+				structuredTranscript, err := app.TranscribeAudioStructured(ctx, audioFile)
 				if err != nil {
 					app.VerbosePrintf("Failed to transcribe audio for video %d: %v\n", i+1, err)
 					skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s (transcription error)", i+1, metadata.Title))
 					continue
 				}
 
+				transcript, err = structuredTranscript.Render(TranscriptRenderFormatPlain)
+				if err != nil {
+					app.VerbosePrintf("Failed to render transcript for video %d: %v\n", i+1, err)
+					skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d: %s (transcript render error)", i+1, metadata.Title))
+					continue
+				}
+
 				// Save transcript for future use
+				structuredTranscript.VideoID = youtubeID
+				if err := SaveStructuredTranscript(structuredTranscript, app.config.TranscriptsDir); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+				}
 				if err := SaveTranscript(youtubeID, transcript, app.config.TranscriptsDir); err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 				}

@@ -20,6 +20,9 @@ var transcribeCmd = &cobra.Command{
   # Save transcript to file
   tldw transcribe tAP1eZYEuKA -o transcript.txt
 
+  # Include timestamps when caption timing data is available
+  tldw transcribe tAP1eZYEuKA --timestamps
+
   # Use Whisper if no captions available (costs money)
   tldw transcribe tAP1eZYEuKA --fallback-whisper`,
 	Args: cobra.ExactArgs(1),

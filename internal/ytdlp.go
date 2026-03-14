@@ -463,11 +463,21 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 	return nil
 }
 
-// FetchTranscript gets a transcript, using cached version if available
+// FetchTranscript gets a transcript, using cached version if available.
 func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (string, error) {
+	transcript, err := yt.FetchStructuredTranscript(ctx, youtubeURL, subLangs, originalLang)
+	if err != nil {
+		return "", err
+	}
+
+	return transcript.Render(TranscriptRenderFormatPlain)
+}
+
+// FetchStructuredTranscript gets a structured transcript, using cached subtitles if available.
+func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (*Transcript, error) {
 	youtubeID, err := getVideoID(youtubeURL)
 	if err != nil {
-		return "", fmt.Errorf("extracting video ID: %w", err)
+		return nil, fmt.Errorf("extracting video ID: %w", err)
 	}
 
 	if yt.verbose && !yt.quiet {
@@ -477,7 +487,7 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLa
 	// Look for an existing transcript first
 	transcriptPath, err := yt.findExistingTranscript(youtubeID)
 	if err != nil {
-		return "", fmt.Errorf("error searching for existing transcript: %w", err)
+		return nil, fmt.Errorf("error searching for existing transcript: %w", err)
 	}
 
 	if transcriptPath != "" {
@@ -496,7 +506,7 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLa
 	err = yt.Transcript(ctx, youtubeURL, subLangs, originalLang)
 	if err != nil {
 		// Preserve the error type for retry logic
-		return "", err
+		return nil, err
 	}
 
 	// Look for the downloaded transcript
@@ -505,7 +515,7 @@ func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLa
 		if yt.verbose {
 			fmt.Printf("Could not find downloaded transcript: %v\n", err)
 		}
-		return "", fmt.Errorf("downloaded transcript not found")
+		return nil, fmt.Errorf("downloaded transcript not found")
 	}
 
 	if yt.verbose && !yt.quiet {
@@ -547,35 +557,39 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 	return "", nil
 }
 
-// processSrtTranscript converts SRT to clean plain text
-func (yt *YouTube) processSrtTranscript(filePath string) (string, error) {
+// processSrtTranscript converts SRT to the canonical transcript representation.
+func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 	if yt.verbose && !yt.quiet {
 		fmt.Printf("Processing SRT transcript: %s\n", filePath)
 	}
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("reading SRT file: %w", err)
+		return nil, fmt.Errorf("reading SRT file: %w", err)
 	}
-
-	lines := parseSRT(string(content))
-
-	var sb strings.Builder
-	deduplicatedLines := removeDuplicates(lines)
-	for i, line := range deduplicatedLines {
-		sb.WriteString(line)
-		if i < len(deduplicatedLines)-1 {
-			sb.WriteString("\n")
-		}
-	}
-	text := strings.TrimSpace(sb.String())
 
 	// Extract video ID from filename
 	id := strings.Split(filepath.Base(filePath), ".")[0]
+	segments := parseSRT(string(content))
+	deduplicatedSegments := condenseSubtitleSegments(segments)
+	transcript := &Transcript{
+		VideoID:  id,
+		Source:   TranscriptSourceCaptions,
+		Segments: deduplicatedSegments,
+	}
 
-	// Save to transcripts directory (for permanent storage)
+	text, err := transcript.Render(TranscriptRenderFormatPlain)
+	if err != nil {
+		return nil, err
+	}
+	transcript.Text = text
+
+	// Save canonical and rendered forms to the transcripts directory.
+	if err := SaveStructuredTranscript(transcript, yt.transcriptsDir); err != nil {
+		return nil, err
+	}
 	if err := SaveTranscript(id, text, yt.transcriptsDir); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// If the file is in the cache directory, remove it after processing
@@ -586,26 +600,78 @@ func (yt *YouTube) processSrtTranscript(filePath string) (string, error) {
 		}
 	}
 
-	return text, nil
+	return transcript, nil
 }
 
-// parseSRT extracts text content from SRT format
-func parseSRT(content string) []string {
-	var lines []string
+// parseSRT extracts timed transcript segments from SRT format.
+func parseSRT(content string) []TranscriptSegment {
+	var segments []TranscriptSegment
+	var current *TranscriptSegment
+	var textParts []string
 
-	for block := range strings.SplitSeq(content, "\n\n") {
-		blockLines := strings.Split(block, "\n")
-		if len(blockLines) >= 3 {
-			// Skip sequence number and timestamp, get text lines
-			for i := 2; i < len(blockLines); i++ {
-				if cleaned := normalizeSubtitleLine(blockLines[i]); cleaned != "" {
-					lines = append(lines, cleaned)
-				}
+	flushCurrent := func() {
+		if current == nil {
+			return
+		}
+
+		current.Text = strings.TrimSpace(strings.Join(textParts, " "))
+		if current.Text != "" {
+			segments = append(segments, *current)
+		}
+
+		current = nil
+		textParts = nil
+	}
+
+	for _, rawLine := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(strings.TrimSuffix(rawLine, "\r"))
+		if line == "" {
+			continue
+		}
+
+		if isSRTSequenceNumber(line) {
+			continue
+		}
+
+		if strings.Contains(line, "-->") {
+			flushCurrent()
+
+			start, end, err := parseSRTTiming(line)
+			if err != nil {
+				current = nil
+				textParts = nil
+				continue
 			}
+
+			current = &TranscriptSegment{
+				Start: start,
+				End:   end,
+			}
+			continue
+		}
+
+		if current == nil {
+			// Ignore sequence numbers or other non-text lines outside a cue.
+			continue
+		}
+
+		if cleaned := normalizeSubtitleLine(line); cleaned != "" {
+			textParts = append(textParts, cleaned)
 		}
 	}
 
-	return lines
+	flushCurrent()
+
+	return segments
+}
+
+func isSRTSequenceNumber(line string) bool {
+	for _, r := range line {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return line != ""
 }
 
 // normalizeSubtitleLine removes subtitle control tokens and normalizes spacing.
@@ -625,20 +691,115 @@ func normalizeSubtitleLine(line string) string {
 	return strings.Join(strings.Fields(line), " ")
 }
 
-// removeDuplicates eliminates consecutive repeated lines
-func removeDuplicates(lines []string) []string {
-	result := make([]string, 0, len(lines))
-	prevLine := ""
+func parseSRTTiming(line string) (float64, float64, error) {
+	parts := strings.Split(line, "-->")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid SRT timing line: %q", line)
+	}
 
-	for _, line := range lines {
-		isDuplicate := prevLine != "" && (strings.Contains(line, prevLine) || strings.Contains(prevLine, line))
-		if !isDuplicate {
-			result = append(result, line)
+	start, err := parseSRTTimestamp(parts[0])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	end, err := parseSRTTimestamp(parts[1])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return start, end, nil
+}
+
+func parseSRTTimestamp(value string) (float64, error) {
+	value = strings.TrimSpace(value)
+	parts := strings.Split(value, ":")
+	if len(parts) != 3 {
+		return 0, fmt.Errorf("invalid SRT timestamp: %q", value)
+	}
+
+	hours, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, fmt.Errorf("invalid SRT timestamp hours: %w", err)
+	}
+
+	minutes, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0, fmt.Errorf("invalid SRT timestamp minutes: %w", err)
+	}
+
+	secondsParts := strings.Split(parts[2], ",")
+	if len(secondsParts) != 2 {
+		return 0, fmt.Errorf("invalid SRT timestamp seconds: %q", value)
+	}
+
+	seconds, err := strconv.Atoi(strings.TrimSpace(secondsParts[0]))
+	if err != nil {
+		return 0, fmt.Errorf("invalid SRT timestamp seconds: %w", err)
+	}
+
+	milliseconds, err := strconv.Atoi(strings.TrimSpace(secondsParts[1]))
+	if err != nil {
+		return 0, fmt.Errorf("invalid SRT timestamp milliseconds: %w", err)
+	}
+
+	totalSeconds := float64(hours*3600+minutes*60+seconds) + float64(milliseconds)/1000
+	return totalSeconds, nil
+}
+
+// condenseSubtitleSegments trims rolling subtitle windows down to newly introduced text.
+func condenseSubtitleSegments(segments []TranscriptSegment) []TranscriptSegment {
+	result := make([]TranscriptSegment, 0, len(segments))
+	prevText := ""
+
+	for _, segment := range segments {
+		text := strings.TrimSpace(segment.Text)
+		if text == "" {
+			continue
 		}
-		prevLine = line
+
+		condensedText := text
+		switch {
+		case prevText == "":
+			// Keep the first segment as-is.
+		case text == prevText:
+			continue
+		case strings.HasPrefix(text, prevText):
+			condensedText = strings.TrimSpace(strings.TrimPrefix(text, prevText))
+		case strings.HasSuffix(prevText, text):
+			continue
+		default:
+			if overlap := longestSubtitleOverlap(prevText, text); overlap != "" && strings.HasPrefix(text, overlap) {
+				condensedText = strings.TrimSpace(strings.TrimPrefix(text, overlap))
+			}
+		}
+
+		if condensedText == "" {
+			prevText = text
+			continue
+		}
+
+		segment.Text = condensedText
+		result = append(result, segment)
+		prevText = text
 	}
 
 	return result
+}
+
+func longestSubtitleOverlap(previous, current string) string {
+	prevWords := strings.Fields(previous)
+	currentWords := strings.Fields(current)
+
+	maxOverlap := min(len(prevWords), len(currentWords))
+	for overlapSize := maxOverlap; overlapSize > 0; overlapSize-- {
+		suffix := strings.Join(prevWords[len(prevWords)-overlapSize:], " ")
+		prefix := strings.Join(currentWords[:overlapSize], " ")
+		if suffix == prefix {
+			return prefix
+		}
+	}
+
+	return ""
 }
 
 // PlaylistEntry represents a single video in a playlist

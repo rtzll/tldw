@@ -56,6 +56,9 @@ func (s *MCPServer) registerTools() {
 			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
 		),
+		mcp.WithBoolean("include_timestamps",
+			mcp.Description("When true, return transcript lines with timestamps if caption timing data is available."),
+		),
 	), s.handleGetTranscript)
 
 	// transcribe_youtube_whisper tool (paid - creates transcript using AI)
@@ -64,6 +67,9 @@ func (s *MCPServer) registerTools() {
 		mcp.WithString("url",
 			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
+		),
+		mcp.WithBoolean("include_timestamps",
+			mcp.Description("Reserved for future use. Timestamped Whisper transcripts are not supported yet."),
 		),
 	), s.handleWhisperTranscribe)
 }
@@ -126,9 +132,15 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, request mcp.CallToo
 	}
 
 	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
+	includeTimestamps := request.GetBool("include_timestamps", false)
+
+	format := TranscriptRenderFormatPlain
+	if includeTimestamps {
+		format = TranscriptRenderFormatTimestamps
+	}
 
 	// Try to get transcript from YouTube captions only (no Whisper fallback)
-	transcript, err := s.app.GetTranscript(ctx, url)
+	transcript, err := s.app.GetTranscriptOutput(ctx, url, format)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
 		return mcp.NewToolResultErrorFromErr("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid)", err), nil
@@ -151,6 +163,11 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 	}
 
 	MCPLogInfo("Tool: transcribe_youtube_whisper - URL: %s (PAID OPERATION)", url)
+	if request.GetBool("include_timestamps", false) {
+		err := fmt.Errorf("timestamped Whisper transcripts are not supported yet")
+		MCPLogError("Tool: transcribe_youtube_whisper failed - %v", err)
+		return mcp.NewToolResultErrorFromErr("timestamped Whisper transcripts are not supported yet", err), nil
+	}
 
 	// Download audio and transcribe using Whisper (this costs money)
 	audioFile, err := s.app.DownloadAudio(ctx, url)

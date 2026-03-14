@@ -732,6 +732,51 @@ func SaveTranscript(youtubeID, transcript, transcriptsDir string) error {
 	return nil
 }
 
+func structuredTranscriptPath(youtubeID, transcriptsDir string) string {
+	return filepath.Join(transcriptsDir, youtubeID+".transcript.json")
+}
+
+// SaveStructuredTranscript saves the canonical transcript representation to disk.
+func SaveStructuredTranscript(transcript *Transcript, transcriptsDir string) error {
+	if transcript == nil {
+		return fmt.Errorf("saving transcript: transcript is nil")
+	}
+
+	if transcript.VideoID == "" {
+		return fmt.Errorf("saving transcript: video ID is required")
+	}
+
+	data, err := json.MarshalIndent(transcript, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling transcript: %w", err)
+	}
+
+	if err := os.WriteFile(structuredTranscriptPath(transcript.VideoID, transcriptsDir), data, 0644); err != nil {
+		return fmt.Errorf("saving structured transcript: %w", err)
+	}
+
+	return nil
+}
+
+// LoadStructuredTranscript loads a structured transcript from disk.
+func LoadStructuredTranscript(youtubeID, transcriptsDir string) (*Transcript, error) {
+	data, err := os.ReadFile(structuredTranscriptPath(youtubeID, transcriptsDir))
+	if err != nil {
+		return nil, fmt.Errorf("reading structured transcript: %w", err)
+	}
+
+	var transcript Transcript
+	if err := json.Unmarshal(data, &transcript); err != nil {
+		return nil, fmt.Errorf("parsing structured transcript: %w", err)
+	}
+
+	if transcript.VideoID == "" {
+		transcript.VideoID = youtubeID
+	}
+
+	return &transcript, nil
+}
+
 // CachedVideoMetadata extends VideoMetadata with cache information
 type CachedVideoMetadata struct {
 	Title            string         `json:"title"`
