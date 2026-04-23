@@ -1045,7 +1045,11 @@ func (yt *YouTube) parseSharedProgress(pipe io.ReadCloser, bar ProgressBar, star
 			conversionEnd := endPercent
 
 			// Simulate conversion progress 80-100%
-			for i := conversionStart; i <= conversionEnd; i += (conversionEnd - conversionStart) / 10 {
+			step := (conversionEnd - conversionStart) / 10
+			if step < 1 {
+				step = 1
+			}
+			for i := conversionStart; i <= conversionEnd; i += step {
 				bar.Set(i)
 				// Small delay to show conversion progress
 			}

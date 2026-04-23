@@ -1,9 +1,13 @@
 package internal
 
 import (
+	"io"
+	"strings"
+	"testing"
+	"time"
+
 	"os"
 	"path/filepath"
-	"testing"
 )
 
 func TestParseSRT(t *testing.T) {
@@ -488,6 +492,66 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 
 	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.Duration != original.Duration {
 		t.Errorf("LoadCachedMetadata() = %+v, want %+v", loaded, original)
+	}
+}
+
+type mockProgressBar struct {
+	desc string
+	sets []int
+}
+
+func (m *mockProgressBar) Set(current int) {
+	m.sets = append(m.sets, current)
+}
+
+func (m *mockProgressBar) Describe(description string) {
+	m.desc = description
+}
+
+func (m *mockProgressBar) Finish() {}
+
+func (m *mockProgressBar) Advance() {}
+
+func TestParseSharedProgressConversionStep(t *testing.T) {
+	yt := &YouTube{}
+
+	tests := []struct {
+		name         string
+		startPercent int
+		endPercent   int
+		wantLastSet  int
+	}{
+		{"small range", 0, 5, 5},
+		{"zero range", 0, 0, 0},
+		{"large range", 0, 100, 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bar := &mockProgressBar{}
+			pipe := io.NopCloser(strings.NewReader("[ExtractAudio]\n"))
+
+			done := make(chan struct{})
+			go func() {
+				yt.parseSharedProgress(pipe, bar, tt.startPercent, tt.endPercent)
+				close(done)
+			}()
+
+			select {
+			case <-done:
+				// success
+			case <-time.After(2 * time.Second):
+				t.Fatal("parseSharedProgress timed out — possible infinite loop")
+			}
+
+			if len(bar.sets) == 0 {
+				t.Fatal("expected at least one Set call")
+			}
+			last := bar.sets[len(bar.sets)-1]
+			if last != tt.wantLastSet {
+				t.Errorf("last Set() = %d, want %d", last, tt.wantLastSet)
+			}
+		})
 	}
 }
 
