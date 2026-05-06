@@ -74,9 +74,9 @@ func TestDetectChannelID(t *testing.T) {
 
 func TestDetectChannelHandle(t *testing.T) {
 	tests := []struct {
-		name    string
-		handle  string
-		want    bool
+		name   string
+		handle string
+		want   bool
 	}{
 		{"valid with @", "@mkbhd", true},
 		{"valid without @", "mkbhd", true},
@@ -165,11 +165,11 @@ func TestDetectContentType(t *testing.T) {
 
 func TestParseYouTubeURL(t *testing.T) {
 	tests := []struct {
-		name        string
-		url         string
-		wantType    ContentType
-		wantID      string
-		wantError   bool
+		name      string
+		url       string
+		wantType  ContentType
+		wantID    string
+		wantError bool
 	}{
 		{"watch URL", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", false},
 		{"short URL", "https://youtu.be/dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", false},
@@ -208,12 +208,12 @@ func TestParseYouTubeURL(t *testing.T) {
 
 func TestParseArgNew(t *testing.T) {
 	tests := []struct {
-		name          string
-		arg           string
-		wantType      ContentType
-		wantID        string
+		name           string
+		arg            string
+		wantType       ContentType
+		wantID         string
 		wantNormalized string
-		wantError     bool
+		wantError      bool
 	}{
 		{"video ID", "dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", false},
 		{"watch URL", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", false},
@@ -347,7 +347,7 @@ func TestValidateModel(t *testing.T) {
 		want  bool
 	}{
 		{"empty", "", false},
-		{"valid gpt-5-nano", "gpt-5-nano", true},
+		{"valid gpt-5.4-mini", "gpt-5.4-mini", true},
 		{"valid gpt-4o", "gpt-4o", true},
 		{"invalid chars", "GPT-4o", false},
 		{"unsupported", "gpt-3.5-turbo", false},

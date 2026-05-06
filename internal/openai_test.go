@@ -23,10 +23,10 @@ func (m *mockOpenAIClient) CreateChatCompletion(ctx context.Context, model, prom
 
 func TestAIEnsureClient(t *testing.T) {
 	tests := []struct {
-		name      string
-		client    OpenAIClientInterface
-		apiKey    string
-		wantErr   bool
+		name    string
+		client  OpenAIClientInterface
+		apiKey  string
+		wantErr bool
 	}{
 		{"client already set", &mockOpenAIClient{}, "", false},
 		{"no client no key", nil, "", true},
@@ -48,7 +48,7 @@ func TestAIProcessAudioChunksWithProgress(t *testing.T) {
 	client := &mockOpenAIClient{transcription: "Hello world"}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir(), false)
-	ai := NewAI(client, audio, "gpt-5-nano", WhisperLimit, 0, false, false)
+	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, 0, false, false)
 
 	// Create temp files as chunks
 	chunks := make([]string, 2)
@@ -76,7 +76,7 @@ func TestAIProcessAudioChunksError(t *testing.T) {
 	client := &mockOpenAIClient{err: fmt.Errorf("transcription failed")}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir(), false)
-	ai := NewAI(client, audio, "gpt-5-nano", WhisperLimit, 0, false, false)
+	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, 0, false, false)
 
 	f, err := os.CreateTemp(t.TempDir(), "chunk*.mp3")
 	if err != nil {
@@ -94,7 +94,7 @@ func TestAISummary(t *testing.T) {
 	client := &mockOpenAIClient{chatResponse: "A summary"}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir(), false)
-	ai := NewAI(client, audio, "gpt-5-nano", WhisperLimit, 0, false, false)
+	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, 0, false, false)
 
 	got, err := ai.Summary(context.Background(), "prompt")
 	if err != nil {
@@ -109,7 +109,7 @@ func TestAISummaryError(t *testing.T) {
 	client := &mockOpenAIClient{err: fmt.Errorf("API error")}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir(), false)
-	ai := NewAI(client, audio, "gpt-5-nano", WhisperLimit, 0, false, false)
+	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, 0, false, false)
 
 	_, err := ai.Summary(context.Background(), "prompt")
 	if err == nil {

@@ -37,7 +37,7 @@ var (
 	commandPattern = regexp.MustCompile(`^[a-z]{2,15}$`)
 
 	// Model name pattern: allow lowercase letters, digits, dots, underscores, hyphens
-	// Examples: gpt-4o, gpt-4.1-nano, gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-chat-latest
+	// Examples: gpt-4o, gpt-4.1-nano, gpt-5, gpt-5.4-mini, gpt-5-mini, gpt-5-chat-latest
 	modelNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,}$`)
 )
 
@@ -627,6 +627,7 @@ func ValidateModel(model string) error {
 		openai.ChatModelGPT4_1Mini,
 		openai.ChatModelGPT4_1Nano,
 		openai.ChatModelGPT5,
+		openai.ChatModel("gpt-5.4-mini"),
 		openai.ChatModelGPT5Mini,
 		openai.ChatModelGPT5Nano,
 	}
