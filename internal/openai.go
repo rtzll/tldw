@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/option"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 )
 
 // OpenAIClientInterface defines the interface for OpenAI client operations

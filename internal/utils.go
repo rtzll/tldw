@@ -14,7 +14,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/muesli/termenv"
-	"github.com/openai/openai-go/v2"
+	"github.com/openai/openai-go/v3"
 	"golang.org/x/term"
 )
 
@@ -627,7 +627,7 @@ func ValidateModel(model string) error {
 		openai.ChatModelGPT4_1Mini,
 		openai.ChatModelGPT4_1Nano,
 		openai.ChatModelGPT5,
-		openai.ChatModel("gpt-5.4-mini"),
+		openai.ChatModelGPT5_4Mini,
 		openai.ChatModelGPT5Mini,
 		openai.ChatModelGPT5Nano,
 	}
