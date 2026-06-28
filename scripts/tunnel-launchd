@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  tunnel-launchd install <label> <keychain-service> <tunnel-client> <profile> <repo-dir>
+  tunnel-launchd uninstall <label>
+  tunnel-launchd status <label>
+  tunnel-launchd logs
+  tunnel-launchd run <keychain-service> <tunnel-client> <profile>
+EOF
+  exit 64
+}
+
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  printf '%s' "$value"
+}
+
+user_domain() {
+  printf 'gui/%s' "$(/usr/bin/id -u)"
+}
+
+keychain_account() {
+  /usr/bin/id -un
+}
+
+install_agent() {
+  [[ $# -eq 5 ]] || usage
+
+  local label="$1"
+  local keychain_service="$2"
+  local tunnel_client="$3"
+  local profile="$4"
+  local repo_dir="$5"
+  local client
+
+  case "$tunnel_client" in
+    /*) client="$tunnel_client" ;;
+    *) client="$repo_dir/$tunnel_client" ;;
+  esac
+
+  test -x "$client" || { echo "Install tunnel-client at $client or set TLDW_TUNNEL_CLIENT"; exit 1; }
+
+  local account
+  account="$(keychain_account)"
+  if [[ -n "${CONTROL_PLANE_API_KEY:-}" ]]; then
+    /usr/bin/security add-generic-password \
+      -a "$account" \
+      -s "$keychain_service" \
+      -w "$CONTROL_PLANE_API_KEY" \
+      -T /usr/bin/security \
+      -U >/dev/null
+    echo "Stored CONTROL_PLANE_API_KEY in Keychain service $keychain_service"
+  elif ! /usr/bin/security find-generic-password -a "$account" -s "$keychain_service" -w >/dev/null 2>&1; then
+    echo "Set CONTROL_PLANE_API_KEY=sk-... once before running this recipe"
+    exit 1
+  fi
+
+  local plist="$HOME/Library/LaunchAgents/$label.plist"
+  local log_dir="$HOME/Library/Logs/tldw"
+  local script="$repo_dir/scripts/tunnel-launchd"
+  mkdir -p "$(dirname "$plist")" "$log_dir"
+
+  cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$(xml_escape "$label")</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$(xml_escape "$script")</string>
+    <string>run</string>
+    <string>$(xml_escape "$keychain_service")</string>
+    <string>$(xml_escape "$client")</string>
+    <string>$(xml_escape "$profile")</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$(xml_escape "$repo_dir")</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$(xml_escape "$log_dir/tunnel.out.log")</string>
+  <key>StandardErrorPath</key>
+  <string>$(xml_escape "$log_dir/tunnel.err.log")</string>
+</dict>
+</plist>
+EOF
+
+  /usr/bin/plutil -lint "$plist" >/dev/null
+  /bin/launchctl bootout "$(user_domain)" "$plist" >/dev/null 2>&1 || true
+  /bin/launchctl bootstrap "$(user_domain)" "$plist"
+  /bin/launchctl enable "$(user_domain)/$label"
+  /bin/launchctl kickstart -k "$(user_domain)/$label"
+
+  echo "Installed and started $label"
+  echo "Logs: $log_dir/tunnel.out.log and $log_dir/tunnel.err.log"
+}
+
+uninstall_agent() {
+  [[ $# -eq 1 ]] || usage
+
+  local label="$1"
+  local plist="$HOME/Library/LaunchAgents/$label.plist"
+  /bin/launchctl bootout "$(user_domain)" "$plist" >/dev/null 2>&1 || true
+  rm -f "$plist"
+  echo "Removed $label"
+}
+
+run_agent() {
+  [[ $# -eq 3 ]] || usage
+
+  local keychain_service="$1"
+  local tunnel_client="$2"
+  local profile="$3"
+
+  if [[ -z "${CONTROL_PLANE_API_KEY:-}" ]]; then
+    CONTROL_PLANE_API_KEY="$(
+      /usr/bin/security find-generic-password \
+        -a "$(keychain_account)" \
+        -s "$keychain_service" \
+        -w
+    )"
+    export CONTROL_PLANE_API_KEY
+  fi
+
+  exec "$tunnel_client" run --profile "$profile"
+}
+
+case "${1:-}" in
+  install)
+    shift
+    install_agent "$@"
+    ;;
+  uninstall)
+    shift
+    uninstall_agent "$@"
+    ;;
+  status)
+    shift
+    [[ $# -eq 1 ]] || usage
+    /bin/launchctl print "$(user_domain)/$1"
+    ;;
+  logs)
+    shift
+    [[ $# -eq 0 ]] || usage
+    tail -n 80 "$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log"
+    ;;
+  run)
+    shift
+    run_agent "$@"
+    ;;
+  *)
+    usage
+    ;;
+esac
