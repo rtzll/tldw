@@ -24,6 +24,10 @@ install-tools:
 tidy:
     go mod tidy
 
+update:
+    go get -u ./...
+    go mod tidy
+
 fmt:
     go fmt ./...
 
