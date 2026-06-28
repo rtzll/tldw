@@ -47,5 +47,13 @@ func TestMCPToolsDeclareOutputSchemasAndReadOnlyAnnotations(t *testing.T) {
 		if tool.Tool.Annotations.ReadOnlyHint == nil || !*tool.Tool.Annotations.ReadOnlyHint {
 			t.Errorf("%s readOnlyHint is not true", name)
 		}
+
+		if tool.Tool.Annotations.DestructiveHint == nil || *tool.Tool.Annotations.DestructiveHint {
+			t.Errorf("%s destructiveHint is not false", name)
+		}
+
+		if tool.Tool.Annotations.OpenWorldHint == nil || !*tool.Tool.Annotations.OpenWorldHint {
+			t.Errorf("%s openWorldHint is not true", name)
+		}
 	}
 }
