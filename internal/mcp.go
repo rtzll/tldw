@@ -17,6 +17,32 @@ type MCPServer struct {
 
 const mcpServerVersion = "1.0.0"
 
+type mcpChapterOutput struct {
+	StartTime float64 `json:"start_time" jsonschema:"Video chapter start time in seconds"`
+	EndTime   float64 `json:"end_time" jsonschema:"Video chapter end time in seconds"`
+	Title     string  `json:"title" jsonschema:"Video chapter title"`
+}
+
+type mcpMetadataOutput struct {
+	Title            string             `json:"title" jsonschema:"YouTube video or playlist title"`
+	Channel          string             `json:"channel" jsonschema:"YouTube channel name"`
+	DurationSeconds  float64            `json:"duration_seconds" jsonschema:"Duration in seconds"`
+	Description      string             `json:"description" jsonschema:"YouTube description"`
+	Language         string             `json:"language,omitempty" jsonschema:"Detected video language"`
+	HasCaptions      bool               `json:"has_captions" jsonschema:"Whether captions are available"`
+	CaptionLanguages []string           `json:"caption_languages,omitempty" jsonschema:"Available caption language codes"`
+	Tags             []string           `json:"tags,omitempty" jsonschema:"YouTube video tags"`
+	Categories       []string           `json:"categories,omitempty" jsonschema:"YouTube video categories"`
+	Chapters         []mcpChapterOutput `json:"chapters,omitempty" jsonschema:"Video chapters"`
+}
+
+type mcpTranscriptOutput struct {
+	URL               string `json:"url" jsonschema:"Requested YouTube video or playlist URL"`
+	Transcript        string `json:"transcript" jsonschema:"Transcript text"`
+	Source            string `json:"source" jsonschema:"Transcript source"`
+	IncludeTimestamps bool   `json:"include_timestamps" jsonschema:"Whether timestamps were requested in the transcript text"`
+}
+
 // NewMCPServer creates a new MCP server instance
 func NewMCPServer(app *App) *MCPServer {
 	InitMCPLogging(app.config)
@@ -43,6 +69,8 @@ func (s *MCPServer) registerTools() {
 	// get_youtube_metadata tool
 	s.mcpServer.AddTool(mcp.NewTool("get_youtube_metadata",
 		mcp.WithDescription("Extract video or playlist metadata including caption availability. For playlists, returns metadata for all videos. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid)."),
+		mcp.WithOutputSchema[mcpMetadataOutput](),
+		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("url",
 			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
@@ -52,6 +80,8 @@ func (s *MCPServer) registerTools() {
 	// get_youtube_transcript tool (free - existing captions only)
 	s.mcpServer.AddTool(mcp.NewTool("get_youtube_transcript",
 		mcp.WithDescription("Get existing YouTube captions/transcript (FREE). For playlists, returns combined transcript of all videos. Only works if videos have captions - check metadata first. Fails if no captions available."),
+		mcp.WithOutputSchema[mcpTranscriptOutput](),
+		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("url",
 			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
@@ -64,6 +94,8 @@ func (s *MCPServer) registerTools() {
 	// transcribe_youtube_whisper tool (paid - creates transcript using AI)
 	s.mcpServer.AddTool(mcp.NewTool("transcribe_youtube_whisper",
 		mcp.WithDescription("Create transcript using OpenAI Whisper API (PAID). For playlists, transcribes all videos - costs multiply by number of videos. Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool."),
+		mcp.WithOutputSchema[mcpTranscriptOutput](),
+		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithString("url",
 			mcp.Description("YouTube video or playlist URL"),
 			mcp.Required(),
@@ -95,6 +127,26 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, request mcp.CallToolR
 	MCPLogInfo("Tool: get_youtube_metadata succeeded - Title: %s, Duration: %.0fs, HasCaptions: %t",
 		metadata.Title, metadata.Duration, metadata.HasCaptions)
 
+	output := mcpMetadataOutput{
+		Title:            metadata.Title,
+		Channel:          metadata.Channel,
+		DurationSeconds:  metadata.Duration,
+		Description:      metadata.Description,
+		Language:         metadata.Language,
+		HasCaptions:      metadata.HasCaptions,
+		CaptionLanguages: metadata.CaptionLanguages,
+		Tags:             metadata.Tags,
+		Categories:       metadata.Categories,
+		Chapters:         make([]mcpChapterOutput, 0, len(metadata.Chapters)),
+	}
+	for _, ch := range metadata.Chapters {
+		output.Chapters = append(output.Chapters, mcpChapterOutput{
+			StartTime: ch.StartTime,
+			EndTime:   ch.EndTime,
+			Title:     ch.Title,
+		})
+	}
+
 	// Format metadata as text
 	var buf strings.Builder
 	buf.WriteString(fmt.Sprintf("Title: %s\n", metadata.Title))
@@ -117,9 +169,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, request mcp.CallToolR
 		buf.WriteString(fmt.Sprintf("Chapter (%.0f–%.0f): %s\n", ch.StartTime, ch.EndTime, ch.Title))
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{mcp.NewTextContent(buf.String())},
-	}, nil
+	return mcp.NewToolResultStructured(output, buf.String()), nil
 }
 
 // handleGetTranscript implements the get_youtube_transcript tool (free captions only)
@@ -148,9 +198,14 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, request mcp.CallToo
 
 	MCPLogInfo("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{mcp.NewTextContent(transcript)},
-	}, nil
+	output := mcpTranscriptOutput{
+		URL:               url,
+		Transcript:        transcript,
+		Source:            string(TranscriptSourceCaptions),
+		IncludeTimestamps: includeTimestamps,
+	}
+
+	return mcp.NewToolResultStructured(output, transcript), nil
 }
 
 // handleWhisperTranscribe implements the transcribe_youtube_whisper tool (paid Whisper transcription)
@@ -186,9 +241,14 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 
 	MCPLogInfo("Tool: transcribe_youtube_whisper succeeded - transcript length: %d characters", len(transcript))
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{mcp.NewTextContent(transcript)},
-	}, nil
+	output := mcpTranscriptOutput{
+		URL:               url,
+		Transcript:        transcript,
+		Source:            string(TranscriptSourceWhisper),
+		IncludeTimestamps: false,
+	}
+
+	return mcp.NewToolResultStructured(output, transcript), nil
 }
 
 // Start starts the MCP server using the specified transport
