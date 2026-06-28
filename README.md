@@ -40,8 +40,8 @@ afterward.
 
 ### ChatGPT Setup
 
-Use OpenAI Secure MCP Tunnel to connect ChatGPT to your local `tldw mcp`
-without exposing a public server.
+Use OpenAI Secure MCP Tunnel to connect ChatGPT to your local `tldw mcp` without
+exposing a public server.
 
 ```bash
 brew install just
@@ -65,6 +65,9 @@ just tunnel-run
 Then open ChatGPT > Settings > Connectors > Create, choose **Tunnel**, and
 select or paste the tunnel ID. Keep `just tunnel-run` running while using the
 connector.
+
+Tip: Put recurring summary prompts in a ChatGPT Project, then enable the `tldw`
+connector in chats from that Project.
 
 ## CLI
 
