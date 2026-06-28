@@ -38,10 +38,33 @@ afterward.
 
 ![Claude using tldw via MCP](./assets/claude-tldw-screenshot.png)
 
-## ChatGPT Desktop (not yet)
+### ChatGPT Setup
 
-ChatGPT Desktop will support MCP servers in the
-[coming months](https://x.com/OpenAIDevs/status/1904957755829481737).
+Use OpenAI Secure MCP Tunnel to connect ChatGPT to your local `tldw mcp`
+without exposing a public server.
+
+```bash
+brew install just
+
+# Download tunnel-client from Platform tunnel settings or GitHub releases:
+# https://platform.openai.com/settings/organization/tunnels
+# https://github.com/openai/tunnel-client/releases/latest
+mkdir -p bin
+# Unzip the archive, then move the tunnel-client binary here:
+mv /path/to/tunnel-client ./bin/tunnel-client
+chmod +x ./bin/tunnel-client
+
+export CONTROL_PLANE_API_KEY="sk-..."   # OpenAI runtime API key
+export TLDW_TUNNEL_ID="tunnel_..."      # From Platform tunnel settings
+
+just tunnel-init
+just tunnel-doctor
+just tunnel-run
+```
+
+Then open ChatGPT > Settings > Connectors > Create, choose **Tunnel**, and
+select or paste the tunnel ID. Keep `just tunnel-run` running while using the
+connector.
 
 ## CLI
 
