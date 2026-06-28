@@ -43,12 +43,10 @@ afterward.
 Use OpenAI Secure MCP Tunnel to connect ChatGPT to your local `tldw mcp` without
 exposing a public server.
 
-```bash
-brew install just
+Download tunnel-client from
+[Platform tunnel settings](https://platform.openai.com/settings/organization/tunnels).
 
-# Download tunnel-client from Platform tunnel settings or GitHub releases:
-# https://platform.openai.com/settings/organization/tunnels
-# https://github.com/openai/tunnel-client/releases/latest
+```bash
 mkdir -p bin
 # Unzip the archive, then move the tunnel-client binary here:
 mv /path/to/tunnel-client ./bin/tunnel-client
