@@ -5,3 +5,5 @@ transcripts
 temp_chunks
 tldw
 dist/
+bin/tldw
+bin/tunnel-client
