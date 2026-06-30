@@ -7,7 +7,7 @@ usage:
   tunnel-launchd install <label> <keychain-service> <tunnel-client> <profile> <repo-dir> <mcp-command> <mcp-host> <mcp-port>
   tunnel-launchd uninstall <label>
   tunnel-launchd status <label>
-  tunnel-launchd logs
+  tunnel-launchd logs [--tail]
   tunnel-launchd run <keychain-service> <tunnel-client> <profile> <mcp-command> <mcp-host> <mcp-port>
 EOF
   exit 64
@@ -210,8 +210,18 @@ case "${1:-}" in
     ;;
   logs)
     shift
-    [[ $# -eq 0 ]] || usage
-    tail -n 80 "$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log"
+    case "${1:-}" in
+      "")
+        tail -n 80 "$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log"
+        ;;
+      --tail)
+        [[ $# -eq 1 ]] || usage
+        tail -f "$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log"
+        ;;
+      *)
+        usage
+        ;;
+    esac
     ;;
   run)
     shift
