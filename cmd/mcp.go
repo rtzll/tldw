@@ -32,8 +32,8 @@ Transport options:
 	Example: `  # Run MCP server with stdio transport (e.g. for Claude Desktop)
   tldw mcp
 
-  # Run MCP server with HTTP transport on port 8080
-  tldw mcp --transport=http --port=8080
+  # Run MCP server with HTTP transport on port 8765
+  tldw mcp --transport=http --port=8765
 
   # Set up Claude Desktop integration
   tldw mcp setup-claude`,
@@ -205,7 +205,7 @@ func getClaudeDesktopConfigPath() (string, error) {
 
 func init() {
 	mcpCmd.Flags().String("transport", "stdio", "Transport protocol (stdio or http)")
-	mcpCmd.Flags().Int("port", 8080, "Port for HTTP transport (only used with --transport=http)")
+	mcpCmd.Flags().Int("port", 8765, "Port for HTTP transport (only used with --transport=http)")
 	mcpCmd.AddCommand(setupClaudeCmd)
 	rootCmd.AddCommand(mcpCmd)
 }

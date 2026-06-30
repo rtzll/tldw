@@ -60,12 +60,20 @@ just tunnel-doctor
 just tunnel-run
 ```
 
+The ChatGPT tunnel setup uses local HTTP MCP by default:
+
+- `tldw mcp --transport=http` listens on `127.0.0.1:8765`
+- `tunnel-client` keeps its own health/UI listener on `127.0.0.1:8080`
+
+Override the MCP port with `TLDW_MCP_HTTP_PORT` before `just tunnel-init`, or
+rerun `just tunnel-init` after changing the port so the profile URL is updated.
+
 Then open ChatGPT > Settings > Connectors > Create, choose **Tunnel**, and
 select or paste the tunnel ID. Keep `just tunnel-run` running while using the
 connector.
 
 Optional: `just tunnel-launchd-install` stores the runtime key in Keychain and
-starts the tunnel at login.
+starts both the local HTTP MCP server and the tunnel at login.
 
 Tip: Put recurring summary prompts in a ChatGPT Project, then enable the `tldw`
 connector in chats from that Project.

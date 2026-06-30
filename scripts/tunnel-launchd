@@ -4,11 +4,11 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 usage:
-  tunnel-launchd install <label> <keychain-service> <tunnel-client> <profile> <repo-dir>
+  tunnel-launchd install <label> <keychain-service> <tunnel-client> <profile> <repo-dir> <mcp-command> <mcp-host> <mcp-port>
   tunnel-launchd uninstall <label>
   tunnel-launchd status <label>
   tunnel-launchd logs
-  tunnel-launchd run <keychain-service> <tunnel-client> <profile>
+  tunnel-launchd run <keychain-service> <tunnel-client> <profile> <mcp-command> <mcp-host> <mcp-port>
 EOF
   exit 64
 }
@@ -30,13 +30,16 @@ keychain_account() {
 }
 
 install_agent() {
-  [[ $# -eq 5 ]] || usage
+  [[ $# -eq 8 ]] || usage
 
   local label="$1"
   local keychain_service="$2"
   local tunnel_client="$3"
   local profile="$4"
   local repo_dir="$5"
+  local mcp_command="$6"
+  local mcp_host="$7"
+  local mcp_port="$8"
   local client
 
   case "$tunnel_client" in
@@ -81,6 +84,9 @@ install_agent() {
     <string>$(xml_escape "$keychain_service")</string>
     <string>$(xml_escape "$client")</string>
     <string>$(xml_escape "$profile")</string>
+    <string>$(xml_escape "$mcp_command")</string>
+    <string>$(xml_escape "$mcp_host")</string>
+    <string>$(xml_escape "$mcp_port")</string>
   </array>
   <key>WorkingDirectory</key>
   <string>$(xml_escape "$repo_dir")</string>
@@ -125,11 +131,43 @@ uninstall_agent() {
 }
 
 run_agent() {
-  [[ $# -eq 3 ]] || usage
+  [[ $# -eq 6 ]] || usage
 
   local keychain_service="$1"
   local tunnel_client="$2"
   local profile="$3"
+  local mcp_command="$4"
+  local mcp_host="$5"
+  local mcp_port="$6"
+  local mcp_pid=""
+
+  cleanup() {
+    if [[ -n "$mcp_pid" ]] && kill -0 "$mcp_pid" >/dev/null 2>&1; then
+      kill "$mcp_pid" >/dev/null 2>&1 || true
+      wait "$mcp_pid" >/dev/null 2>&1 || true
+    fi
+  }
+
+  wait_for_mcp() {
+    local attempts=50
+    local i
+
+    for ((i = 0; i < attempts; i++)); do
+      if (:</dev/tcp/"$mcp_host"/"$mcp_port") >/dev/null 2>&1; then
+        return 0
+      fi
+
+      if ! kill -0 "$mcp_pid" >/dev/null 2>&1; then
+        echo "tldw MCP server exited before $mcp_host:$mcp_port became reachable" >&2
+        return 1
+      fi
+
+      sleep 0.2
+    done
+
+    echo "Timed out waiting for tldw MCP server on $mcp_host:$mcp_port" >&2
+    return 1
+  }
 
   if [[ -z "${CONTROL_PLANE_API_KEY:-}" ]]; then
     CONTROL_PLANE_API_KEY="$(
@@ -141,7 +179,19 @@ run_agent() {
     export CONTROL_PLANE_API_KEY
   fi
 
-  exec "$tunnel_client" run --profile "$profile"
+  trap 'cleanup' EXIT
+  trap 'cleanup; exit 130' INT
+  trap 'cleanup; exit 143' TERM
+
+  /bin/bash -lc "$mcp_command --port $mcp_port" &
+  mcp_pid="$!"
+  wait_for_mcp
+
+  local status=0
+  "$tunnel_client" run --profile "$profile" || status=$?
+  cleanup
+  trap - EXIT INT TERM
+  return "$status"
 }
 
 case "${1:-}" in

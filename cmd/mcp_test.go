@@ -27,3 +27,14 @@ func TestGetClaudeDesktopConfigPath(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPHTTPDefaultPort(t *testing.T) {
+	flag := mcpCmd.Flags().Lookup("port")
+	if flag == nil {
+		t.Fatal("mcp port flag is not registered")
+	}
+
+	if flag.DefValue != "8765" {
+		t.Errorf("mcp port default = %q, want 8765", flag.DefValue)
+	}
+}

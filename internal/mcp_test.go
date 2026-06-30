@@ -66,13 +66,13 @@ func TestMCPToolsDeclareOutputSchemasAndReadOnlyAnnotations(t *testing.T) {
 	}
 }
 
-func TestMCPServerSerializesToolHandlers(t *testing.T) {
+func TestMCPServerSerializesStdioToolHandlers(t *testing.T) {
 	server := &MCPServer{}
 
 	var active atomic.Int32
 	var maxActive atomic.Int32
 
-	handler := server.serializeToolCalls(func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	handler := server.serializeStdioToolCalls(func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		current := active.Add(1)
 		for {
 			observed := maxActive.Load()

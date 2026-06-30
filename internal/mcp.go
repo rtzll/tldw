@@ -12,9 +12,10 @@ import (
 
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
-	app       *App
-	mcpServer *server.MCPServer
-	toolMu    sync.Mutex
+	app                *App
+	mcpServer          *server.MCPServer
+	stdioToolMu        sync.Mutex
+	stdioSerializeOnce sync.Once
 }
 
 const mcpServerVersion = "1.0.0"
@@ -61,16 +62,15 @@ func NewMCPServer(app *App) *MCPServer {
 		mcpServer: mcpServer,
 	}
 
-	mcpServer.Use(s.serializeToolCalls)
 	s.registerTools()
 	MCPLogInfo("MCP server initialized with %d tools", 3)
 	return s
 }
 
-func (s *MCPServer) serializeToolCalls(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+func (s *MCPServer) serializeStdioToolCalls(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		s.toolMu.Lock()
-		defer s.toolMu.Unlock()
+		s.stdioToolMu.Lock()
+		defer s.stdioToolMu.Unlock()
 
 		return next(ctx, request)
 	}
@@ -285,6 +285,9 @@ func (s *MCPServer) Start(ctx context.Context, transport string, port int) error
 
 	// Default to stdio transport
 	MCPLogInfo("Starting MCP server with stdio transport")
+	s.stdioSerializeOnce.Do(func() {
+		s.mcpServer.Use(s.serializeStdioToolCalls)
+	})
 	err := server.ServeStdio(s.mcpServer, server.WithWorkerPoolSize(1))
 	if err != nil {
 		MCPLogError("Stdio server failed: %v", err)
