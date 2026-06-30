@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+
+profile="${TLDW_TUNNEL_PROFILE:-tldw}"
+tunnel_client="${TLDW_TUNNEL_CLIENT:-./bin/tunnel-client}"
+mcp_host="${TLDW_MCP_HTTP_HOST:-127.0.0.1}"
+mcp_port="${TLDW_MCP_HTTP_PORT:-8765}"
+health_addr="${TLDW_TUNNEL_HEALTH_ADDR:-127.0.0.1:18080}"
+profile_file="$HOME/.config/tunnel-client/${profile}.yaml"
+
+if [[ -z "${TLDW_TUNNEL_ID:-}" ]]; then
+  if [[ ! -f "$profile_file" ]]; then
+    echo "Set TLDW_TUNNEL_ID=tunnel_... or create $profile_file first" >&2
+    exit 1
+  fi
+
+  TLDW_TUNNEL_ID="$(
+    awk -F': *' '/tunnel_id:/ { gsub(/"/, "", $2); print $2; exit }' "$profile_file"
+  )"
+  export TLDW_TUNNEL_ID
+fi
+
+if [[ -z "$TLDW_TUNNEL_ID" ]]; then
+  echo "Could not determine TLDW_TUNNEL_ID" >&2
+  exit 1
+fi
+
+test -x "$tunnel_client" || {
+  echo "Install tunnel-client at $tunnel_client or set TLDW_TUNNEL_CLIENT" >&2
+  exit 1
+}
+
+export TLDW_TUNNEL_PROFILE="$profile"
+export TLDW_MCP_HTTP_HOST="$mcp_host"
+export TLDW_MCP_HTTP_PORT="$mcp_port"
+export TLDW_TUNNEL_HEALTH_ADDR="$health_addr"
+
+echo "Updating tunnel profile $profile"
+echo "Tunnel ID: $TLDW_TUNNEL_ID"
+echo "MCP URL: http://$mcp_host:$mcp_port/mcp"
+echo "Tunnel health: $health_addr"
+
+just tunnel-launchd-uninstall || true
+
+"$tunnel_client" init \
+  --sample sample_mcp_with_dcr \
+  --profile "$profile" \
+  --tunnel-id "$TLDW_TUNNEL_ID" \
+  --mcp-server-url "http://$mcp_host:$mcp_port/mcp" \
+  --health-listen-addr "$health_addr" \
+  --force
+
+just tunnel-launchd-install
+just tunnel-launchd-status
+
+echo
+echo "Updated tunnel profile and launchd agent."
+echo "Use 'just tunnel-launchd-logs' if you need startup logs."
