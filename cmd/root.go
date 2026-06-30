@@ -129,7 +129,7 @@ func Execute() error {
 	// Handle shutdown signal in a separate goroutine
 	go func() {
 		<-sigCh
-		fmt.Println("\nReceived interrupt signal. Cleaning up and shutting down...")
+		fmt.Fprintln(os.Stderr, "\nReceived interrupt signal. Cleaning up and shutting down...")
 
 		// Cancel the main context to signal all operations to stop
 		cancel()

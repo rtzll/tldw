@@ -94,7 +94,7 @@ func ensureDefaultFile(configDir, embedFilename, description string) error {
 		return fmt.Errorf("writing default %s: %w", description, err)
 	}
 
-	fmt.Printf("Created default %s at %s\n", description, filePath)
+	fmt.Fprintf(os.Stderr, "Created default %s at %s\n", description, filePath)
 	return nil
 }
 
@@ -184,7 +184,7 @@ func InitConfig() (*Config, error) {
 	}
 
 	if config.Verbose {
-		fmt.Printf("Using config file: %s\n", v.ConfigFileUsed())
+		fmt.Fprintf(os.Stderr, "Using config file: %s\n", v.ConfigFileUsed())
 	}
 
 	return config, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -13,6 +14,7 @@ import (
 type MCPServer struct {
 	app       *App
 	mcpServer *server.MCPServer
+	toolMu    sync.Mutex
 }
 
 const mcpServerVersion = "1.0.0"
@@ -59,9 +61,19 @@ func NewMCPServer(app *App) *MCPServer {
 		mcpServer: mcpServer,
 	}
 
+	mcpServer.Use(s.serializeToolCalls)
 	s.registerTools()
 	MCPLogInfo("MCP server initialized with %d tools", 3)
 	return s
+}
+
+func (s *MCPServer) serializeToolCalls(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		s.toolMu.Lock()
+		defer s.toolMu.Unlock()
+
+		return next(ctx, request)
+	}
 }
 
 // registerTools registers all available MCP tools
@@ -273,7 +285,7 @@ func (s *MCPServer) Start(ctx context.Context, transport string, port int) error
 
 	// Default to stdio transport
 	MCPLogInfo("Starting MCP server with stdio transport")
-	err := server.ServeStdio(s.mcpServer)
+	err := server.ServeStdio(s.mcpServer, server.WithWorkerPoolSize(1))
 	if err != nil {
 		MCPLogError("Stdio server failed: %v", err)
 	}

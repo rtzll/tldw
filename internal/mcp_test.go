@@ -1,6 +1,14 @@
 package internal
 
-import "testing"
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/mark3labs/mcp-go/mcp"
+)
 
 func TestMCPToolsDeclareOutputSchemasAndReadOnlyAnnotations(t *testing.T) {
 	server := NewMCPServer(&App{config: &Config{}})
@@ -55,5 +63,43 @@ func TestMCPToolsDeclareOutputSchemasAndReadOnlyAnnotations(t *testing.T) {
 		if tool.Tool.Annotations.OpenWorldHint == nil || !*tool.Tool.Annotations.OpenWorldHint {
 			t.Errorf("%s openWorldHint is not true", name)
 		}
+	}
+}
+
+func TestMCPServerSerializesToolHandlers(t *testing.T) {
+	server := &MCPServer{}
+
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	handler := server.serializeToolCalls(func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		current := active.Add(1)
+		for {
+			observed := maxActive.Load()
+			if current <= observed || maxActive.CompareAndSwap(observed, current) {
+				break
+			}
+		}
+
+		time.Sleep(5 * time.Millisecond)
+		active.Add(-1)
+
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := handler(context.Background(), mcp.CallToolRequest{}); err != nil {
+				t.Errorf("handler returned error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := maxActive.Load(); got != 1 {
+		t.Fatalf("max concurrent handlers = %d, want 1", got)
 	}
 }
