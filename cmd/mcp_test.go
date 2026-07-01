@@ -38,3 +38,14 @@ func TestMCPHTTPDefaultPort(t *testing.T) {
 		t.Errorf("mcp port default = %q, want 8765", flag.DefValue)
 	}
 }
+
+func TestMCPHTTPDefaultHost(t *testing.T) {
+	flag := mcpCmd.Flags().Lookup("host")
+	if flag == nil {
+		t.Fatal("mcp host flag is not registered")
+	}
+
+	if flag.DefValue != "127.0.0.1" {
+		t.Errorf("mcp host default = %q, want 127.0.0.1", flag.DefValue)
+	}
+}

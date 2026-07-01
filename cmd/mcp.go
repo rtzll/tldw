@@ -28,12 +28,12 @@ This allows AI assistants to use TL;DW capabilities through the MCP protocol.
 
 Transport options:
 - stdio (default): Standard MCP transport via stdin/stdout
-- http: HTTP transport on specified port (use --port to configure)`,
+- http: HTTP transport on specified host and port (use --host and --port to configure)`,
 	Example: `  # Run MCP server with stdio transport (e.g. for Claude Desktop)
   tldw mcp
 
-  # Run MCP server with HTTP transport on port 8765
-  tldw mcp --transport=http --port=8765
+  # Run MCP server with HTTP transport on localhost port 8765
+  tldw mcp --transport=http --host=127.0.0.1 --port=8765
 
   # Set up Claude Desktop integration
   tldw mcp setup-claude`,
@@ -45,7 +45,11 @@ Transport options:
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		transport, _ := cmd.Flags().GetString("transport")
+		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetInt("port")
+		if host == "" {
+			host = "127.0.0.1"
+		}
 
 		app := internal.NewApp(config)
 
@@ -53,14 +57,14 @@ Transport options:
 
 		if config.Verbose {
 			if transport == "http" {
-				fmt.Printf("Starting TL;DW MCP server on HTTP port %d...\n", port)
+				fmt.Printf("Starting TL;DW MCP server on HTTP %s:%d...\n", host, port)
 			} else {
 				fmt.Println("Starting TL;DW MCP server on stdio...")
 			}
 		}
 
 		// Start the server (this will block until context is cancelled)
-		return mcpServer.Start(cmd.Context(), transport, port)
+		return mcpServer.Start(cmd.Context(), transport, host, port)
 	},
 }
 
@@ -205,6 +209,7 @@ func getClaudeDesktopConfigPath() (string, error) {
 
 func init() {
 	mcpCmd.Flags().String("transport", "stdio", "Transport protocol (stdio or http)")
+	mcpCmd.Flags().String("host", "127.0.0.1", "Host for HTTP transport (only used with --transport=http)")
 	mcpCmd.Flags().Int("port", 8765, "Port for HTTP transport (only used with --transport=http)")
 	mcpCmd.AddCommand(setupClaudeCmd)
 	rootCmd.AddCommand(mcpCmd)

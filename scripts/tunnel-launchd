@@ -183,7 +183,7 @@ run_agent() {
   trap 'cleanup; exit 130' INT
   trap 'cleanup; exit 143' TERM
 
-  /bin/bash -lc "$mcp_command --port $mcp_port" &
+  MCP_HOST="$mcp_host" MCP_PORT="$mcp_port" /bin/bash -lc "exec $mcp_command --host \"\$MCP_HOST\" --port \"\$MCP_PORT\"" &
   mcp_pid="$!"
   wait_for_mcp
 

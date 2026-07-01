@@ -83,7 +83,7 @@ tunnel-run:
     trap 'cleanup' EXIT
     trap 'cleanup; exit 130' INT
     trap 'cleanup; exit 143' TERM
-    {{mcp_http_command}} --port "{{mcp_http_port}}" &
+    {{mcp_http_command}} --host "{{mcp_http_host}}" --port "{{mcp_http_port}}" &
     mcp_pid="$!"
     wait_for_mcp
     "{{tunnel_client}}" run --profile "{{tunnel_profile}}"

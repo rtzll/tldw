@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -267,11 +269,15 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 }
 
 // Start starts the MCP server using the specified transport
-func (s *MCPServer) Start(ctx context.Context, transport string, port int) error {
+func (s *MCPServer) Start(ctx context.Context, transport, host string, port int) error {
 	if transport == "http" {
-		MCPLogInfo("Starting MCP server with HTTP transport on port %d", port)
+		if host == "" {
+			host = "127.0.0.1"
+		}
+
+		addr := net.JoinHostPort(host, strconv.Itoa(port))
+		MCPLogInfo("Starting MCP server with HTTP transport on %s", addr)
 		httpServer := server.NewStreamableHTTPServer(s.mcpServer)
-		addr := fmt.Sprintf(":%d", port)
 		if ctx.Err() != nil {
 			MCPLogError("Context cancelled before HTTP server start")
 			return ctx.Err()

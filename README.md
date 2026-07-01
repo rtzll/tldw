@@ -65,8 +65,9 @@ The ChatGPT tunnel setup uses local HTTP MCP by default:
 - `tldw mcp --transport=http` listens on `127.0.0.1:8765`
 - `tunnel-client` keeps its own health/UI listener on `127.0.0.1:8080`
 
-Override the MCP port with `TLDW_MCP_HTTP_PORT` before `just tunnel-init`, or
-rerun `just tunnel-init` after changing the port so the profile URL is updated.
+Override the MCP host or port with `TLDW_MCP_HTTP_HOST` or
+`TLDW_MCP_HTTP_PORT` before `just tunnel-init`, or rerun `just tunnel-init`
+after changing either value so the profile URL is updated.
 
 Then open ChatGPT > Settings > Connectors > Create, choose **Tunnel**, and
 select or paste the tunnel ID. Keep `just tunnel-run` running while using the
