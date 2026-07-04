@@ -11,6 +11,22 @@ import (
 	"path/filepath"
 )
 
+func TestAudioWithProgressUsesConfiguredCacheDir(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	yt := NewYouTubeWithCache(nil, t.TempDir(), cacheDir, false, true)
+	yt.cmdRunner = &mockCommandRunner{}
+
+	got, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", nil)
+	if err != nil {
+		t.Fatalf("AudioWithProgress() error = %v", err)
+	}
+
+	want := filepath.Join(cacheDir, "dQw4w9WgXcQ.mp3")
+	if got != want {
+		t.Fatalf("AudioWithProgress() = %q, want %q", got, want)
+	}
+}
+
 func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	yt := NewYouTube(nil, t.TempDir(), false, true)
 	yt.cmdRunner = &mockCommandRunner{output: []byte(`{

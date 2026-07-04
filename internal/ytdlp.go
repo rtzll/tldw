@@ -47,16 +47,30 @@ type VideoChapter struct {
 type YouTube struct {
 	fs             fs.FS
 	transcriptsDir string
+	cacheDir       string
 	verbose        bool
 	quiet          bool
 	cmdRunner      CommandRunner
 }
 
-// NewYouTube creates a new YouTube downloader
+func defaultYouTubeCacheDir() string {
+	return filepath.Join(xdg.CacheHome, "tldw")
+}
+
+// NewYouTube creates a new YouTube downloader.
 func NewYouTube(filesystem fs.FS, transcriptsDir string, verbose bool, quiet bool) *YouTube {
+	return NewYouTubeWithCache(filesystem, transcriptsDir, defaultYouTubeCacheDir(), verbose, quiet)
+}
+
+// NewYouTubeWithCache creates a new YouTube downloader with an explicit cache directory.
+func NewYouTubeWithCache(filesystem fs.FS, transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouTube {
+	if cacheDir == "" {
+		cacheDir = defaultYouTubeCacheDir()
+	}
 	return &YouTube{
 		fs:             filesystem,
 		transcriptsDir: transcriptsDir,
+		cacheDir:       cacheDir,
 		verbose:        verbose,
 		quiet:          quiet,
 		cmdRunner:      &DefaultCommandRunner{},
@@ -136,8 +150,8 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, pro
 		return "", fmt.Errorf("extracting video ID: %w", err)
 	}
 
-	// Create path in XDG cache directory
-	cacheDir := filepath.Join(xdg.CacheHome, "tldw")
+	// Create path in configured cache directory
+	cacheDir := yt.cacheDir
 	if err := EnsureDirs(cacheDir); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -192,8 +206,8 @@ func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL strin
 		return "", fmt.Errorf("extracting video ID: %w", err)
 	}
 
-	// Create path in XDG cache directory
-	cacheDir := filepath.Join(xdg.CacheHome, "tldw")
+	// Create path in configured cache directory
+	cacheDir := yt.cacheDir
 	if err := EnsureDirs(cacheDir); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -333,8 +347,8 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 		return fmt.Errorf("failed to extract video ID: %w", err)
 	}
 
-	// Create path in XDG cache directory
-	cacheDir := filepath.Join(xdg.CacheHome, "tldw")
+	// Create path in configured cache directory
+	cacheDir := yt.cacheDir
 	if err := EnsureDirs(cacheDir); err != nil {
 		return fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -527,8 +541,8 @@ func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL str
 
 // findExistingTranscript locates a previously downloaded transcript
 func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
-	// Look in XDG cache directory
-	cacheDir := filepath.Join(xdg.CacheHome, "tldw")
+	// Look in configured cache directory
+	cacheDir := yt.cacheDir
 	if FileExists(cacheDir) {
 		cacheFiles, err := os.ReadDir(cacheDir)
 		if err == nil {
@@ -593,7 +607,7 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 	}
 
 	// If the file is in the cache directory, remove it after processing
-	cacheDir := filepath.Join(xdg.CacheHome, "tldw")
+	cacheDir := yt.cacheDir
 	if strings.HasPrefix(filePath, cacheDir) && FileExists(filePath) {
 		if err := os.Remove(filePath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to remove SRT file from cache: %v\n", err)

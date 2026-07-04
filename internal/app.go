@@ -33,7 +33,7 @@ func NewApp(config *Config, options ...AppOption) *App {
 	ui := NewUIManager(config.Verbose, config.Quiet)
 
 	app := &App{
-		youtube:       NewYouTube(os.DirFS("."), config.TranscriptsDir, config.Verbose, config.Quiet),
+		youtube:       NewYouTubeWithCache(os.DirFS("."), config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet),
 		audio:         audio,
 		ai:            NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet),
 		promptManager: promptManager,
