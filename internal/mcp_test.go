@@ -76,6 +76,17 @@ func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
 	}
 }
 
+func TestMCPServerRejectsInvalidTransport(t *testing.T) {
+	server := NewMCPServer(&App{config: &Config{}})
+	err := server.Start(context.Background(), "htp", "127.0.0.1", 8765)
+	if err == nil {
+		t.Fatal("expected invalid transport error")
+	}
+	if !strings.Contains(err.Error(), "invalid MCP transport") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestMCPServerSerializesStdioToolHandlers(t *testing.T) {
 	server := &MCPServer{}
 

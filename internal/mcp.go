@@ -288,7 +288,8 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 
 // Start starts the MCP server using the specified transport
 func (s *MCPServer) Start(ctx context.Context, transport, host string, port int) error {
-	if transport == "http" {
+	switch transport {
+	case "http":
 		if host == "" {
 			host = "127.0.0.1"
 		}
@@ -305,18 +306,19 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 			MCPLogError("HTTP server failed to start: %v", err)
 		}
 		return err
+	case "stdio":
+		MCPLogInfo("Starting MCP server with stdio transport")
+		s.stdioSerializeOnce.Do(func() {
+			s.mcpServer.Use(s.serializeStdioToolCalls)
+		})
+		err := server.ServeStdio(s.mcpServer, server.WithWorkerPoolSize(1))
+		if err != nil {
+			MCPLogError("Stdio server failed: %v", err)
+		}
+		return err
+	default:
+		return fmt.Errorf("invalid MCP transport %q; expected stdio or http", transport)
 	}
-
-	// Default to stdio transport
-	MCPLogInfo("Starting MCP server with stdio transport")
-	s.stdioSerializeOnce.Do(func() {
-		s.mcpServer.Use(s.serializeStdioToolCalls)
-	})
-	err := server.ServeStdio(s.mcpServer, server.WithWorkerPoolSize(1))
-	if err != nil {
-		MCPLogError("Stdio server failed: %v", err)
-	}
-	return err
 }
 
 // GetServer returns the underlying MCP server for advanced configuration
