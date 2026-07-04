@@ -36,6 +36,7 @@ func TestDetectPlaylistID(t *testing.T) {
 	}{
 		{"valid PL 18 chars", "PLSE8ODhjZXjYDBpQn", true},
 		{"valid PL 34 chars", "PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", true},
+		{"valid UU playlist", "UUx5XG1OV2P6uZZ5FS", true},
 		{"invalid prefix", "OLSE8ODhjZXjYDBpQnS", false},
 		{"too short", "PL123", false},
 		{"empty", "", false},
@@ -174,6 +175,7 @@ func TestParseYouTubeURL(t *testing.T) {
 		{"watch URL", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", false},
 		{"short URL", "https://youtu.be/dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", false},
 		{"playlist URL", "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", ContentTypePlaylist, "PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", false},
+		{"UU playlist URL", "https://www.youtube.com/playlist?list=UUx5XG1OV2P6uZZ5FS", ContentTypePlaylist, "UUx5XG1OV2P6uZZ5FS", false},
 		{"channel URL", "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw", ContentTypeChannel, "UC_x5XG1OV2P6uZZ5FSM9Ttw", false},
 		{"handle URL", "https://www.youtube.com/@mkbhd", ContentTypeChannel, "@mkbhd", false},
 		{"custom channel URL", "https://www.youtube.com/c/SomeChannel", ContentTypeChannel, "SomeChannel", false},
@@ -240,6 +242,7 @@ func TestParseArgNew(t *testing.T) {
 		{"video ID", "dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", false},
 		{"watch URL", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ContentTypeVideo, "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", false},
 		{"playlist ID", "PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", ContentTypePlaylist, "PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", false},
+		{"UU playlist ID", "UUx5XG1OV2P6uZZ5FS", ContentTypePlaylist, "UUx5XG1OV2P6uZZ5FS", "https://www.youtube.com/playlist?list=UUx5XG1OV2P6uZZ5FS", false},
 		{"channel handle", "@mkbhd", ContentTypeChannel, "@mkbhd", "https://www.youtube.com/@mkbhd", false},
 		{"command", "help", ContentTypeCommand, "", "", true},
 		{"unknown", "randomtext123", ContentTypeChannel, "@randomtext123", "https://www.youtube.com/@randomtext123", false},

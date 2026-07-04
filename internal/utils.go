@@ -50,8 +50,7 @@ func detectVideoID(s string) bool {
 
 // detectPlaylistID checks if a string looks like a YouTube playlist ID
 func detectPlaylistID(s string) bool {
-	// Only regular playlists (PL) - pattern already includes length validation
-	return playlistIDPattern.MatchString(s)
+	return isValidPlaylistID(s)
 }
 
 // detectChannelID checks if a string looks like a YouTube channel ID
@@ -697,9 +696,13 @@ func IsLikelyCommand(arg string) bool {
 
 // IsValidPlaylistID checks if a string looks like a valid YouTube playlist ID
 func IsValidPlaylistID(id string) bool {
-	// For PL-prefixed playlists (regular user playlists), use the same logic as detectPlaylistID
+	return isValidPlaylistID(id)
+}
+
+func isValidPlaylistID(id string) bool {
+	// Regular playlists (PL).
 	if strings.HasPrefix(id, "PL") {
-		return detectPlaylistID(id)
+		return playlistIDPattern.MatchString(id)
 	}
 
 	// Common non-PL playlist prefixes: UU, FL, RD, etc.
