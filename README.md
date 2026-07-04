@@ -108,9 +108,11 @@ tldw metadata tAP1eZYEuKA --pretty           # Format JSON output
 #### Playlists
 
 ```bash
-# Summarize entire playlist
+# Summarize entire playlist (use an explicit playlist URL)
 tldw "https://youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
-tldw "https://youtu.be/tAP1eZYEuKA?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq" # Video from playlist
+
+# URLs with a video ID and list parameter are treated as that single video
+tldw "https://youtu.be/tAP1eZYEuKA?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
 ```
 
 **Note:** Playlist support is currently for summaries. Transcript and metadata

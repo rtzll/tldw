@@ -206,6 +206,28 @@ func TestParseYouTubeURL(t *testing.T) {
 	}
 }
 
+func TestParseVideoURLWithPlaylistParamPrioritizesVideo(t *testing.T) {
+	tests := []string{
+		"https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq",
+		"https://youtu.be/dQw4w9WgXcQ?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq",
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			got := ParseArgNew(input)
+			if got.Error != nil {
+				t.Fatalf("ParseArgNew(%q) error = %v", input, got.Error)
+			}
+			if got.ContentType != ContentTypeVideo {
+				t.Fatalf("ParseArgNew(%q) type = %s, want video", input, got.ContentType)
+			}
+			if got.ID != "dQw4w9WgXcQ" {
+				t.Fatalf("ParseArgNew(%q) ID = %q", input, got.ID)
+			}
+		})
+	}
+}
+
 func TestParseArgNew(t *testing.T) {
 	tests := []struct {
 		name           string
