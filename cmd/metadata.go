@@ -26,9 +26,12 @@ var metadataCmd = &cobra.Command{
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app := internal.NewApp(config)
-		youtubeURL, _ := internal.ParseArg(args[0])
+		parsed, err := internal.ParseVideoArg(args[0])
+		if err != nil {
+			return err
+		}
 		// Get metadata for the video
-		metadata, err := app.Metadata(cmd.Context(), youtubeURL)
+		metadata, err := app.Metadata(cmd.Context(), parsed.NormalizedURL)
 		if err != nil {
 			return err
 		}

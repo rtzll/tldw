@@ -50,6 +50,18 @@ func TestGetTranscriptRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
 	}
 }
 
+func TestVideoOnlyPathsRejectPlaylists(t *testing.T) {
+	app := NewApp(&Config{TranscriptsDir: t.TempDir(), Quiet: true})
+	playlistURL := "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
+
+	if _, err := app.GetTranscriptOutput(context.Background(), playlistURL, TranscriptRenderFormatPlain); err == nil {
+		t.Fatal("expected playlist transcript request to fail")
+	}
+	if _, err := app.Metadata(context.Background(), playlistURL); err == nil {
+		t.Fatal("expected playlist metadata request to fail")
+	}
+}
+
 func TestAppCachedMetadata(t *testing.T) {
 	app := NewApp(&Config{})
 	meta := &VideoMetadata{Title: "Test"}

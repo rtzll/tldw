@@ -15,10 +15,9 @@ export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & Whispe
 
 `tldw mcp` provides AI assistants with:
 
-- **`get_youtube_metadata`**: Video or playlist metadata and captions status
-- **`get_youtube_transcript`**: Free captions transcript (supports playlists)
-- **`transcribe_youtube_whisper`**: Paid Whisper transcription (supports
-  playlists)
+- **`get_youtube_metadata`**: Video metadata and captions status
+- **`get_youtube_transcript`**: Free video captions transcript
+- **`transcribe_youtube_whisper`**: Paid video Whisper transcription
 
 `get_youtube_transcript` accepts `include_timestamps=true` to return caption
 lines with timestamps when timing data is available.
@@ -112,17 +111,10 @@ tldw metadata tAP1eZYEuKA --pretty           # Format JSON output
 # Summarize entire playlist
 tldw "https://youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
 tldw "https://youtu.be/tAP1eZYEuKA?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq" # Video from playlist
-
-# Get playlist transcripts
-tldw transcribe "https://youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
-tldw transcribe "https://youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq" --fallback-whisper
-
-# Get playlist metadata
-tldw metadata "https://youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
 ```
 
-**Note:** Playlist processing shows progress and allows per-video Whisper
-confirmation for videos without captions.
+**Note:** Playlist support is currently for summaries. Transcript and metadata
+commands accept individual videos.
 
 ### Example Output
 

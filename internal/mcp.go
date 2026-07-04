@@ -29,7 +29,7 @@ type mcpChapterOutput struct {
 }
 
 type mcpMetadataOutput struct {
-	Title            string             `json:"title" jsonschema:"YouTube video or playlist title"`
+	Title            string             `json:"title" jsonschema:"YouTube video title"`
 	Channel          string             `json:"channel" jsonschema:"YouTube channel name"`
 	DurationSeconds  float64            `json:"duration_seconds" jsonschema:"Duration in seconds"`
 	Description      string             `json:"description" jsonschema:"YouTube description"`
@@ -42,7 +42,7 @@ type mcpMetadataOutput struct {
 }
 
 type mcpTranscriptOutput struct {
-	URL               string `json:"url" jsonschema:"Requested YouTube video or playlist URL"`
+	URL               string `json:"url" jsonschema:"Requested YouTube video URL"`
 	Transcript        string `json:"transcript" jsonschema:"Transcript text"`
 	Source            string `json:"source" jsonschema:"Transcript source"`
 	IncludeTimestamps bool   `json:"include_timestamps" jsonschema:"Whether timestamps were requested in the transcript text"`
@@ -82,24 +82,24 @@ func (s *MCPServer) serializeStdioToolCalls(next server.ToolHandlerFunc) server.
 func (s *MCPServer) registerTools() {
 	// get_youtube_metadata tool
 	s.mcpServer.AddTool(mcp.NewTool("get_youtube_metadata",
-		mcp.WithDescription("Extract video or playlist metadata including caption availability. For playlists, returns metadata for all videos. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid)."),
+		mcp.WithDescription("Extract video metadata including caption availability. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid)."),
 		mcp.WithOutputSchema[mcpMetadataOutput](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithString("url",
-			mcp.Description("YouTube video or playlist URL"),
+			mcp.Description("YouTube video URL"),
 			mcp.Required(),
 		),
 	), s.handleGetMetadata)
 
 	// get_youtube_transcript tool (free - existing captions only)
 	s.mcpServer.AddTool(mcp.NewTool("get_youtube_transcript",
-		mcp.WithDescription("Get existing YouTube captions/transcript (FREE). For playlists, returns combined transcript of all videos. Only works if videos have captions - check metadata first. Fails if no captions available."),
+		mcp.WithDescription("Get existing YouTube captions/transcript (FREE). Only works if the video has captions - check metadata first. Fails if no captions available."),
 		mcp.WithOutputSchema[mcpTranscriptOutput](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithString("url",
-			mcp.Description("YouTube video or playlist URL"),
+			mcp.Description("YouTube video URL"),
 			mcp.Required(),
 		),
 		mcp.WithBoolean("include_timestamps",
@@ -109,12 +109,12 @@ func (s *MCPServer) registerTools() {
 
 	// transcribe_youtube_whisper tool (paid - creates transcript using AI)
 	s.mcpServer.AddTool(mcp.NewTool("transcribe_youtube_whisper",
-		mcp.WithDescription("Create transcript using OpenAI Whisper API (PAID). For playlists, transcribes all videos - costs multiply by number of videos. Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool."),
+		mcp.WithDescription("Create transcript using OpenAI Whisper API (PAID). Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool."),
 		mcp.WithOutputSchema[mcpTranscriptOutput](),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithDestructiveHintAnnotation(false),
 		mcp.WithString("url",
-			mcp.Description("YouTube video or playlist URL"),
+			mcp.Description("YouTube video URL"),
 			mcp.Required(),
 		),
 		mcp.WithBoolean("include_timestamps",
@@ -132,6 +132,12 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, request mcp.CallToolR
 		return mcp.NewToolResultError("url parameter is required and must be a string"), nil
 	}
 
+	parsed, err := ParseVideoArg(url)
+	if err != nil {
+		MCPLogError("Tool: get_youtube_metadata - invalid URL: %v", err)
+		return mcp.NewToolResultErrorFromErr("invalid YouTube video URL", err), nil
+	}
+	url = parsed.NormalizedURL
 	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
 
 	// Get metadata from YouTube
@@ -198,6 +204,12 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, request mcp.CallToo
 		return mcp.NewToolResultError("url parameter is required and must be a string"), nil
 	}
 
+	parsed, err := ParseVideoArg(url)
+	if err != nil {
+		MCPLogError("Tool: get_youtube_transcript - invalid URL: %v", err)
+		return mcp.NewToolResultErrorFromErr("invalid YouTube video URL", err), nil
+	}
+	url = parsed.NormalizedURL
 	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
 	includeTimestamps := request.GetBool("include_timestamps", false)
 
@@ -234,6 +246,12 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, request mcp.Cal
 		return mcp.NewToolResultError("url parameter is required and must be a string"), nil
 	}
 
+	parsed, err := ParseVideoArg(url)
+	if err != nil {
+		MCPLogError("Tool: transcribe_youtube_whisper - invalid URL: %v", err)
+		return mcp.NewToolResultErrorFromErr("invalid YouTube video URL", err), nil
+	}
+	url = parsed.NormalizedURL
 	MCPLogInfo("Tool: transcribe_youtube_whisper - URL: %s (PAID OPERATION)", url)
 	if request.GetBool("include_timestamps", false) {
 		err := fmt.Errorf("timestamped Whisper transcripts are not supported yet")

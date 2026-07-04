@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -62,6 +63,15 @@ func TestMCPToolsDeclareOutputSchemasAndReadOnlyAnnotations(t *testing.T) {
 
 		if tool.Tool.Annotations.OpenWorldHint == nil || !*tool.Tool.Annotations.OpenWorldHint {
 			t.Errorf("%s openWorldHint is not true", name)
+		}
+	}
+}
+
+func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
+	server := NewMCPServer(&App{config: &Config{}})
+	for name, tool := range server.GetServer().ListTools() {
+		if strings.Contains(strings.ToLower(tool.Tool.Description), "playlist") {
+			t.Fatalf("tool %q description advertises playlist support: %q", name, tool.Tool.Description)
 		}
 	}
 }

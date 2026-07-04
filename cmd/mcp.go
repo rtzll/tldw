@@ -20,9 +20,10 @@ var mcpCmd = &cobra.Command{
 	Short: "Run minimal MCP server for TL;DW",
 	Long: `Run a Model Context Protocol (MCP) server that exposes TL;DW functionality as tools.
 
-The MCP server provides two tools:
+The MCP server provides three video tools:
 - get_youtube_metadata: Extract video metadata as formatted text
-- transcribe_youtube_video: Fetch built-in captions or use Whisper fallback
+- get_youtube_transcript: Fetch built-in captions
+- transcribe_youtube_whisper: Transcribe audio with Whisper
 
 This allows AI assistants to use TL;DW capabilities through the MCP protocol.
 

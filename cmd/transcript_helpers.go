@@ -20,7 +20,11 @@ func requestedTranscriptFormat(cmd *cobra.Command) internal.TranscriptRenderForm
 
 // fetchTranscript retrieves a transcript for the given argument and optionally falls back to Whisper.
 func fetchTranscript(cmd *cobra.Command, app *internal.App, arg string) (string, error) {
-	youtubeURL, _ := internal.ParseArg(arg)
+	parsed, err := internal.ParseVideoArg(arg)
+	if err != nil {
+		return "", err
+	}
+	youtubeURL := parsed.NormalizedURL
 	format := requestedTranscriptFormat(cmd)
 
 	transcript, err := app.GetTranscriptOutput(cmd.Context(), youtubeURL, format)
@@ -47,8 +51,7 @@ func fetchTranscript(cmd *cobra.Command, app *internal.App, arg string) (string,
 		return "", whisperErr
 	}
 
-	_, youtubeID := internal.ParseArg(youtubeURL)
-	structuredTranscript.VideoID = youtubeID
+	structuredTranscript.VideoID = parsed.ID
 
 	transcript, renderErr := structuredTranscript.Render(internal.TranscriptRenderFormatPlain)
 	if renderErr != nil {
@@ -58,7 +61,7 @@ func fetchTranscript(cmd *cobra.Command, app *internal.App, arg string) (string,
 	if saveErr := internal.SaveStructuredTranscript(structuredTranscript, config.TranscriptsDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", saveErr)
 	}
-	if saveErr := internal.SaveTranscript(youtubeID, transcript, config.TranscriptsDir); saveErr != nil {
+	if saveErr := internal.SaveTranscript(parsed.ID, transcript, config.TranscriptsDir); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", saveErr)
 	}
 
