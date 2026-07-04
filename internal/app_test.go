@@ -115,6 +115,35 @@ func TestAppCachedMetadata(t *testing.T) {
 	}
 }
 
+func TestCollectPlaylistTranscriptsUsesCachedData(t *testing.T) {
+	transcriptsDir := t.TempDir()
+	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
+
+	videoID := "dQw4w9WgXcQ"
+	if err := SaveTranscript(videoID, "cached transcript", transcriptsDir); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	metadata := &VideoMetadata{Title: "Cached Video", Channel: "Channel", Duration: 42, Description: "Description"}
+	if err := SaveMetadata(videoID, metadata, transcriptsDir); err != nil {
+		t.Fatalf("SaveMetadata() error = %v", err)
+	}
+
+	info := &PlaylistInfo{
+		Title:     "Playlist",
+		VideoURLs: []string{"https://www.youtube.com/watch?v=" + videoID},
+	}
+	videos, skipped := app.collectPlaylistTranscripts(context.Background(), info, false)
+	if len(skipped) != 0 {
+		t.Fatalf("skipped videos = %v, want none", skipped)
+	}
+	if len(videos) != 1 {
+		t.Fatalf("videos length = %d, want 1", len(videos))
+	}
+	if videos[0].Title != metadata.Title || videos[0].Transcript != "cached transcript" {
+		t.Fatalf("collected video = %+v", videos[0])
+	}
+}
+
 func TestBuildPlaylistTranscript(t *testing.T) {
 	app := NewApp(&Config{})
 

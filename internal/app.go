@@ -767,24 +767,10 @@ type VideoTranscript struct {
 	Transcript  string
 }
 
-// SummarizePlaylist summarizes all videos in a YouTube playlist
-func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallbackWhisper bool) error {
-	app.VerbosePrintf("Processing playlist...\n")
-
-	// Get playlist information
-	playlistInfo, err := app.youtube.PlaylistVideoURLs(ctx, playlistURL)
-	if err != nil {
-		return fmt.Errorf("extracting playlist videos: %w", err)
-	}
-
-	if len(playlistInfo.VideoURLs) == 0 {
-		return fmt.Errorf("no videos found in playlist")
-	}
-
-	app.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
-
+func (app *App) collectPlaylistTranscripts(ctx context.Context, playlistInfo *PlaylistInfo, fallbackWhisper bool) ([]VideoTranscript, []string) {
 	// Create progress bar - clean display without confusing rate for cached content
 	bar := app.ui.NewProgressBar(len(playlistInfo.VideoURLs), "Gathering transcripts")
+	defer bar.Finish()
 
 	// Collect all video transcripts
 	var videoTranscripts []VideoTranscript
@@ -918,7 +904,26 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 		})
 	}
 
-	bar.Finish()
+	return videoTranscripts, skippedVideos
+}
+
+// SummarizePlaylist summarizes all videos in a YouTube playlist
+func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallbackWhisper bool) error {
+	app.VerbosePrintf("Processing playlist...\n")
+
+	// Get playlist information
+	playlistInfo, err := app.youtube.PlaylistVideoURLs(ctx, playlistURL)
+	if err != nil {
+		return fmt.Errorf("extracting playlist videos: %w", err)
+	}
+
+	if len(playlistInfo.VideoURLs) == 0 {
+		return fmt.Errorf("no videos found in playlist")
+	}
+
+	app.Printf("Found %d videos in playlist: %s\n\n", len(playlistInfo.VideoURLs), playlistInfo.Title)
+
+	videoTranscripts, skippedVideos := app.collectPlaylistTranscripts(ctx, playlistInfo, fallbackWhisper)
 
 	// Check if we have any transcripts to work with
 	if len(videoTranscripts) == 0 {
