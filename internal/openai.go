@@ -72,6 +72,7 @@ type AI struct {
 	quiet        bool
 	apiKey       string
 	clientOnce   sync.Once
+	clientErr    error
 }
 
 // NewAI creates a new AI processor
@@ -103,19 +104,18 @@ func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64,
 
 // ensureClient initializes the OpenAI client if needed
 func (ai *AI) ensureClient() error {
-	if ai.client != nil {
-		return nil
-	}
-
-	if ai.apiKey == "" {
-		return ValidateOpenAIAPIKey("")
-	}
-
 	ai.clientOnce.Do(func() {
+		if ai.client != nil {
+			return
+		}
+		if ai.apiKey == "" {
+			ai.clientErr = ValidateOpenAIAPIKey("")
+			return
+		}
 		ai.client = NewOpenAIClient(ai.apiKey)
 	})
 
-	return nil
+	return ai.clientErr
 }
 
 // Transcribe transcribes audio using OpenAI's Whisper API

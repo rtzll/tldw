@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 )
 
@@ -41,6 +42,28 @@ func TestAIEnsureClient(t *testing.T) {
 				t.Errorf("ensureClient() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestAIEnsureClientConcurrent(t *testing.T) {
+	runner := &mockCommandRunner{}
+	audio := NewAudio(runner, t.TempDir(), false)
+	ai := NewAIWithKey("sk-test", audio, "gpt-5.4-mini", WhisperLimit, 0, false, true)
+
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := ai.ensureClient(); err != nil {
+				t.Errorf("ensureClient() error = %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if ai.client == nil {
+		t.Fatal("expected lazy client to be initialized")
 	}
 }
 
