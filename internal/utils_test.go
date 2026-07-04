@@ -287,9 +287,12 @@ func TestParseVideoArg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseVideoArg(tt.arg)
+			got, err := ParseVideoArg(tt.arg)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseVideoArg(%q) error = %v, wantErr %v", tt.arg, err, tt.wantErr)
+			}
+			if err == nil && got.ContentType != ContentTypeVideo {
+				t.Errorf("ParseVideoArg(%q) type = %s, want video", tt.arg, got.ContentType)
 			}
 		})
 	}

@@ -32,13 +32,31 @@ func (ct ContentType) String() string {
 	}
 }
 
-// ParsedArg represents the result of parsing a command line argument
+// ParsedArg represents the result of parsing a command line argument.
+// It may contain an Error; use YouTubeRef after validation in application code.
 type ParsedArg struct {
 	ContentType   ContentType
 	OriginalInput string
 	NormalizedURL string
 	ID            string
 	Error         error
+}
+
+// YouTubeRef is a validated YouTube content reference used after boundary parsing.
+type YouTubeRef struct {
+	ContentType   ContentType
+	OriginalInput string
+	NormalizedURL string
+	ID            string
+}
+
+func newYouTubeRef(parsed *ParsedArg) YouTubeRef {
+	return YouTubeRef{
+		ContentType:   parsed.ContentType,
+		OriginalInput: parsed.OriginalInput,
+		NormalizedURL: parsed.NormalizedURL,
+		ID:            parsed.ID,
+	}
 }
 
 // IsValid returns true if the parsed argument is valid and has no errors

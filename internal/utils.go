@@ -476,25 +476,25 @@ func ParseArgNew(arg string) *ParsedArg {
 }
 
 // ParseYouTubeArg parses and validates a YouTube content argument.
-func ParseYouTubeArg(arg string) (*ParsedArg, error) {
+func ParseYouTubeArg(arg string) (YouTubeRef, error) {
 	parsed := ParseArgNew(arg)
 	if parsed.Error != nil {
-		return nil, parsed.Error
+		return YouTubeRef{}, parsed.Error
 	}
 	if !parsed.IsValid() {
-		return nil, fmt.Errorf("invalid YouTube content: %s", parsed.ContentType)
+		return YouTubeRef{}, fmt.Errorf("invalid YouTube content: %s", parsed.ContentType)
 	}
-	return parsed, nil
+	return newYouTubeRef(parsed), nil
 }
 
 // ParseVideoArg parses and validates a YouTube video argument.
-func ParseVideoArg(arg string) (*ParsedArg, error) {
+func ParseVideoArg(arg string) (YouTubeRef, error) {
 	parsed, err := ParseYouTubeArg(arg)
 	if err != nil {
-		return nil, err
+		return YouTubeRef{}, err
 	}
 	if parsed.ContentType != ContentTypeVideo || !IsValidYouTubeID(parsed.ID) {
-		return nil, fmt.Errorf("expected YouTube video, got %s", parsed.ContentType)
+		return YouTubeRef{}, fmt.Errorf("expected YouTube video, got %s", parsed.ContentType)
 	}
 	return parsed, nil
 }
