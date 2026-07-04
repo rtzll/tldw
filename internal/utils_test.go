@@ -249,6 +249,27 @@ func TestParseArgNew(t *testing.T) {
 	}
 }
 
+func TestParseVideoArg(t *testing.T) {
+	tests := []struct {
+		name    string
+		arg     string
+		wantErr bool
+	}{
+		{"video ID", "dQw4w9WgXcQ", false},
+		{"playlist ID", "PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq", true},
+		{"path traversal", "../outside", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseVideoArg(tt.arg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseVideoArg(%q) error = %v, wantErr %v", tt.arg, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestParseArg(t *testing.T) {
 	tests := []struct {
 		name    string

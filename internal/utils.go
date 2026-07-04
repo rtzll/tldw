@@ -476,6 +476,30 @@ func ParseArgNew(arg string) *ParsedArg {
 	}
 }
 
+// ParseYouTubeArg parses and validates a YouTube content argument.
+func ParseYouTubeArg(arg string) (*ParsedArg, error) {
+	parsed := ParseArgNew(arg)
+	if parsed.Error != nil {
+		return nil, parsed.Error
+	}
+	if !parsed.IsValid() {
+		return nil, fmt.Errorf("invalid YouTube content: %s", parsed.ContentType)
+	}
+	return parsed, nil
+}
+
+// ParseVideoArg parses and validates a YouTube video argument.
+func ParseVideoArg(arg string) (*ParsedArg, error) {
+	parsed, err := ParseYouTubeArg(arg)
+	if err != nil {
+		return nil, err
+	}
+	if parsed.ContentType != ContentTypeVideo || !IsValidYouTubeID(parsed.ID) {
+		return nil, fmt.Errorf("expected YouTube video, got %s", parsed.ContentType)
+	}
+	return parsed, nil
+}
+
 // ParseArg maintains backward compatibility with the old (string, string) signature
 func ParseArg(arg string) (string, string) {
 	parsed := ParseArgNew(arg)

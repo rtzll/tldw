@@ -265,7 +265,12 @@ func (app *App) GetTranscriptOutput(ctx context.Context, youtubeURL string, form
 
 // GetTranscriptOutputWithStatus gets a transcript rendered in the requested format with optional status spinner.
 func (app *App) GetTranscriptOutputWithStatus(ctx context.Context, youtubeURL string, format TranscriptRenderFormat, showStatus bool) (string, error) {
-	_, youtubeID := ParseArg(youtubeURL)
+	parsed, err := ParseVideoArg(youtubeURL)
+	if err != nil {
+		return "", err
+	}
+	youtubeURL = parsed.NormalizedURL
+	youtubeID := parsed.ID
 	existingTranscriptPath := filepath.Join(app.config.TranscriptsDir, youtubeID+".txt")
 
 	if format == TranscriptRenderFormatPlain && FileExists(existingTranscriptPath) {
@@ -304,7 +309,12 @@ func (app *App) GetStructuredTranscriptWithStatus(ctx context.Context, youtubeUR
 		return nil, fmt.Errorf("creating transcripts directory: %w", err)
 	}
 
-	_, youtubeID := ParseArg(youtubeURL)
+	parsed, err := ParseVideoArg(youtubeURL)
+	if err != nil {
+		return nil, err
+	}
+	youtubeURL = parsed.NormalizedURL
+	youtubeID := parsed.ID
 	existingStructuredTranscriptPath := structuredTranscriptPath(youtubeID, app.config.TranscriptsDir)
 
 	// Check for structured transcript cache.
@@ -371,7 +381,12 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 	}
 	defer spinner.Finish()
 
-	_, youtubeID := ParseArg(youtubeURL)
+	parsed, err := ParseVideoArg(youtubeURL)
+	if err != nil {
+		return nil, err
+	}
+	youtubeURL = parsed.NormalizedURL
+	youtubeID := parsed.ID
 
 	// In-memory cache first.
 	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
@@ -498,9 +513,12 @@ func (app *App) GenerateSummaryWithStatus(ctx context.Context, youtubeURL, trans
 
 // SummarizeYouTube performs the complete workflow: get transcript -> summarize
 func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbackWhisper bool) error {
-	// Check if this is a playlist
-	_, id := ParseArg(youtubeURL)
-	if IsValidPlaylistID(id) {
+	parsed, err := ParseYouTubeArg(youtubeURL)
+	if err != nil {
+		return err
+	}
+	youtubeURL = parsed.NormalizedURL
+	if parsed.ContentType == ContentTypePlaylist {
 		return app.SummarizePlaylist(ctx, youtubeURL, fallbackWhisper)
 	}
 
@@ -529,7 +547,12 @@ func (app *App) SummarizeYouTube(ctx context.Context, youtubeURL string, fallbac
 
 // getTranscriptWithProgressManager gets transcript using consolidated progress manager
 func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL string, fallbackWhisper bool, progress *WorkflowProgress) (string, error) {
-	_, youtubeID := ParseArg(youtubeURL)
+	parsed, err := ParseVideoArg(youtubeURL)
+	if err != nil {
+		return "", err
+	}
+	youtubeURL = parsed.NormalizedURL
+	youtubeID := parsed.ID
 
 	// Check for existing transcript
 	if err := EnsureDirs(app.config.TranscriptsDir); err != nil {
@@ -618,7 +641,12 @@ func (app *App) generateSummaryWithProgressManager(ctx context.Context, youtubeU
 
 // metadataWithProgressManager gets metadata using consolidated progress manager
 func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL string, progress *WorkflowProgress) (*VideoMetadata, error) {
-	_, youtubeID := ParseArg(youtubeURL)
+	parsed, err := ParseVideoArg(youtubeURL)
+	if err != nil {
+		return nil, err
+	}
+	youtubeURL = parsed.NormalizedURL
+	youtubeID := parsed.ID
 
 	// In-memory cache first.
 	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
@@ -671,6 +699,13 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 
 // handleWhisperFallbackWithProgressManager handles Whisper fallback with progress manager
 func (app *App) handleWhisperFallbackWithProgressManager(ctx context.Context, youtubeURL string, fallbackWhisper bool, progress *WorkflowProgress) (string, error) {
+	parsed, err := ParseVideoArg(youtubeURL)
+	if err != nil {
+		return "", err
+	}
+	youtubeURL = parsed.NormalizedURL
+	youtubeID := parsed.ID
+
 	if !fallbackWhisper {
 		progress.PauseForUserInput() // Clear spinner display before user prompt
 		if !AskUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
@@ -698,7 +733,6 @@ func (app *App) handleWhisperFallbackWithProgressManager(ctx context.Context, yo
 	}
 
 	// Save transcript
-	_, youtubeID := ParseArg(youtubeURL)
 	structuredTranscript.VideoID = youtubeID
 	if err := SaveStructuredTranscript(structuredTranscript, app.config.TranscriptsDir); err != nil {
 		progress.Log("Warning: %v\n", err)

@@ -1,15 +1,18 @@
 package internal
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestAppShouldShowStatus(t *testing.T) {
 	tests := []struct {
-		name   string
-		quiet  bool
+		name    string
+		quiet   bool
 		verbose bool
-		want   bool
+		want    bool
 	}{
 		{"normal", false, false, true},
 		{"quiet", true, false, false},
@@ -24,6 +27,26 @@ func TestAppShouldShowStatus(t *testing.T) {
 				t.Errorf("shouldShowStatus() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGetTranscriptRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
+	baseDir := t.TempDir()
+	transcriptsDir := filepath.Join(baseDir, "transcripts")
+	if err := os.Mkdir(transcriptsDir, 0755); err != nil {
+		t.Fatalf("failed to create transcripts dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "outside.txt"), []byte("secret"), 0644); err != nil {
+		t.Fatalf("failed to create outside transcript: %v", err)
+	}
+
+	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
+	got, err := app.GetTranscriptOutput(context.Background(), "../outside", TranscriptRenderFormatPlain)
+	if err == nil {
+		t.Fatal("expected invalid input error")
+	}
+	if got == "secret" {
+		t.Fatal("read transcript outside configured directory")
 	}
 }
 
