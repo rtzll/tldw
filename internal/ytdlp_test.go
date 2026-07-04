@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -9,6 +10,28 @@ import (
 	"os"
 	"path/filepath"
 )
+
+func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
+	yt := NewYouTube(nil, t.TempDir(), false, true)
+	yt.cmdRunner = &mockCommandRunner{output: []byte(`{
+		"title":"Playlist",
+		"entries":[
+			{"id":"dQw4w9WgXcQ","title":"valid"},
+			{"id":"../../outside","title":"invalid"}
+		]
+	}`)}
+
+	info, err := yt.PlaylistVideoURLs(context.Background(), "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
+	if err != nil {
+		t.Fatalf("PlaylistVideoURLs() error = %v", err)
+	}
+	if len(info.VideoURLs) != 1 {
+		t.Fatalf("VideoURLs length = %d, want 1 (%v)", len(info.VideoURLs), info.VideoURLs)
+	}
+	if info.VideoURLs[0] != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+		t.Fatalf("VideoURLs[0] = %q", info.VideoURLs[0])
+	}
+}
 
 func TestParseSRT(t *testing.T) {
 	tests := []struct {
@@ -287,11 +310,11 @@ func TestLongestSubtitleOverlap(t *testing.T) {
 
 func TestBuildSubLangs(t *testing.T) {
 	tests := []struct {
-		name           string
-		preferred      []string
-		originalLang   string
-		wantPrimary    string
-		wantFallback   string
+		name         string
+		preferred    []string
+		originalLang string
+		wantPrimary  string
+		wantFallback string
 	}{
 		{"no preferred", nil, "", "en.*,en", ""},
 		{"english preferred", []string{"en-US", "en"}, "", "en-US", "en.*,en"},

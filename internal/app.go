@@ -786,8 +786,16 @@ func (app *App) SummarizePlaylist(ctx context.Context, playlistURL string, fallb
 	for i, videoURL := range playlistInfo.VideoURLs {
 		bar.Set(i)
 
+		parsedVideo, err := ParseVideoArg(videoURL)
+		if err != nil {
+			app.VerbosePrintf("Skipping invalid playlist video URL %q: %v\n", videoURL, err)
+			skippedVideos = append(skippedVideos, fmt.Sprintf("Video %d (invalid URL)", i+1))
+			continue
+		}
+		videoURL = parsedVideo.NormalizedURL
+		youtubeID := parsedVideo.ID
+
 		// Check for existing cached transcript first (before expensive metadata fetch)
-		_, youtubeID := ParseArg(videoURL)
 		existingTranscriptPath := filepath.Join(app.config.TranscriptsDir, youtubeID+".txt")
 
 		var transcript string

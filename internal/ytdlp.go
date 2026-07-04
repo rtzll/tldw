@@ -860,7 +860,7 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	// Extract video URLs
 	var videoURLs []string
 	for _, entry := range playlist.Entries {
-		if entry.ID != "" {
+		if IsValidYouTubeID(entry.ID) {
 			videoURL := "https://www.youtube.com/watch?v=" + entry.ID
 			videoURLs = append(videoURLs, videoURL)
 		}
