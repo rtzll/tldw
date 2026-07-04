@@ -231,6 +231,12 @@ func (app *App) TranscribeAudioStructured(ctx context.Context, audioFile string)
 
 // TranscribeAudioStructuredWithProgress transcribes an audio file with optional progress bar.
 func (app *App) TranscribeAudioStructuredWithProgress(ctx context.Context, audioFile string, showProgress bool) (*Transcript, error) {
+	if app.config.WhisperTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, app.config.WhisperTimeout)
+		defer cancel()
+	}
+
 	var progressBar ProgressBar
 	if showProgress {
 		// Create progress bar through UIManager

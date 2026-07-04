@@ -5,7 +5,21 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+type deadlineOpenAIClient struct {
+	sawDeadline bool
+}
+
+func (c *deadlineOpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
+	_, c.sawDeadline = ctx.Deadline()
+	return "hello", nil
+}
+
+func (c *deadlineOpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
+	return "", nil
+}
 
 func TestAppShouldShowStatus(t *testing.T) {
 	tests := []struct {
@@ -27,6 +41,25 @@ func TestAppShouldShowStatus(t *testing.T) {
 				t.Errorf("shouldShowStatus() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTranscribeAudioAppliesWhisperTimeout(t *testing.T) {
+	client := &deadlineOpenAIClient{}
+	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
+	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, time.Hour, false, true)
+	app := NewApp(&Config{WhisperTimeout: time.Minute, Quiet: true}, WithAI(ai))
+
+	audioFile := filepath.Join(t.TempDir(), "audio.mp3")
+	if err := os.WriteFile(audioFile, []byte("audio"), 0644); err != nil {
+		t.Fatalf("failed to create audio file: %v", err)
+	}
+
+	if _, err := app.TranscribeAudioStructured(context.Background(), audioFile); err != nil {
+		t.Fatalf("TranscribeAudioStructured() error = %v", err)
+	}
+	if !client.sawDeadline {
+		t.Fatal("expected Whisper transcription context to have a deadline")
 	}
 }
 
