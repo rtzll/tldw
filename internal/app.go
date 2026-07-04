@@ -362,7 +362,9 @@ func (app *App) GetStructuredTranscriptWithStatus(ctx context.Context, youtubeUR
 		if errors.Is(err, ErrDownloadFailed) {
 			spinner.Describe("Download failed, retrying...")
 			app.VerbosePrintf("Download failed, retrying in 1 second...\n")
-			time.Sleep(1 * time.Second)
+			if err := sleepWithContext(ctx, time.Second); err != nil {
+				return nil, err
+			}
 
 			transcript, err = app.youtube.FetchStructuredTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 		}
@@ -600,7 +602,9 @@ func (app *App) getTranscriptWithProgressManager(ctx context.Context, youtubeURL
 		if errors.Is(err, ErrDownloadFailed) {
 			progress.UpdateStatus("Download failed, retrying...")
 			progress.Log("Download failed, retrying in 1 second...\n")
-			time.Sleep(1 * time.Second)
+			if err := sleepWithContext(ctx, time.Second); err != nil {
+				return "", err
+			}
 			transcript, err = app.youtube.FetchTranscript(ctx, youtubeURL, metadata.CaptionLanguages, metadata.Language)
 		}
 

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -610,6 +611,18 @@ func RenderMarkdown(content string) (string, error) {
 	}
 
 	return renderedContent, nil
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // FileExists checks if a file exists
