@@ -500,18 +500,6 @@ func ParseVideoArg(arg string) (*ParsedArg, error) {
 	return parsed, nil
 }
 
-// ParseArg maintains backward compatibility with the old (string, string) signature
-func ParseArg(arg string) (string, string) {
-	parsed := ParseArgNew(arg)
-
-	if parsed.Error != nil {
-		// For backward compatibility, return original input for errors
-		return arg, arg
-	}
-
-	return parsed.NormalizedURL, parsed.ID
-}
-
 // VideoIDExtractor extracts video IDs from YouTube URLs
 type VideoIDExtractor func(string) (string, error)
 

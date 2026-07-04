@@ -270,27 +270,9 @@ func TestParseVideoArg(t *testing.T) {
 	}
 }
 
-func TestParseArg(t *testing.T) {
-	tests := []struct {
-		name    string
-		arg     string
-		wantURL string
-		wantID  string
-	}{
-		{"video ID", "dQw4w9WgXcQ", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"},
-		{"command returns original", "help", "help", "help"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			url, id := ParseArg(tt.arg)
-			if url != tt.wantURL {
-				t.Errorf("ParseArg(%q) URL = %v, want %v", tt.arg, url, tt.wantURL)
-			}
-			if id != tt.wantID {
-				t.Errorf("ParseArg(%q) ID = %v, want %v", tt.arg, id, tt.wantID)
-			}
-		})
+func TestParseYouTubeArgRejectsInvalidInput(t *testing.T) {
+	if _, err := ParseYouTubeArg("help"); err == nil {
+		t.Fatal("ParseYouTubeArg() expected command input error")
 	}
 }
 
