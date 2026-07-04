@@ -594,3 +594,33 @@ func TestSaveTranscript(t *testing.T) {
 		t.Errorf("saved transcript = %q, want %q", string(content), "Hello world")
 	}
 }
+
+func TestCacheHelpersRejectInvalidVideoIDs(t *testing.T) {
+	baseDir := t.TempDir()
+	transcriptsDir := filepath.Join(baseDir, "transcripts")
+	if err := os.Mkdir(transcriptsDir, 0755); err != nil {
+		t.Fatalf("creating transcripts dir: %v", err)
+	}
+
+	metadata := &VideoMetadata{Title: "Test"}
+	structured := &Transcript{VideoID: "../outside", Source: TranscriptSourceCaptions, Text: "secret"}
+
+	if err := SaveTranscript("../outside", "secret", transcriptsDir); err == nil {
+		t.Fatal("SaveTranscript() expected invalid ID error")
+	}
+	if err := SaveStructuredTranscript(structured, transcriptsDir); err == nil {
+		t.Fatal("SaveStructuredTranscript() expected invalid ID error")
+	}
+	if _, err := LoadStructuredTranscript("../outside", transcriptsDir); err == nil {
+		t.Fatal("LoadStructuredTranscript() expected invalid ID error")
+	}
+	if err := SaveMetadata("../outside", metadata, transcriptsDir); err == nil {
+		t.Fatal("SaveMetadata() expected invalid ID error")
+	}
+	if _, err := LoadCachedMetadata("../outside", transcriptsDir); err == nil {
+		t.Fatal("LoadCachedMetadata() expected invalid ID error")
+	}
+	if FileExists(filepath.Join(baseDir, "outside.txt")) {
+		t.Fatal("invalid transcript ID wrote outside transcripts dir")
+	}
+}

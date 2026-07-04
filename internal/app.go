@@ -321,7 +321,10 @@ func (app *App) GetStructuredTranscriptWithStatus(ctx context.Context, youtubeUR
 	}
 	youtubeURL = parsed.NormalizedURL
 	youtubeID := parsed.ID
-	existingStructuredTranscriptPath := structuredTranscriptPath(youtubeID, app.config.TranscriptsDir)
+	existingStructuredTranscriptPath, err := structuredTranscriptPath(youtubeID, app.config.TranscriptsDir)
+	if err != nil {
+		return nil, err
+	}
 
 	// Check for structured transcript cache.
 	if FileExists(existingStructuredTranscriptPath) {

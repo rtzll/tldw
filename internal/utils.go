@@ -748,17 +748,27 @@ func ValidateOpenAIAPIKey(apiKey string) error {
 	return nil
 }
 
+func videoCachePath(youtubeID, transcriptsDir, suffix string) (string, error) {
+	if !IsValidYouTubeID(youtubeID) {
+		return "", fmt.Errorf("invalid YouTube video ID: %q", youtubeID)
+	}
+	return filepath.Join(transcriptsDir, youtubeID+suffix), nil
+}
+
 // SaveTranscript saves a transcript to the specified directory with standard error handling
 func SaveTranscript(youtubeID, transcript, transcriptsDir string) error {
-	transcriptPath := filepath.Join(transcriptsDir, youtubeID+".txt")
+	transcriptPath, err := videoCachePath(youtubeID, transcriptsDir, ".txt")
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(transcriptPath, []byte(transcript), 0644); err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
 	return nil
 }
 
-func structuredTranscriptPath(youtubeID, transcriptsDir string) string {
-	return filepath.Join(transcriptsDir, youtubeID+".transcript.json")
+func structuredTranscriptPath(youtubeID, transcriptsDir string) (string, error) {
+	return videoCachePath(youtubeID, transcriptsDir, ".transcript.json")
 }
 
 // SaveStructuredTranscript saves the canonical transcript representation to disk.
@@ -767,8 +777,8 @@ func SaveStructuredTranscript(transcript *Transcript, transcriptsDir string) err
 		return fmt.Errorf("saving transcript: transcript is nil")
 	}
 
-	if transcript.VideoID == "" {
-		return fmt.Errorf("saving transcript: video ID is required")
+	if !IsValidYouTubeID(transcript.VideoID) {
+		return fmt.Errorf("saving transcript: invalid YouTube video ID: %q", transcript.VideoID)
 	}
 
 	data, err := json.MarshalIndent(transcript, "", "  ")
@@ -776,7 +786,12 @@ func SaveStructuredTranscript(transcript *Transcript, transcriptsDir string) err
 		return fmt.Errorf("marshaling transcript: %w", err)
 	}
 
-	if err := os.WriteFile(structuredTranscriptPath(transcript.VideoID, transcriptsDir), data, 0644); err != nil {
+	transcriptPath, err := structuredTranscriptPath(transcript.VideoID, transcriptsDir)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(transcriptPath, data, 0644); err != nil {
 		return fmt.Errorf("saving structured transcript: %w", err)
 	}
 
@@ -785,7 +800,12 @@ func SaveStructuredTranscript(transcript *Transcript, transcriptsDir string) err
 
 // LoadStructuredTranscript loads a structured transcript from disk.
 func LoadStructuredTranscript(youtubeID, transcriptsDir string) (*Transcript, error) {
-	data, err := os.ReadFile(structuredTranscriptPath(youtubeID, transcriptsDir))
+	transcriptPath, err := structuredTranscriptPath(youtubeID, transcriptsDir)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(transcriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading structured transcript: %w", err)
 	}
@@ -819,6 +839,11 @@ type CachedVideoMetadata struct {
 
 // SaveMetadata saves video metadata to cache as JSON
 func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir string) error {
+	metadataPath, err := videoCachePath(youtubeID, transcriptsDir, ".meta.json")
+	if err != nil {
+		return err
+	}
+
 	cached := CachedVideoMetadata{
 		Title:            metadata.Title,
 		Description:      metadata.Description,
@@ -833,7 +858,6 @@ func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir stri
 		CachedAt:         time.Now(),
 	}
 
-	metadataPath := filepath.Join(transcriptsDir, youtubeID+".meta.json")
 	data, err := json.MarshalIndent(cached, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling metadata: %w", err)
@@ -848,7 +872,10 @@ func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir stri
 
 // LoadCachedMetadata loads video metadata from cache
 func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error) {
-	metadataPath := filepath.Join(transcriptsDir, youtubeID+".meta.json")
+	metadataPath, err := videoCachePath(youtubeID, transcriptsDir, ".meta.json")
+	if err != nil {
+		return nil, err
+	}
 
 	if !FileExists(metadataPath) {
 		return nil, fmt.Errorf("metadata cache not found")
