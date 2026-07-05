@@ -105,6 +105,9 @@ tunnel-launchd-uninstall:
 tunnel-launchd-status:
     /bin/bash "{{justfile_dir}}/scripts/tunnel-launchd" status "{{launchd_label}}"
 
+tunnel-launchd-restart:
+    /bin/bash "{{justfile_dir}}/scripts/tunnel-launchd" restart "{{launchd_label}}"
+
 tunnel-launchd-logs mode="":
     /bin/bash "{{justfile_dir}}/scripts/tunnel-launchd" logs {{mode}}
 

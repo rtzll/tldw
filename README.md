@@ -74,6 +74,8 @@ connector.
 
 Optional: `just tunnel-launchd-install` stores the runtime key in Keychain and
 starts both the local HTTP MCP server and the tunnel at login.
+After upgrading `tldw`, run `just tunnel-launchd-restart` so launchd starts the
+new binary.
 
 Tip: Put recurring summary prompts in a ChatGPT Project, then enable the `tldw`
 connector in chats from that Project.
