@@ -49,6 +49,19 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	}
 }
 
+func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
+	yt := NewYouTube(nil, t.TempDir(), false, true)
+	yt.cmdRunner = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
+
+	metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("Metadata() error = %v", err)
+	}
+	if metadata.PublishedAt != "2026-06-29" {
+		t.Fatalf("PublishedAt = %q, want 2026-06-29", metadata.PublishedAt)
+	}
+}
+
 func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -573,6 +586,7 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 	original := &VideoMetadata{
 		Title:       "Test Video",
 		Channel:     "Test Channel",
+		PublishedAt: "2026-06-29",
 		Duration:    120,
 		Description: "A test video",
 		HasCaptions: true,
@@ -587,8 +601,16 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 		t.Fatalf("LoadCachedMetadata() error = %v", err)
 	}
 
-	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.Duration != original.Duration {
+	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.PublishedAt != original.PublishedAt || loaded.Duration != original.Duration {
 		t.Errorf("LoadCachedMetadata() = %+v, want %+v", loaded, original)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "dQw4w9WgXcQ.meta.json"))
+	if err != nil {
+		t.Fatalf("reading saved metadata: %v", err)
+	}
+	if !strings.Contains(string(data), `"published_at": "2026-06-29"`) {
+		t.Fatalf("saved metadata missing published_at: %s", data)
 	}
 }
 

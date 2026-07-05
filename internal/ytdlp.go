@@ -28,6 +28,7 @@ type VideoMetadata struct {
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`
 	Creators         []string       `json:"creators,omitempty"`
+	PublishedAt      string         `json:"published_at,omitempty"`
 	Duration         float64        `json:"duration"`
 	Language         string         `json:"language"`
 	Categories       []string       `json:"categories"`
@@ -115,6 +116,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 		Uploader          string             `json:"uploader"`
 		Creator           string             `json:"creator"`
 		Creators          metadataStringList `json:"creators"`
+		UploadDate        string             `json:"upload_date"`
 		Subtitles         map[string]any     `json:"subtitles"`
 		AutomaticCaptions map[string]any     `json:"automatic_captions"`
 	}
@@ -130,6 +132,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	raw.VideoMetadata.CaptionLanguages = languages
 	raw.VideoMetadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
 	raw.VideoMetadata.Channel = bestMetadataChannel(raw.VideoMetadata.Channel, raw.Uploader, raw.Creator, raw.VideoMetadata.Creators)
+	raw.VideoMetadata.PublishedAt = bestMetadataPublishedAt(raw.VideoMetadata.PublishedAt, raw.UploadDate)
 	metadata := raw.VideoMetadata
 
 	if yt.verbose && !yt.quiet {
@@ -185,6 +188,28 @@ func bestMetadataChannel(channel, uploader, creator string, creators []string) s
 	}
 
 	return ""
+}
+
+func bestMetadataPublishedAt(publishedAt, uploadDate string) string {
+	if trimmed := strings.TrimSpace(publishedAt); trimmed != "" {
+		return trimmed
+	}
+
+	trimmed := strings.TrimSpace(uploadDate)
+	if len(trimmed) == 8 && isDigits(trimmed) {
+		return fmt.Sprintf("%s-%s-%s", trimmed[:4], trimmed[4:6], trimmed[6:8])
+	}
+
+	return trimmed
+}
+
+func isDigits(value string) bool {
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func nonEmptyStrings(values []string) []string {
