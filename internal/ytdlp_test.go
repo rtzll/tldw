@@ -49,7 +49,7 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	}
 }
 
-func TestMetadataFallsBackWhenChannelMissing(t *testing.T) {
+func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 	tests := []struct {
 		name         string
 		json         string
@@ -69,21 +69,21 @@ func TestMetadataFallsBackWhenChannelMissing(t *testing.T) {
 			wantCreators: []string{"AI Engineer", "Matt Pocock"},
 		},
 		{
-			name:         "creators",
+			name:         "creators do not populate channel",
 			json:         `{"title":"Test","channel":" ","uploader":"","creator":"","creators":["AI Engineer","Matt Pocock"]}`,
-			wantChannel:  "AI Engineer, Matt Pocock",
+			wantChannel:  "",
 			wantCreators: []string{"AI Engineer", "Matt Pocock"},
 		},
 		{
-			name:         "creator",
+			name:         "creator does not populate channel",
 			json:         `{"title":"Test","channel":"","uploader":"","creator":"AI Engineer, Matt Pocock"}`,
-			wantChannel:  "AI Engineer, Matt Pocock",
+			wantChannel:  "",
 			wantCreators: []string{"AI Engineer, Matt Pocock"},
 		},
 		{
-			name:         "creators string",
+			name:         "creators string does not populate channel",
 			json:         `{"title":"Test","channel":"","uploader":"","creator":"","creators":"AI Engineer, Matt Pocock"}`,
-			wantChannel:  "AI Engineer, Matt Pocock",
+			wantChannel:  "",
 			wantCreators: []string{"AI Engineer, Matt Pocock"},
 		},
 	}

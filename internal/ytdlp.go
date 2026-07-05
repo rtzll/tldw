@@ -178,7 +178,7 @@ func bestMetadataCreators(creator string, creators []string) []string {
 }
 
 func bestMetadataChannel(channel, uploader, creator string, creators []string) string {
-	for _, candidate := range []string{channel, uploader, strings.Join(nonEmptyStrings(creators), ", "), creator} {
+	for _, candidate := range []string{channel, uploader} {
 		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
 			return trimmed
 		}
