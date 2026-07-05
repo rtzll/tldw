@@ -49,6 +49,40 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	}
 }
 
+func TestMetadataUsesChannelURL(t *testing.T) {
+	tests := []struct {
+		name           string
+		json           string
+		wantChannelURL string
+	}{
+		{
+			name:           "channel url",
+			json:           `{"title":"Test","channel_url":"https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA","uploader_url":"https://www.youtube.com/@aiDotEngineer"}`,
+			wantChannelURL: "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA",
+		},
+		{
+			name:           "uploader url fallback",
+			json:           `{"title":"Test","channel_url":"","uploader_url":"https://www.youtube.com/@aiDotEngineer"}`,
+			wantChannelURL: "https://www.youtube.com/@aiDotEngineer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yt := NewYouTube(nil, t.TempDir(), false, true)
+			yt.cmdRunner = &mockCommandRunner{output: []byte(tt.json)}
+
+			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+			if err != nil {
+				t.Fatalf("Metadata() error = %v", err)
+			}
+			if metadata.ChannelURL != tt.wantChannelURL {
+				t.Fatalf("ChannelURL = %q, want %q", metadata.ChannelURL, tt.wantChannelURL)
+			}
+		})
+	}
+}
+
 func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
 	yt := NewYouTube(nil, t.TempDir(), false, true)
 	yt.cmdRunner = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
@@ -586,6 +620,7 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 	original := &VideoMetadata{
 		Title:       "Test Video",
 		Channel:     "Test Channel",
+		ChannelURL:  "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA",
 		PublishedAt: "2026-06-29",
 		Duration:    120,
 		Description: "A test video",
@@ -601,7 +636,7 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 		t.Fatalf("LoadCachedMetadata() error = %v", err)
 	}
 
-	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.PublishedAt != original.PublishedAt || loaded.Duration != original.Duration {
+	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.ChannelURL != original.ChannelURL || loaded.PublishedAt != original.PublishedAt || loaded.Duration != original.Duration {
 		t.Errorf("LoadCachedMetadata() = %+v, want %+v", loaded, original)
 	}
 
@@ -611,6 +646,9 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"published_at": "2026-06-29"`) {
 		t.Fatalf("saved metadata missing published_at: %s", data)
+	}
+	if !strings.Contains(string(data), `"channel_url": "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA"`) {
+		t.Fatalf("saved metadata missing channel_url: %s", data)
 	}
 }
 

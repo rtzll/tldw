@@ -27,6 +27,7 @@ type VideoMetadata struct {
 	Title            string         `json:"title"`
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`
+	ChannelURL       string         `json:"channel_url,omitempty"`
 	Creators         []string       `json:"creators,omitempty"`
 	PublishedAt      string         `json:"published_at,omitempty"`
 	Duration         float64        `json:"duration"`
@@ -114,6 +115,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	var raw struct {
 		VideoMetadata
 		Uploader          string             `json:"uploader"`
+		UploaderURL       string             `json:"uploader_url"`
 		Creator           string             `json:"creator"`
 		Creators          metadataStringList `json:"creators"`
 		UploadDate        string             `json:"upload_date"`
@@ -132,6 +134,7 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	raw.VideoMetadata.CaptionLanguages = languages
 	raw.VideoMetadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
 	raw.VideoMetadata.Channel = bestMetadataChannel(raw.VideoMetadata.Channel, raw.Uploader, raw.Creator, raw.VideoMetadata.Creators)
+	raw.VideoMetadata.ChannelURL = bestMetadataChannelURL(raw.VideoMetadata.ChannelURL, raw.UploaderURL)
 	raw.VideoMetadata.PublishedAt = bestMetadataPublishedAt(raw.VideoMetadata.PublishedAt, raw.UploadDate)
 	metadata := raw.VideoMetadata
 
@@ -182,6 +185,16 @@ func bestMetadataCreators(creator string, creators []string) []string {
 
 func bestMetadataChannel(channel, uploader, creator string, creators []string) string {
 	for _, candidate := range []string{channel, uploader} {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return ""
+}
+
+func bestMetadataChannelURL(channelURL, uploaderURL string) string {
+	for _, candidate := range []string{channelURL, uploaderURL} {
 		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
 			return trimmed
 		}
