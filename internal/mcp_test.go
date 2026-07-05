@@ -49,6 +49,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			outputFields: []string{
 				"title",
 				"channel",
+				"creators",
 				"duration_seconds",
 				"description",
 				"has_captions",
@@ -160,6 +161,7 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 		"title": "Test Video",
 		"description": "Test Description",
 		"channel": "Test Channel",
+		"creators": ["Test Channel", "Guest Creator"],
 		"duration": 42,
 		"language": "en",
 		"categories": ["Education"],
@@ -188,6 +190,7 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 	for _, want := range []string{
 		"Title: Test Video",
 		"Channel: Test Channel",
+		"Creators: Test Channel, Guest Creator",
 		"Duration: 42 seconds",
 		"Has Captions: true",
 		"Chapter (0–10): Intro",
@@ -200,6 +203,9 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 	output := structuredContent[mcpMetadataOutput](t, result)
 	if output.Title != "Test Video" {
 		t.Errorf("structured title = %q, want Test Video", output.Title)
+	}
+	if len(output.Creators) != 2 || output.Creators[1] != "Guest Creator" {
+		t.Errorf("structured creators = %#v, want guest creator", output.Creators)
 	}
 	if !output.HasCaptions {
 		t.Error("structured has_captions = false, want true")

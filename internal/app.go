@@ -156,6 +156,25 @@ func (app *App) setCachedMetadata(id string, metadata *VideoMetadata) {
 	app.metadataCache[id] = metadata
 }
 
+func metadataRefreshReason(metadata *VideoMetadata) string {
+	if metadata == nil {
+		return ""
+	}
+
+	var reasons []string
+	if strings.TrimSpace(metadata.Channel) == "" {
+		reasons = append(reasons, "channel")
+	}
+	if metadata.HasCaptions && len(metadata.CaptionLanguages) == 0 {
+		reasons = append(reasons, "caption languages")
+	}
+	if metadata.CacheVersion < currentMetadataCacheVersion {
+		reasons = append(reasons, "creators")
+	}
+
+	return strings.Join(reasons, " and ")
+}
+
 // UpdateStatus updates the workflow status (replaces all spinner.Describe calls)
 func (wp *WorkflowProgress) UpdateStatus(description string) {
 	wp.spinner.Describe(description)
@@ -405,12 +424,11 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 			spinner.Describe("Using in-memory metadata")
 		}
 		app.VerbosePrintf("Using in-memory metadata for %s\n", youtubeID)
-		// If captions are known but languages are missing, refresh metadata to capture languages.
-		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
+		if reason := metadataRefreshReason(cachedMetadata); reason != "" {
 			if showStatus {
-				spinner.Describe("Refreshing metadata to include caption languages...")
+				spinner.Describe("Refreshing metadata to include " + reason + "...")
 			}
-			app.VerbosePrintf("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+			app.VerbosePrintf("Refreshing metadata for %s to capture %s\n", youtubeID, reason)
 			refreshed, err := app.youtube.Metadata(ctx, youtubeURL)
 			if err == nil {
 				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
@@ -427,12 +445,11 @@ func (app *App) MetadataWithStatus(ctx context.Context, youtubeURL string, showS
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		spinner.Describe("Found cached metadata")
 		app.VerbosePrintf("Using cached metadata for %s\n", youtubeID)
-		// If captions are known but languages are missing, refresh metadata to capture languages.
-		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
+		if reason := metadataRefreshReason(cachedMetadata); reason != "" {
 			if showStatus {
-				spinner.Describe("Refreshing metadata to include caption languages...")
+				spinner.Describe("Refreshing metadata to include " + reason + "...")
 			}
-			app.VerbosePrintf("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+			app.VerbosePrintf("Refreshing metadata for %s to capture %s\n", youtubeID, reason)
 			refreshed, err := app.youtube.Metadata(ctx, youtubeURL)
 			if err == nil {
 				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
@@ -664,8 +681,8 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 	// In-memory cache first.
 	if cachedMetadata, ok := app.getCachedMetadata(youtubeID); ok {
 		progress.Log("Using in-memory metadata for %s\n", youtubeID)
-		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
-			progress.Log("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+		if reason := metadataRefreshReason(cachedMetadata); reason != "" {
+			progress.Log("Refreshing metadata for %s to capture %s\n", youtubeID, reason)
 			if refreshed, err := app.youtube.Metadata(ctx, youtubeURL); err == nil {
 				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
 					progress.Log("Warning: Failed to cache refreshed metadata: %v\n", err)
@@ -680,8 +697,8 @@ func (app *App) metadataWithProgressManager(ctx context.Context, youtubeURL stri
 	// On-disk cache next.
 	if cachedMetadata, err := LoadCachedMetadata(youtubeID, app.config.TranscriptsDir); err == nil {
 		progress.Log("Using cached metadata for %s\n", youtubeID)
-		if cachedMetadata.HasCaptions && len(cachedMetadata.CaptionLanguages) == 0 {
-			progress.Log("Refreshing metadata for %s to capture caption languages\n", youtubeID)
+		if reason := metadataRefreshReason(cachedMetadata); reason != "" {
+			progress.Log("Refreshing metadata for %s to capture %s\n", youtubeID, reason)
 			if refreshed, err := app.youtube.Metadata(ctx, youtubeURL); err == nil {
 				if err := SaveMetadata(youtubeID, refreshed, app.config.TranscriptsDir); err != nil {
 					progress.Log("Warning: Failed to cache refreshed metadata: %v\n", err)

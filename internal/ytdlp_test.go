@@ -49,6 +49,64 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	}
 }
 
+func TestMetadataFallsBackWhenChannelMissing(t *testing.T) {
+	tests := []struct {
+		name         string
+		json         string
+		wantChannel  string
+		wantCreators []string
+	}{
+		{
+			name:         "channel",
+			json:         `{"title":"Test","channel":"Upload Channel","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`,
+			wantChannel:  "Upload Channel",
+			wantCreators: []string{"AI Engineer", "Matt Pocock"},
+		},
+		{
+			name:         "uploader",
+			json:         `{"title":"Test","channel":"","uploader":"AI Engineer","creator":"AI Engineer, Matt Pocock","creators":["AI Engineer","Matt Pocock"]}`,
+			wantChannel:  "AI Engineer",
+			wantCreators: []string{"AI Engineer", "Matt Pocock"},
+		},
+		{
+			name:         "creators",
+			json:         `{"title":"Test","channel":" ","uploader":"","creator":"","creators":["AI Engineer","Matt Pocock"]}`,
+			wantChannel:  "AI Engineer, Matt Pocock",
+			wantCreators: []string{"AI Engineer", "Matt Pocock"},
+		},
+		{
+			name:         "creator",
+			json:         `{"title":"Test","channel":"","uploader":"","creator":"AI Engineer, Matt Pocock"}`,
+			wantChannel:  "AI Engineer, Matt Pocock",
+			wantCreators: []string{"AI Engineer, Matt Pocock"},
+		},
+		{
+			name:         "creators string",
+			json:         `{"title":"Test","channel":"","uploader":"","creator":"","creators":"AI Engineer, Matt Pocock"}`,
+			wantChannel:  "AI Engineer, Matt Pocock",
+			wantCreators: []string{"AI Engineer, Matt Pocock"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yt := NewYouTube(nil, t.TempDir(), false, true)
+			yt.cmdRunner = &mockCommandRunner{output: []byte(tt.json)}
+
+			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+			if err != nil {
+				t.Fatalf("Metadata() error = %v", err)
+			}
+			if metadata.Channel != tt.wantChannel {
+				t.Fatalf("Channel = %q, want %q", metadata.Channel, tt.wantChannel)
+			}
+			if strings.Join(metadata.Creators, "|") != strings.Join(tt.wantCreators, "|") {
+				t.Fatalf("Creators = %#v, want %#v", metadata.Creators, tt.wantCreators)
+			}
+		})
+	}
+}
+
 func TestParseSRT(t *testing.T) {
 	tests := []struct {
 		name    string

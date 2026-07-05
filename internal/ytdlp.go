@@ -27,6 +27,7 @@ type VideoMetadata struct {
 	Title            string         `json:"title"`
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`
+	Creators         []string       `json:"creators,omitempty"`
 	Duration         float64        `json:"duration"`
 	Language         string         `json:"language"`
 	Categories       []string       `json:"categories"`
@@ -34,6 +35,9 @@ type VideoMetadata struct {
 	Chapters         []VideoChapter `json:"chapters"`
 	HasCaptions      bool           `json:"has_captions"`
 	CaptionLanguages []string       `json:"caption_languages"`
+
+	// CacheVersion is internal bookkeeping for on-disk metadata cache migrations.
+	CacheVersion int `json:"-"`
 }
 
 // VideoChapter represents a video chapter marker
@@ -108,8 +112,11 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	// Parse JSON once to populate metadata and caption availability
 	var raw struct {
 		VideoMetadata
-		Subtitles         map[string]any `json:"subtitles"`
-		AutomaticCaptions map[string]any `json:"automatic_captions"`
+		Uploader          string             `json:"uploader"`
+		Creator           string             `json:"creator"`
+		Creators          metadataStringList `json:"creators"`
+		Subtitles         map[string]any     `json:"subtitles"`
+		AutomaticCaptions map[string]any     `json:"automatic_captions"`
 	}
 	if err := json.Unmarshal(output, &raw); err != nil {
 		if yt.verbose {
@@ -121,6 +128,8 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	languages := extractCaptionLanguages(raw.Subtitles, raw.AutomaticCaptions)
 	raw.VideoMetadata.HasCaptions = len(languages) > 0
 	raw.VideoMetadata.CaptionLanguages = languages
+	raw.VideoMetadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
+	raw.VideoMetadata.Channel = bestMetadataChannel(raw.VideoMetadata.Channel, raw.Uploader, raw.Creator, raw.VideoMetadata.Creators)
 	metadata := raw.VideoMetadata
 
 	if yt.verbose && !yt.quiet {
@@ -131,6 +140,68 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	}
 
 	return &metadata, nil
+}
+
+type metadataStringList []string
+
+func (list *metadataStringList) UnmarshalJSON(data []byte) error {
+	var values []string
+	if err := json.Unmarshal(data, &values); err == nil {
+		*list = values
+		return nil
+	}
+
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		*list = []string{value}
+		return nil
+	}
+
+	if strings.TrimSpace(string(data)) == "null" {
+		*list = nil
+		return nil
+	}
+
+	return fmt.Errorf("metadata string list must be a string or string array")
+}
+
+func bestMetadataCreators(creator string, creators []string) []string {
+	if cleaned := nonEmptyStrings(creators); len(cleaned) > 0 {
+		return cleaned
+	}
+
+	if trimmed := strings.TrimSpace(creator); trimmed != "" {
+		return []string{trimmed}
+	}
+
+	return nil
+}
+
+func bestMetadataChannel(channel, uploader, creator string, creators []string) string {
+	for _, candidate := range []string{channel, uploader, strings.Join(nonEmptyStrings(creators), ", "), creator} {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return ""
+}
+
+func nonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
 }
 
 // Audio gets mp3 audio from a YouTube video

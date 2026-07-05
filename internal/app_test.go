@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -112,6 +113,42 @@ func TestAppCachedMetadata(t *testing.T) {
 	_, ok = app.getCachedMetadata("notfound")
 	if ok {
 		t.Error("expected no metadata for unknown key")
+	}
+}
+
+func TestMetadataRefreshesCachedMetadataWithMissingChannel(t *testing.T) {
+	transcriptsDir := t.TempDir()
+	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
+	app.youtube.cmdRunner = &mockCommandRunner{output: []byte(`{"title":"Fresh Video","channel":"","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`)}
+
+	videoID := "dQw4w9WgXcQ"
+	if err := SaveMetadata(videoID, &VideoMetadata{Title: "Cached Video", HasCaptions: true, CaptionLanguages: []string{"en"}}, transcriptsDir); err != nil {
+		t.Fatalf("SaveMetadata() error = %v", err)
+	}
+
+	metadata, err := app.MetadataWithStatus(context.Background(), "https://www.youtube.com/watch?v="+videoID, false)
+	if err != nil {
+		t.Fatalf("Metadata() error = %v", err)
+	}
+	if metadata.Title != "Fresh Video" {
+		t.Fatalf("Title = %q, want refreshed metadata", metadata.Title)
+	}
+	if metadata.Channel != "AI Engineer" {
+		t.Fatalf("Channel = %q, want fallback uploader", metadata.Channel)
+	}
+	if strings.Join(metadata.Creators, "|") != "AI Engineer|Matt Pocock" {
+		t.Fatalf("Creators = %#v, want both associated creators", metadata.Creators)
+	}
+
+	cached, err := LoadCachedMetadata(videoID, transcriptsDir)
+	if err != nil {
+		t.Fatalf("LoadCachedMetadata() error = %v", err)
+	}
+	if cached.Channel != "AI Engineer" {
+		t.Fatalf("cached Channel = %q, want refreshed channel", cached.Channel)
+	}
+	if strings.Join(cached.Creators, "|") != "AI Engineer|Matt Pocock" {
+		t.Fatalf("cached Creators = %#v, want both associated creators", cached.Creators)
 	}
 }
 

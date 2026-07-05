@@ -826,11 +826,15 @@ func LoadStructuredTranscript(youtubeID, transcriptsDir string) (*Transcript, er
 	return &transcript, nil
 }
 
+const currentMetadataCacheVersion = 2
+
 // CachedVideoMetadata extends VideoMetadata with cache information
 type CachedVideoMetadata struct {
+	CacheVersion     int            `json:"cache_version"`
 	Title            string         `json:"title"`
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`
+	Creators         []string       `json:"creators,omitempty"`
 	Duration         float64        `json:"duration"`
 	Language         string         `json:"language"`
 	Categories       []string       `json:"categories"`
@@ -848,10 +852,13 @@ func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir stri
 		return err
 	}
 
+	metadata.CacheVersion = currentMetadataCacheVersion
 	cached := CachedVideoMetadata{
+		CacheVersion:     currentMetadataCacheVersion,
 		Title:            metadata.Title,
 		Description:      metadata.Description,
 		Channel:          metadata.Channel,
+		Creators:         metadata.Creators,
 		Duration:         metadata.Duration,
 		Language:         metadata.Language,
 		Categories:       metadata.Categories,
@@ -899,6 +906,7 @@ func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error
 		Title:            cached.Title,
 		Description:      cached.Description,
 		Channel:          cached.Channel,
+		Creators:         cached.Creators,
 		Duration:         cached.Duration,
 		Language:         cached.Language,
 		Categories:       cached.Categories,
@@ -906,5 +914,6 @@ func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error
 		Chapters:         cached.Chapters,
 		HasCaptions:      cached.HasCaptions,
 		CaptionLanguages: cached.CaptionLanguages,
+		CacheVersion:     cached.CacheVersion,
 	}, nil
 }

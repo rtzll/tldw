@@ -53,7 +53,8 @@ type mcpChapterOutput struct {
 
 type mcpMetadataOutput struct {
 	Title            string             `json:"title" jsonschema:"YouTube video title"`
-	Channel          string             `json:"channel" jsonschema:"YouTube channel name"`
+	Channel          string             `json:"channel" jsonschema:"Main YouTube upload channel name"`
+	Creators         []string           `json:"creators,omitempty" jsonschema:"Creators or collaborators associated with the video"`
 	DurationSeconds  float64            `json:"duration_seconds" jsonschema:"Duration in seconds"`
 	Description      string             `json:"description" jsonschema:"YouTube description"`
 	Language         string             `json:"language,omitempty" jsonschema:"Detected video language"`
@@ -173,6 +174,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	output := mcpMetadataOutput{
 		Title:            metadata.Title,
 		Channel:          metadata.Channel,
+		Creators:         metadata.Creators,
 		DurationSeconds:  metadata.Duration,
 		Description:      metadata.Description,
 		Language:         metadata.Language,
@@ -194,6 +196,9 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	var buf strings.Builder
 	buf.WriteString(fmt.Sprintf("Title: %s\n", metadata.Title))
 	buf.WriteString(fmt.Sprintf("Channel: %s\n", metadata.Channel))
+	if len(metadata.Creators) > 0 {
+		buf.WriteString(fmt.Sprintf("Creators: %s\n", strings.Join(metadata.Creators, ", ")))
+	}
 	buf.WriteString(fmt.Sprintf("Duration: %.0f seconds\n", metadata.Duration))
 	buf.WriteString(fmt.Sprintf("Description: %s\n", metadata.Description))
 
