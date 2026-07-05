@@ -116,6 +116,13 @@ func TestAppCachedMetadata(t *testing.T) {
 	}
 }
 
+func TestMetadataRefreshReasonUsesSchemaForOldCacheVersion(t *testing.T) {
+	reason := metadataRefreshReason(&VideoMetadata{Channel: "Test Channel", CacheVersion: currentMetadataCacheVersion - 1})
+	if reason != "metadata schema" {
+		t.Fatalf("metadataRefreshReason() = %q, want metadata schema", reason)
+	}
+}
+
 func TestMetadataRefreshesCachedMetadataWithMissingChannel(t *testing.T) {
 	transcriptsDir := t.TempDir()
 	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})

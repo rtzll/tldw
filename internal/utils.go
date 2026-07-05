@@ -826,7 +826,7 @@ func LoadStructuredTranscript(youtubeID, transcriptsDir string) (*Transcript, er
 	return &transcript, nil
 }
 
-const currentMetadataCacheVersion = 2
+const currentMetadataCacheVersion = 3
 
 // CachedVideoMetadata extends VideoMetadata with cache information
 type CachedVideoMetadata struct {

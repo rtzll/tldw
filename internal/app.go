@@ -169,7 +169,7 @@ func metadataRefreshReason(metadata *VideoMetadata) string {
 		reasons = append(reasons, "caption languages")
 	}
 	if metadata.CacheVersion < currentMetadataCacheVersion {
-		reasons = append(reasons, "creators")
+		reasons = append(reasons, "metadata schema")
 	}
 
 	return strings.Join(reasons, " and ")

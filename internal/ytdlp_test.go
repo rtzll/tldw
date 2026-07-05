@@ -614,6 +614,13 @@ func TestSaveAndLoadStructuredTranscript(t *testing.T) {
 	}
 }
 
+func TestCurrentMetadataCacheVersion(t *testing.T) {
+	const want = 3
+	if currentMetadataCacheVersion != want {
+		t.Fatalf("currentMetadataCacheVersion = %d, want %d", currentMetadataCacheVersion, want)
+	}
+}
+
 func TestSaveAndLoadMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -638,6 +645,9 @@ func TestSaveAndLoadMetadata(t *testing.T) {
 
 	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.ChannelURL != original.ChannelURL || loaded.PublishedAt != original.PublishedAt || loaded.Duration != original.Duration {
 		t.Errorf("LoadCachedMetadata() = %+v, want %+v", loaded, original)
+	}
+	if loaded.CacheVersion != currentMetadataCacheVersion {
+		t.Errorf("LoadCachedMetadata() CacheVersion = %d, want %d", loaded.CacheVersion, currentMetadataCacheVersion)
 	}
 
 	data, err := os.ReadFile(filepath.Join(tmpDir, "dQw4w9WgXcQ.meta.json"))
