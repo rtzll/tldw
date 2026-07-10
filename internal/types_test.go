@@ -48,6 +48,17 @@ func TestParsedArgIsValid(t *testing.T) {
 	}
 }
 
+func TestParsedArgRefPreservesValidatedReference(t *testing.T) {
+	parsed := ParseArgNew("dQw4w9WgXcQ")
+	ref, err := parsed.Ref()
+	if err != nil {
+		t.Fatalf("Ref() error = %v", err)
+	}
+	if ref.ID != "dQw4w9WgXcQ" || ref.ContentType != ContentTypeVideo || ref.NormalizedURL == "" {
+		t.Fatalf("Ref() = %+v", ref)
+	}
+}
+
 var errTest = errTestType{}
 
 type errTestType struct{}

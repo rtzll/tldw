@@ -73,6 +73,7 @@ type AI struct {
 	apiKey       string
 	clientOnce   sync.Once
 	clientErr    error
+	log          LogSink
 }
 
 // NewAI creates a new AI processor
@@ -85,6 +86,7 @@ func NewAI(client OpenAIClientInterface, audio *Audio, model string, whisperLimi
 		timeout:      timeout,
 		verbose:      verbose,
 		quiet:        quiet,
+		log:          discardLogSink{},
 	}
 }
 
@@ -99,7 +101,12 @@ func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64,
 		verbose:      verbose,
 		quiet:        quiet,
 		apiKey:       apiKey,
+		log:          discardLogSink{},
 	}
+}
+
+func (ai *AI) SetLogSink(log LogSink) {
+	ai.log = log
 }
 
 // ensureClient initializes the OpenAI client if needed
@@ -131,7 +138,7 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, prog
 	}
 
 	if ai.verbose && !ai.quiet {
-		fmt.Printf("Transcribing audio file: %s\n", audioFile)
+		ai.log.Printf("Transcribing audio file: %s\n", audioFile)
 	}
 
 	info, err := os.Stat(audioFile)
@@ -175,7 +182,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 	numChunks := len(chunks)
 
 	if ai.verbose && !ai.quiet {
-		fmt.Printf("Transcribing chunks (%d)\n", numChunks)
+		ai.log.Printf("Transcribing chunks (%d)\n", numChunks)
 	}
 
 	// Progress bar should be created by UIManager and passed in
@@ -193,7 +200,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 
 		text, err := ai.client.CreateTranscription(ctx, file)
 		if closeErr := file.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close file %s: %v\n", chunkPath, closeErr)
+			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
 		}
 		if err != nil {
 			return "", fmt.Errorf("transcribing chunk %d: %w", i+1, err)
@@ -205,7 +212,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 		}
 
 		if ai.verbose && !ai.quiet {
-			fmt.Printf("Transcribed chunk %d/%d\n", i+1, numChunks)
+			ai.log.Printf("Transcribed chunk %d/%d\n", i+1, numChunks)
 		}
 	}
 
@@ -290,7 +297,7 @@ func (ai *AI) processAudioChunksWithSharedProgress(ctx context.Context, chunks [
 
 		text, err := ai.client.CreateTranscription(ctx, file)
 		if closeErr := file.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close file %s: %v\n", chunkPath, closeErr)
+			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
 		}
 		if err != nil {
 			return "", fmt.Errorf("transcribing chunk %d: %w", i+1, err)

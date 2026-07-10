@@ -21,7 +21,7 @@ var cpCmd = &cobra.Command{
   tldw cp tAP1eZYEuKA --fallback-whisper`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app := internal.NewApp(config)
+		app := newEngine(config)
 
 		transcript, err := fetchTranscript(cmd, app, args[0])
 		if err != nil {

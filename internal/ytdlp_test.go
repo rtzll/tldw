@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -11,10 +12,60 @@ import (
 	"path/filepath"
 )
 
+type fakeStreamingRunner struct {
+	lines []string
+	err   error
+	calls int
+}
+
+func (r *fakeStreamingRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return nil, r.err
+}
+
+func (r *fakeStreamingRunner) RunStreaming(_ context.Context, _ string, _ []string, onLine func(string)) error {
+	r.calls++
+	for _, line := range r.lines {
+		onLine(line)
+	}
+	return r.err
+}
+
+func TestAudioWithProgressUsesStreamingCommandAdapter(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	stream := &fakeStreamingRunner{lines: []string{"[download] 50.0%", "[ExtractAudio]"}}
+	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
+	yt.executor = stream
+	progress := &mockProgressBar{}
+
+	_, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", progress)
+	if err != nil {
+		t.Fatalf("AudioWithProgress() error = %v", err)
+	}
+	if stream.calls != 1 {
+		t.Fatalf("streaming command calls = %d, want 1", stream.calls)
+	}
+	if len(progress.sets) == 0 || progress.sets[0] != 40 {
+		t.Fatalf("progress sets = %v, want first value 40", progress.sets)
+	}
+	if progress.desc != "Converting audio" {
+		t.Fatalf("progress description = %q, want %q", progress.desc, "Converting audio")
+	}
+}
+
+func TestAudioWithProgressReturnsStreamingCommandError(t *testing.T) {
+	yt := NewYouTubeWithCache(t.TempDir(), t.TempDir(), false, true)
+	yt.executor = &fakeStreamingRunner{err: errors.New("stream failed")}
+
+	_, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", &mockProgressBar{})
+	if err == nil || !strings.Contains(err.Error(), "stream failed") {
+		t.Fatalf("AudioWithProgress() error = %v, want streaming error", err)
+	}
+}
+
 func TestAudioWithProgressUsesConfiguredCacheDir(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
-	yt := NewYouTubeWithCache(nil, t.TempDir(), cacheDir, false, true)
-	yt.cmdRunner = &mockCommandRunner{}
+	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
+	yt.executor = &mockCommandRunner{}
 
 	got, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", nil)
 	if err != nil {
@@ -28,8 +79,8 @@ func TestAudioWithProgressUsesConfiguredCacheDir(t *testing.T) {
 }
 
 func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
-	yt := NewYouTube(nil, t.TempDir(), false, true)
-	yt.cmdRunner = &mockCommandRunner{output: []byte(`{
+	yt := NewYouTube(t.TempDir(), false, true)
+	yt.executor = &mockCommandRunner{output: []byte(`{
 		"title":"Playlist",
 		"entries":[
 			{"id":"dQw4w9WgXcQ","title":"valid"},
@@ -41,11 +92,11 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlaylistVideoURLs() error = %v", err)
 	}
-	if len(info.VideoURLs) != 1 {
-		t.Fatalf("VideoURLs length = %d, want 1 (%v)", len(info.VideoURLs), info.VideoURLs)
+	if len(info.Videos) != 1 {
+		t.Fatalf("Videos length = %d, want 1 (%v)", len(info.Videos), info.Videos)
 	}
-	if info.VideoURLs[0] != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
-		t.Fatalf("VideoURLs[0] = %q", info.VideoURLs[0])
+	if info.Videos[0].NormalizedURL != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+		t.Fatalf("Videos[0] = %+v", info.Videos[0])
 	}
 }
 
@@ -69,8 +120,8 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(nil, t.TempDir(), false, true)
-			yt.cmdRunner = &mockCommandRunner{output: []byte(tt.json)}
+			yt := NewYouTube(t.TempDir(), false, true)
+			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 
 			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 			if err != nil {
@@ -84,8 +135,8 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 }
 
 func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
-	yt := NewYouTube(nil, t.TempDir(), false, true)
-	yt.cmdRunner = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
+	yt := NewYouTube(t.TempDir(), false, true)
+	yt.executor = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
 
 	metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 	if err != nil {
@@ -137,8 +188,8 @@ func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(nil, t.TempDir(), false, true)
-			yt.cmdRunner = &mockCommandRunner{output: []byte(tt.json)}
+			yt := NewYouTube(t.TempDir(), false, true)
+			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 
 			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 			if err != nil {

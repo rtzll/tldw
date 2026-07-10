@@ -22,42 +22,23 @@ func (c *deadlineOpenAIClient) CreateChatCompletion(ctx context.Context, model, 
 	return "", nil
 }
 
-func TestAppShouldShowStatus(t *testing.T) {
-	tests := []struct {
-		name    string
-		quiet   bool
-		verbose bool
-		want    bool
-	}{
-		{"normal", false, false, true},
-		{"quiet", true, false, false},
-		{"verbose", false, true, false},
-		{"both", true, true, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			app := &App{config: &Config{Quiet: tt.quiet, Verbose: tt.verbose}}
-			if got := app.shouldShowStatus(); got != tt.want {
-				t.Errorf("shouldShowStatus() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestTranscribeAudioAppliesWhisperTimeout(t *testing.T) {
 	client := &deadlineOpenAIClient{}
-	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
+	tempDir := t.TempDir()
+	audio := NewAudio(&mockCommandRunner{}, tempDir, false)
 	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, time.Hour, false, true)
-	app := NewApp(&Config{WhisperTimeout: time.Minute, Quiet: true}, WithAI(ai))
-
-	audioFile := filepath.Join(t.TempDir(), "audio.mp3")
-	if err := os.WriteFile(audioFile, []byte("audio"), 0644); err != nil {
-		t.Fatalf("failed to create audio file: %v", err)
+	ref, err := ParseVideoArg("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
 	}
+	engine := newTestEngine(
+		&Config{WhisperTimeout: time.Minute, TranscriptsDir: tempDir, Quiet: true},
+		WithAI(ai),
+		WithVideoAdapter(&engineVideoAdapter{audioPath: filepath.Join(tempDir, "audio.mp3")}),
+	)
 
-	if _, err := app.TranscribeAudioStructured(context.Background(), audioFile); err != nil {
-		t.Fatalf("TranscribeAudioStructured() error = %v", err)
+	if _, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly}); err != nil {
+		t.Fatalf("Transcript() error = %v", err)
 	}
 	if !client.sawDeadline {
 		t.Fatal("expected Whisper transcription context to have a deadline")
@@ -74,30 +55,32 @@ func TestGetTranscriptRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
 		t.Fatalf("failed to create outside transcript: %v", err)
 	}
 
-	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
-	got, err := app.GetTranscriptOutput(context.Background(), "../outside", TranscriptRenderFormatPlain)
+	engine := newTestEngine(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
+	got, err := engine.Transcript(context.Background(), YouTubeRef{ContentType: ContentTypeVideo, ID: "../outside"}, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
 	if err == nil {
 		t.Fatal("expected invalid input error")
 	}
-	if got == "secret" {
+	if got != nil && got.PlainText() == "secret" {
 		t.Fatal("read transcript outside configured directory")
 	}
 }
 
 func TestVideoOnlyPathsRejectPlaylists(t *testing.T) {
-	app := NewApp(&Config{TranscriptsDir: t.TempDir(), Quiet: true})
-	playlistURL := "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
-
-	if _, err := app.GetTranscriptOutput(context.Background(), playlistURL, TranscriptRenderFormatPlain); err == nil {
+	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true})
+	playlist, err := ParseYouTubeArg("https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
+	if err != nil {
+		t.Fatalf("ParseYouTubeArg() error = %v", err)
+	}
+	if _, err := engine.Transcript(context.Background(), playlist, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly}); err == nil {
 		t.Fatal("expected playlist transcript request to fail")
 	}
-	if _, err := app.Metadata(context.Background(), playlistURL); err == nil {
+	if _, err := engine.MetadataFor(context.Background(), playlist); err == nil {
 		t.Fatal("expected playlist metadata request to fail")
 	}
 }
 
 func TestAppCachedMetadata(t *testing.T) {
-	app := NewApp(&Config{})
+	app := newTestEngine(&Config{})
 	meta := &VideoMetadata{Title: "Test"}
 
 	app.setCachedMetadata("abc123", meta)
@@ -125,15 +108,20 @@ func TestMetadataRefreshReasonUsesSchemaForOldCacheVersion(t *testing.T) {
 
 func TestMetadataRefreshesCachedMetadataWithMissingChannel(t *testing.T) {
 	transcriptsDir := t.TempDir()
-	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
-	app.youtube.cmdRunner = &mockCommandRunner{output: []byte(`{"title":"Fresh Video","channel":"","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`)}
+	youtube := NewYouTubeWithCache(transcriptsDir, t.TempDir(), false, true)
+	youtube.executor = &mockCommandRunner{output: []byte(`{"title":"Fresh Video","channel":"","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`)}
+	app := newTestEngine(&Config{TranscriptsDir: transcriptsDir, Quiet: true}, WithYouTube(youtube))
 
 	videoID := "dQw4w9WgXcQ"
 	if err := SaveMetadata(videoID, &VideoMetadata{Title: "Cached Video", HasCaptions: true, CaptionLanguages: []string{"en"}}, transcriptsDir); err != nil {
 		t.Fatalf("SaveMetadata() error = %v", err)
 	}
 
-	metadata, err := app.MetadataWithStatus(context.Background(), "https://www.youtube.com/watch?v="+videoID, false)
+	ref, err := ParseVideoArg("https://www.youtube.com/watch?v=" + videoID)
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
+	}
+	metadata, err := app.MetadataFor(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("Metadata() error = %v", err)
 	}
@@ -159,37 +147,8 @@ func TestMetadataRefreshesCachedMetadataWithMissingChannel(t *testing.T) {
 	}
 }
 
-func TestCollectPlaylistTranscriptsUsesCachedData(t *testing.T) {
-	transcriptsDir := t.TempDir()
-	app := NewApp(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
-
-	videoID := "dQw4w9WgXcQ"
-	if err := SaveTranscript(videoID, "cached transcript", transcriptsDir); err != nil {
-		t.Fatalf("SaveTranscript() error = %v", err)
-	}
-	metadata := &VideoMetadata{Title: "Cached Video", Channel: "Channel", Duration: 42, Description: "Description"}
-	if err := SaveMetadata(videoID, metadata, transcriptsDir); err != nil {
-		t.Fatalf("SaveMetadata() error = %v", err)
-	}
-
-	info := &PlaylistInfo{
-		Title:     "Playlist",
-		VideoURLs: []string{"https://www.youtube.com/watch?v=" + videoID},
-	}
-	videos, skipped := app.collectPlaylistTranscripts(context.Background(), info, false)
-	if len(skipped) != 0 {
-		t.Fatalf("skipped videos = %v, want none", skipped)
-	}
-	if len(videos) != 1 {
-		t.Fatalf("videos length = %d, want 1", len(videos))
-	}
-	if videos[0].Title != metadata.Title || videos[0].Transcript != "cached transcript" {
-		t.Fatalf("collected video = %+v", videos[0])
-	}
-}
-
 func TestBuildPlaylistTranscript(t *testing.T) {
-	app := NewApp(&Config{})
+	app := newTestEngine(&Config{})
 
 	videos := []VideoTranscript{
 		{

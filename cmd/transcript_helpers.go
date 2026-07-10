@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -19,51 +19,38 @@ func requestedTranscriptFormat(cmd *cobra.Command) internal.TranscriptRenderForm
 }
 
 // fetchTranscript retrieves a transcript for the given argument and optionally falls back to Whisper.
-func fetchTranscript(cmd *cobra.Command, app *internal.App, arg string) (string, error) {
+func fetchTranscript(cmd *cobra.Command, app *internal.Engine, arg string) (string, error) {
 	parsed, err := internal.ParseVideoArg(arg)
 	if err != nil {
 		return "", err
 	}
-	youtubeURL := parsed.NormalizedURL
 	format := requestedTranscriptFormat(cmd)
 
-	transcript, err := app.GetTranscriptOutput(cmd.Context(), youtubeURL, format)
-	if err == nil {
-		return transcript, nil
+	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
+	if format == internal.TranscriptRenderFormatTimestamps {
+		transcript, err := app.Transcript(cmd.Context(), parsed, internal.TranscriptRequest{
+			Policy:            internal.TranscriptPolicyCaptionsOnly,
+			RequireTimestamps: true,
+		})
+		if err != nil {
+			if fallbackWhisper {
+				return "", fmt.Errorf("timestamps are not supported with Whisper fallback yet")
+			}
+			return "", err
+		}
+		return transcript.Render(format)
 	}
 
-	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-	if !fallbackWhisper {
+	policy := internal.TranscriptPolicyCaptionsOnly
+	if fallbackWhisper {
+		policy = internal.TranscriptPolicyCaptionsThenWhisper
+	}
+	transcript, err := app.Transcript(cmd.Context(), parsed, internal.TranscriptRequest{Policy: policy})
+	if errors.Is(err, internal.ErrCaptionsUnavailable) && fallbackWhisper {
+		transcript, err = app.Transcript(cmd.Context(), parsed, internal.TranscriptRequest{Policy: internal.TranscriptPolicyWhisperOnly})
+	}
+	if err != nil {
 		return "", err
 	}
-
-	if format == internal.TranscriptRenderFormatTimestamps {
-		return "", fmt.Errorf("timestamps are not supported with Whisper fallback yet")
-	}
-
-	audioFile, audioErr := app.DownloadAudio(cmd.Context(), youtubeURL)
-	if audioErr != nil {
-		return "", audioErr
-	}
-
-	structuredTranscript, whisperErr := app.TranscribeAudioStructured(cmd.Context(), audioFile)
-	if whisperErr != nil {
-		return "", whisperErr
-	}
-
-	structuredTranscript.VideoID = parsed.ID
-
-	transcript, renderErr := structuredTranscript.Render(internal.TranscriptRenderFormatPlain)
-	if renderErr != nil {
-		return "", renderErr
-	}
-
-	if saveErr := internal.SaveStructuredTranscript(structuredTranscript, config.TranscriptsDir); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", saveErr)
-	}
-	if saveErr := internal.SaveTranscript(parsed.ID, transcript, config.TranscriptsDir); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", saveErr)
-	}
-
-	return transcript, nil
+	return transcript.Render(internal.TranscriptRenderFormatPlain)
 }

@@ -19,7 +19,7 @@ func AddOpenAIFlags(cmd *cobra.Command) {
 }
 
 // HandlePromptFlag processes the --prompt flag to set custom prompt
-func HandlePromptFlag(cmd *cobra.Command, app *App) error {
+func HandlePromptFlag(cmd *cobra.Command, app *Engine) error {
 	// Check if prompt flag was explicitly set
 	promptFlag := cmd.Flags().Lookup("prompt")
 	if promptFlag == nil || !promptFlag.Changed {

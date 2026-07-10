@@ -17,6 +17,10 @@ func (m *mockCommandRunner) Run(ctx context.Context, name string, args ...string
 	return m.output, m.err
 }
 
+func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
+	return m.err
+}
+
 func TestAudioDuration(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -52,17 +52,9 @@ Transport options:
 			host = "127.0.0.1"
 		}
 
-		app := internal.NewApp(config)
+		app := newMCPEngine(config)
 
 		mcpServer := internal.NewMCPServer(app)
-
-		if config.Verbose {
-			if transport == "http" {
-				fmt.Printf("Starting TL;DW MCP server on HTTP %s:%d...\n", host, port)
-			} else {
-				fmt.Println("Starting TL;DW MCP server on stdio...")
-			}
-		}
 
 		// Start the server (this will block until context is cancelled)
 		return mcpServer.Start(cmd.Context(), transport, host, port)

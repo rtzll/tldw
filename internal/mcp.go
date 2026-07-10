@@ -16,7 +16,7 @@ import (
 
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
-	app                *App
+	engine             *Engine
 	mcpServer          *mcp.Server
 	stdioToolMu        sync.Mutex
 	stdioSerializeOnce sync.Once
@@ -73,8 +73,8 @@ type mcpTranscriptOutput struct {
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer(app *App) *MCPServer {
-	InitMCPLogging(app.config)
+func NewMCPServer(engine *Engine) *MCPServer {
+	InitMCPLogging(engine.config)
 	MCPLogInfo("Initializing MCP server (tldw-server v%s)", mcpServerVersion)
 
 	mcpServer := mcp.NewServer(&mcp.Implementation{
@@ -87,7 +87,7 @@ func NewMCPServer(app *App) *MCPServer {
 	})
 
 	s := &MCPServer{
-		app:       app,
+		engine:    engine,
 		mcpServer: mcpServer,
 	}
 
@@ -115,29 +115,29 @@ func (s *MCPServer) registerTools() {
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_youtube_metadata",
 		Description: mcpGetMetadataDescription,
-		Annotations: mcpToolAnnotations(),
+		Annotations: mcpToolAnnotations(true),
 	}, s.handleGetMetadata)
 
 	// get_youtube_transcript tool (free - existing captions only)
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_youtube_transcript",
 		Description: mcpGetTranscriptDescription,
-		Annotations: mcpToolAnnotations(),
+		Annotations: mcpToolAnnotations(true),
 	}, s.handleGetTranscript)
 
 	// transcribe_youtube_whisper tool (paid - creates transcript using AI)
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "transcribe_youtube_whisper",
 		Description: mcpWhisperDescription,
-		Annotations: mcpToolAnnotations(),
+		Annotations: mcpToolAnnotations(false),
 	}, s.handleWhisperTranscribe)
 }
 
-func mcpToolAnnotations() *mcp.ToolAnnotations {
+func mcpToolAnnotations(readOnly bool) *mcp.ToolAnnotations {
 	destructive := false
 	openWorld := true
 	return &mcp.ToolAnnotations{
-		ReadOnlyHint:    true,
+		ReadOnlyHint:    readOnly,
 		DestructiveHint: &destructive,
 		OpenWorldHint:   &openWorld,
 	}
@@ -162,7 +162,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
 
 	// Get metadata from YouTube
-	metadata, err := s.app.youtube.Metadata(ctx, url)
+	metadata, err := s.engine.MetadataFor(ctx, parsed)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_metadata failed - %v", err)
 		return nil, zero, fmt.Errorf("metadata error: %w", err)
@@ -238,11 +238,17 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 		format = TranscriptRenderFormatTimestamps
 	}
 
-	// Try to get transcript from YouTube captions only (no Whisper fallback)
-	transcript, err := s.app.GetTranscriptOutput(ctx, url, format)
+	structured, err := s.engine.Transcript(ctx, parsed, TranscriptRequest{
+		Policy:            TranscriptPolicyCaptionsOnly,
+		RequireTimestamps: includeTimestamps,
+	})
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
 		return nil, zero, fmt.Errorf("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid): %w", err)
+	}
+	transcript, err := structured.Render(format)
+	if err != nil {
+		return nil, zero, err
 	}
 
 	MCPLogInfo("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
@@ -274,19 +280,14 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 		return nil, zero, err
 	}
 
-	// Download audio and transcribe using Whisper (this costs money)
-	audioFile, err := s.app.DownloadAudio(ctx, url)
-	if err != nil {
-		MCPLogError("Tool: transcribe_youtube_whisper - audio download failed: %v", err)
-		return nil, zero, fmt.Errorf("failed to download audio: %w", err)
-	}
-
-	MCPLogInfo("Tool: transcribe_youtube_whisper - audio downloaded, starting transcription")
-
-	transcript, err := s.app.TranscribeAudio(ctx, audioFile)
+	structured, err := s.engine.Transcript(ctx, parsed, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly})
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - transcription failed: %v", err)
 		return nil, zero, fmt.Errorf("failed to transcribe audio with Whisper: %w", err)
+	}
+	transcript, err := structured.Render(TranscriptRenderFormatPlain)
+	if err != nil {
+		return nil, zero, err
 	}
 
 	MCPLogInfo("Tool: transcribe_youtube_whisper succeeded - transcript length: %d characters", len(transcript))

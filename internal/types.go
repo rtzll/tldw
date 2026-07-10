@@ -59,6 +59,17 @@ func newYouTubeRef(parsed *ParsedArg) YouTubeRef {
 	}
 }
 
+// Ref returns the validated reference represented by this parse result.
+func (p *ParsedArg) Ref() (YouTubeRef, error) {
+	if p == nil || !p.IsValid() {
+		if p != nil && p.Error != nil {
+			return YouTubeRef{}, p.Error
+		}
+		return YouTubeRef{}, fmt.Errorf("input is not valid YouTube content")
+	}
+	return newYouTubeRef(p), nil
+}
+
 // IsValid returns true if the parsed argument is valid and has no errors
 func (p *ParsedArg) IsValid() bool {
 	return p.Error == nil && p.ContentType != ContentTypeUnknown && p.ContentType != ContentTypeCommand

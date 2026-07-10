@@ -39,6 +39,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 		inputFields   map[string]string
 		requiredInput []string
 		outputFields  []string
+		readOnly      bool
 	}{
 		"get_youtube_metadata": {
 			description: "Extract video metadata including caption availability. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid).",
@@ -54,6 +55,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 				"description",
 				"has_captions",
 			},
+			readOnly: true,
 		},
 		"get_youtube_transcript": {
 			description: "Get existing YouTube captions/transcript (FREE). Only works if the video has captions - check metadata first. Fails if no captions available.",
@@ -68,6 +70,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 				"source",
 				"include_timestamps",
 			},
+			readOnly: true,
 		},
 		"transcribe_youtube_whisper": {
 			description: "Create transcript using OpenAI Whisper API (PAID). Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool.",
@@ -82,6 +85,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 				"source",
 				"include_timestamps",
 			},
+			readOnly: false,
 		},
 	}
 
@@ -128,8 +132,8 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 		if tool.Annotations == nil {
 			t.Fatalf("%s annotations are nil", name)
 		}
-		if !tool.Annotations.ReadOnlyHint {
-			t.Errorf("%s readOnlyHint is not true", name)
+		if tool.Annotations.ReadOnlyHint != wantTool.readOnly {
+			t.Errorf("%s readOnlyHint = %t, want %t", name, tool.Annotations.ReadOnlyHint, wantTool.readOnly)
 		}
 		if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
 			t.Errorf("%s destructiveHint is not false", name)
@@ -157,7 +161,7 @@ func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
 
 func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 	app := newTestMCPApp(t)
-	app.youtube.cmdRunner = &mockCommandRunner{output: []byte(`{
+	testYouTube(t, app).executor = &mockCommandRunner{output: []byte(`{
 		"title": "Test Video",
 		"description": "Test Description",
 		"channel": "Test Channel",
@@ -271,8 +275,9 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	app := newTestMCPApp(t)
 	audioPath := filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")
-	app.youtube.cmdRunner = &writeAudioCommandRunner{audioPath: audioPath}
-	app.ai = NewAI(&fixedOpenAIClient{text: "whisper transcript"}, app.audio, "whisper-1", WhisperLimit, 0, false, true)
+	testYouTube(t, app).executor = &writeAudioCommandRunner{audioPath: audioPath}
+	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
+	app.ai = NewAI(&fixedOpenAIClient{text: "whisper transcript"}, audio, "whisper-1", WhisperLimit, 0, false, true)
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -311,7 +316,7 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
 	app := newTestMCPApp(t)
 	runner := &writeAudioCommandRunner{audioPath: filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")}
-	app.youtube.cmdRunner = runner
+	testYouTube(t, app).executor = runner
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -431,7 +436,7 @@ func TestMCPServerSerializesStdioToolHandlers(t *testing.T) {
 	}
 }
 
-func newTestMCPApp(t *testing.T) *App {
+func newTestMCPApp(t *testing.T) *Engine {
 	t.Helper()
 
 	baseDir := t.TempDir()
@@ -448,7 +453,16 @@ func newTestMCPApp(t *testing.T) *App {
 		}
 	}
 
-	return NewApp(config)
+	return newTestEngine(config)
+}
+
+func testYouTube(t *testing.T, app *Engine) *YouTube {
+	t.Helper()
+	adapter, ok := app.video.(*YouTube)
+	if !ok {
+		t.Fatalf("video adapter = %T, want *YouTube", app.video)
+	}
+	return adapter
 }
 
 func unusedTCPPort(t *testing.T) int {
@@ -571,6 +585,11 @@ func (r *writeAudioCommandRunner) Run(ctx context.Context, name string, args ...
 		return nil, err
 	}
 	return nil, os.WriteFile(r.audioPath, []byte("audio"), 0644)
+}
+
+func (r *writeAudioCommandRunner) RunStreaming(ctx context.Context, name string, args []string, onLine func(string)) error {
+	_, err := r.Run(ctx, name, args...)
+	return err
 }
 
 type fixedOpenAIClient struct {

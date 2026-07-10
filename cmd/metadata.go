@@ -25,13 +25,13 @@ var metadataCmd = &cobra.Command{
   tldw metadata tAP1eZYEuKA --pretty`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app := internal.NewApp(config)
+		app := newEngine(config)
 		parsed, err := internal.ParseVideoArg(args[0])
 		if err != nil {
 			return err
 		}
 		// Get metadata for the video
-		metadata, err := app.Metadata(cmd.Context(), parsed.NormalizedURL)
+		metadata, err := app.MetadataFor(cmd.Context(), parsed)
 		if err != nil {
 			return err
 		}

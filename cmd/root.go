@@ -62,7 +62,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return err
 		}
 
-		app := internal.NewApp(config)
+		app := newEngine(config)
 		if err := internal.HandlePromptFlag(cmd, app); err != nil {
 			return err
 		}
@@ -87,9 +87,12 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return fmt.Errorf("'%s' is not valid YouTube content (got %s)", args[0], parsed.ContentType)
 		}
 
-		youtubeURL := parsed.NormalizedURL
+		ref, err := parsed.Ref()
+		if err != nil {
+			return err
+		}
 		fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-		return app.SummarizeYouTube(cmd.Context(), youtubeURL, fallbackWhisper)
+		return runSummary(cmd.Context(), app, config, ref, fallbackWhisper)
 	},
 }
 
