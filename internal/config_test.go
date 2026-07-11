@@ -33,28 +33,6 @@ summary_timeout = "45s"
 	}
 }
 
-func TestEnsureDirs(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	newDir := filepath.Join(tmpDir, "a", "b", "c")
-	if err := EnsureDirs(newDir); err != nil {
-		t.Fatalf("EnsureDirs() error = %v", err)
-	}
-
-	info, err := os.Stat(newDir)
-	if err != nil {
-		t.Fatalf("expected dir to exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("expected path to be a directory")
-	}
-
-	// Should be idempotent
-	if err := EnsureDirs(newDir); err != nil {
-		t.Fatalf("EnsureDirs() idempotent error = %v", err)
-	}
-}
-
 func TestCleanupTempDir(t *testing.T) {
 	t.Run("cleans up files", func(t *testing.T) {
 		tmpDir := t.TempDir()

@@ -59,9 +59,6 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		if err != nil {
 			return fmt.Errorf("initializing configuration: %w", err)
 		}
-		if err := internal.EnsureDirs(config.ConfigDir, config.DataDir, config.CacheDir); err != nil {
-			return fmt.Errorf("creating XDG directories: %w", err)
-		}
 		if err := internal.EnsureDefaultConfig(config.ConfigDir); err != nil {
 			return fmt.Errorf("ensuring default config: %w", err)
 		}
