@@ -101,3 +101,30 @@ func TestEngineRefreshesIncompleteCachedMetadata(t *testing.T) {
 		t.Fatalf("metadata calls = %d, saves = %d, cached = %+v", video.metadataCalls, store.metadataSaves, store.metadata)
 	}
 }
+
+func TestEngineRejectsEmptyAdapterResults(t *testing.T) {
+	video := &videoStub{}
+	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+		Video: video, Store: &memoryStore{}, AI: &aiStub{}, Prompts: &promptStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	videoRef, err := tldw.ParseVideoRef(testVideoID)
+	if err != nil {
+		t.Fatalf("ParseVideoRef() error = %v", err)
+	}
+	playlistRef, err := tldw.ParseReference("PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
+	if err != nil {
+		t.Fatalf("ParseReference() error = %v", err)
+	}
+
+	if _, err := engine.MetadataFor(context.Background(), videoRef); err == nil {
+		t.Fatal("MetadataFor() accepted nil metadata from the video adapter")
+	}
+	if _, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistSummaryRequest{
+		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
+	}); err == nil {
+		t.Fatal("CreatePlaylistSummary() accepted nil playlist data from the video adapter")
+	}
+}

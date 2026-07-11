@@ -213,6 +213,9 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, re
 	if err != nil {
 		return PlaylistSummaryResult{}, fmt.Errorf("extracting playlist videos: %w", err)
 	}
+	if playlist == nil {
+		return PlaylistSummaryResult{}, fmt.Errorf("extracting playlist videos: adapter returned no playlist")
+	}
 	if len(playlist.Videos) == 0 {
 		return PlaylistSummaryResult{}, fmt.Errorf("no videos found in playlist")
 	}
@@ -296,6 +299,9 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 	if err != nil {
 		return nil, err
 	}
+	if metadata == nil {
+		return nil, fmt.Errorf("video adapter returned no metadata")
+	}
 	app.cacheMetadata(ref.ID(), metadata)
 	return metadata, nil
 }
@@ -305,7 +311,7 @@ func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cac
 		return cached
 	}
 	refreshed, err := app.video.FetchMetadata(ctx, ref)
-	if err != nil {
+	if err != nil || refreshed == nil {
 		return cached
 	}
 	app.cacheMetadata(ref.ID(), refreshed)
