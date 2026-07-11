@@ -14,7 +14,8 @@ import (
 
 const MetadataCacheVersion = 3
 
-var ErrMetadataStale = fmt.Errorf("metadata cache is stale")
+// ErrMetadataStale is retained for callers migrating to tldw.ErrStoreStale.
+var ErrMetadataStale = tldw.ErrStoreStale
 
 var videoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
@@ -37,6 +38,9 @@ func (s *File) LoadPlainTranscript(videoID string) (string, error) {
 		return "", err
 	}
 	data, err := os.ReadFile(filepath.Clean(path))
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("%w: transcript %s", tldw.ErrStoreNotFound, videoID)
+	}
 	if err != nil {
 		return "", fmt.Errorf("reading transcript: %w", err)
 	}
@@ -110,6 +114,9 @@ func LoadTranscript(videoID, dir string) (*tldw.Transcript, error) {
 		return nil, err
 	}
 	data, err := os.ReadFile(filepath.Clean(path))
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("%w: transcript %s", tldw.ErrStoreNotFound, videoID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading structured transcript: %w", err)
 	}
@@ -173,7 +180,7 @@ func LoadMetadata(videoID, dir string) (*tldw.VideoMetadata, error) {
 	}
 	data, err := os.ReadFile(filepath.Clean(path))
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("metadata cache not found")
+		return nil, fmt.Errorf("%w: metadata %s", tldw.ErrStoreNotFound, videoID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading metadata cache: %w", err)
@@ -183,7 +190,7 @@ func LoadMetadata(videoID, dir string) (*tldw.VideoMetadata, error) {
 		return nil, fmt.Errorf("parsing metadata cache: %w", err)
 	}
 	if cached.CacheVersion < MetadataCacheVersion {
-		return nil, ErrMetadataStale
+		return nil, fmt.Errorf("%w: metadata version %d", tldw.ErrStoreStale, cached.CacheVersion)
 	}
 	return &tldw.VideoMetadata{
 		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,

@@ -37,6 +37,12 @@ var ErrCaptionsUnavailable = errors.New("captions are unavailable")
 // ErrDownloadFailed marks a retryable failure from a video adapter.
 var ErrDownloadFailed = errors.New("video download failed")
 
+// ErrStoreNotFound indicates that a requested cache entry does not exist.
+var ErrStoreNotFound = errors.New("store entry not found")
+
+// ErrStoreStale indicates that a cache entry exists but must be refreshed.
+var ErrStoreStale = errors.New("store entry is stale")
+
 // VideoAdapter is the seam between application workflows and YouTube access.
 // Production uses yt-dlp; tests can provide a local adapter.
 type VideoAdapter interface {
@@ -129,6 +135,8 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		if cachedTranscriptAllowed(transcript.Source, request.Policy) {
 			return transcript, nil
 		}
+	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
+		return nil, fmt.Errorf("loading cached transcript: %w", err)
 	}
 
 	if !structuredCacheFound && request.Policy != TranscriptPolicyWhisperOnly && !request.RequireTimestamps {
@@ -284,6 +292,8 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 		resolved := app.useOrRefreshMetadata(ctx, ref, cached)
 		app.setCachedMetadata(ref.ID, resolved)
 		return resolved, nil
+	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
+		return nil, fmt.Errorf("loading cached metadata: %w", err)
 	}
 
 	metadata, err := app.video.FetchMetadata(ctx, ref)

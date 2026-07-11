@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,6 +261,31 @@ func TestEngineTranscriptCachesCaptionResult(t *testing.T) {
 	}
 	if video.transcriptCalls != 1 {
 		t.Fatalf("video transcript calls = %d, want 1", video.transcriptCalls)
+	}
+}
+
+func TestEngineTranscriptDoesNotIgnoreCorruptCache(t *testing.T) {
+	ref, err := ParseVideoArg("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/dQw4w9WgXcQ.transcript.json", []byte("not json"), 0o644); err != nil {
+		t.Fatalf("write corrupt transcript: %v", err)
+	}
+	video := &engineVideoAdapter{
+		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
+		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "network transcript"},
+	}
+	engine := newTestEngine(&Config{TranscriptsDir: dir, Quiet: true}, WithVideoAdapter(video))
+
+	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+	if err == nil || !strings.Contains(err.Error(), "parsing structured transcript") {
+		t.Fatalf("Transcript() error = %v, want corrupt-cache error", err)
+	}
+	if video.transcriptCalls != 0 {
+		t.Fatalf("caption transcript calls = %d, want 0", video.transcriptCalls)
 	}
 }
 

@@ -57,8 +57,19 @@ func TestFileTreatsOldMetadataSchemaAsCacheMiss(t *testing.T) {
 		t.Fatalf("write stale metadata: %v", err)
 	}
 	_, err := store.NewFile(dir).LoadMetadata("dQw4w9WgXcQ")
-	if !errors.Is(err, store.ErrMetadataStale) {
-		t.Fatalf("LoadMetadata() error = %v, want ErrMetadataStale", err)
+	if !errors.Is(err, tldw.ErrStoreStale) {
+		t.Fatalf("LoadMetadata() error = %v, want ErrStoreStale", err)
+	}
+}
+
+func TestFileIdentifiesMissingEntries(t *testing.T) {
+	adapter := store.NewFile(t.TempDir())
+
+	if _, err := adapter.LoadTranscript("dQw4w9WgXcQ"); !errors.Is(err, tldw.ErrStoreNotFound) {
+		t.Fatalf("LoadTranscript() error = %v, want ErrStoreNotFound", err)
+	}
+	if _, err := adapter.LoadMetadata("dQw4w9WgXcQ"); !errors.Is(err, tldw.ErrStoreNotFound) {
+		t.Fatalf("LoadMetadata() error = %v, want ErrStoreNotFound", err)
 	}
 }
 
