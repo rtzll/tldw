@@ -15,37 +15,14 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // ErrDownloadFailed indicates a retryable download failure from yt-dlp
 var ErrDownloadFailed = errors.New("yt-dlp download failed")
 
-// VideoMetadata contains YouTube video information
-type VideoMetadata struct {
-	Title            string         `json:"title"`
-	Description      string         `json:"description"`
-	Channel          string         `json:"channel"`
-	ChannelURL       string         `json:"channel_url,omitempty"`
-	Creators         []string       `json:"creators,omitempty"`
-	PublishedAt      string         `json:"published_at,omitempty"`
-	Duration         float64        `json:"duration"`
-	Language         string         `json:"language"`
-	Categories       []string       `json:"categories"`
-	Tags             []string       `json:"tags"`
-	Chapters         []VideoChapter `json:"chapters"`
-	HasCaptions      bool           `json:"has_captions"`
-	CaptionLanguages []string       `json:"caption_languages"`
-
-	// CacheVersion is internal bookkeeping for on-disk metadata cache migrations.
-	CacheVersion int `json:"-"`
-}
-
-// VideoChapter represents a video chapter marker
-type VideoChapter struct {
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Title     string  `json:"title"`
-}
+type VideoMetadata = tldw.VideoMetadata
+type VideoChapter = tldw.VideoChapter
 
 // YouTube handles YouTube video and transcript operations
 type YouTube struct {

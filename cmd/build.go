@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rtzll/tldw/internal"
+	"github.com/rtzll/tldw/internal/store"
 )
 
 type cliLogSink struct {
@@ -38,7 +39,7 @@ func buildEngine(config *internal.Config, log internal.LogSink) *internal.Engine
 	return internal.NewEngine(
 		config,
 		internal.WithVideoAdapter(youtube),
-		internal.WithVideoStore(internal.NewFileVideoStore(config.TranscriptsDir)),
+		internal.WithVideoStore(store.NewFile(config.TranscriptsDir)),
 		internal.WithAIAdapter(ai),
 		internal.WithLogSink(log),
 	)
