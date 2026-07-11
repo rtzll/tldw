@@ -26,20 +26,18 @@ func TestNewAIRejectsInvalidConfiguration(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		client OpenAIClientInterface
 		audio  *Audio
 		config Config
 	}{
-		{name: "client", audio: audio, config: valid},
-		{name: "audio", client: &mockOpenAIClient{}, config: valid},
-		{name: "model", client: &mockOpenAIClient{}, audio: audio, config: Config{WhisperLimit: WhisperLimit}},
-		{name: "whisper limit", client: &mockOpenAIClient{}, audio: audio, config: Config{Model: "gpt-5.4-mini"}},
-		{name: "timeout", client: &mockOpenAIClient{}, audio: audio, config: Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit, Timeout: -time.Second}},
+		{name: "audio", config: valid},
+		{name: "model", audio: audio, config: Config{WhisperLimit: WhisperLimit}},
+		{name: "whisper limit", audio: audio, config: Config{Model: "gpt-5.4-mini"}},
+		{name: "timeout", audio: audio, config: Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit, Timeout: -time.Second}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := NewAI(test.client, test.audio, test.config); err == nil {
-				t.Fatalf("NewAI() accepted invalid %s configuration", test.name)
+			if _, err := NewAIWithKey("test-key", test.audio, test.config); err == nil {
+				t.Fatalf("NewAIWithKey() accepted invalid %s configuration", test.name)
 			}
 		})
 	}
@@ -91,12 +89,13 @@ func TestAITranscribeSplitsLargeAudio(t *testing.T) {
 		t.Fatalf("writing audio input: %v", err)
 	}
 	client := &mockOpenAIClient{transcription: "chunk transcript"}
-	ai, err := NewAI(client, NewAudio(chunkingRunner{}, tempDir, false), Config{
+	ai, err := NewAIWithKey("test-key", NewAudio(chunkingRunner{}, tempDir, false), Config{
 		Model: "gpt-5.4-mini", WhisperLimit: 2,
 	})
 	if err != nil {
-		t.Fatalf("NewAI() error = %v", err)
+		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
+	ai.client = client
 
 	got, err := ai.Transcribe(context.Background(), input)
 	if err != nil {
@@ -112,12 +111,13 @@ func TestAITranscribeReturnsClientError(t *testing.T) {
 	if err := os.WriteFile(input, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("writing audio input: %v", err)
 	}
-	ai, err := NewAI(&mockOpenAIClient{err: errors.New("transcription failed")}, NewAudio(&mockCommandRunner{}, t.TempDir(), false), Config{
+	ai, err := NewAIWithKey("test-key", NewAudio(&mockCommandRunner{}, t.TempDir(), false), Config{
 		Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit,
 	})
 	if err != nil {
-		t.Fatalf("NewAI() error = %v", err)
+		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
+	ai.client = &mockOpenAIClient{err: errors.New("transcription failed")}
 
 	if _, err := ai.Transcribe(context.Background(), input); err == nil {
 		t.Fatal("Transcribe() succeeded after client failure")
@@ -128,10 +128,11 @@ func TestAISummary(t *testing.T) {
 	client := &mockOpenAIClient{chatResponse: "A summary", checkContext: true}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir(), false)
-	ai, err := NewAI(client, audio, Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit})
+	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit})
 	if err != nil {
-		t.Fatalf("NewAI() error = %v", err)
+		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
+	ai.client = client
 
 	got, err := ai.Summary(context.Background(), "prompt")
 	if err != nil {
@@ -145,10 +146,11 @@ func TestAISummary(t *testing.T) {
 func TestAITranscribePreservesCallerAudioFile(t *testing.T) {
 	client := &mockOpenAIClient{transcription: "A transcript"}
 	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
-	ai, err := NewAI(client, audio, Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit})
+	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit})
 	if err != nil {
-		t.Fatalf("NewAI() error = %v", err)
+		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
+	ai.client = client
 	input := t.TempDir() + "/audio.mp3"
 	if err := os.WriteFile(input, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("writing audio input: %v", err)
@@ -170,10 +172,11 @@ func TestAISummaryError(t *testing.T) {
 	client := &mockOpenAIClient{err: fmt.Errorf("API error")}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir(), false)
-	ai, err := NewAI(client, audio, Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit})
+	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-5.4-mini", WhisperLimit: WhisperLimit})
 	if err != nil {
-		t.Fatalf("NewAI() error = %v", err)
+		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
+	ai.client = client
 
 	_, err = ai.Summary(context.Background(), "prompt")
 	if err == nil {

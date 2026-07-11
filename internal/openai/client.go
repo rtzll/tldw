@@ -17,25 +17,21 @@ type discardLogSink struct{}
 
 func (discardLogSink) Printf(string, ...any) {}
 
-// OpenAIClientInterface defines the interface for OpenAI client operations
-type OpenAIClientInterface interface {
+type client interface {
 	CreateTranscription(ctx context.Context, file *os.File) (string, error)
 	CreateChatCompletion(ctx context.Context, model, prompt string) (string, error)
 }
 
-// OpenAIClient wraps the official OpenAI Go SDK
-type OpenAIClient struct {
+type sdkClient struct {
 	client *openaisdk.Client
 }
 
-// NewOpenAIClient creates a new OpenAI client
-func NewOpenAIClient(apiKey string) *OpenAIClient {
+func newSDKClient(apiKey string) *sdkClient {
 	client := openaisdk.NewClient(option.WithAPIKey(apiKey))
-	return &OpenAIClient{client: &client}
+	return &sdkClient{client: &client}
 }
 
-// CreateTranscription implements the transcription method
-func (c *OpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
+func (c *sdkClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
 	resp, err := c.client.Audio.Transcriptions.New(ctx, openaisdk.AudioTranscriptionNewParams{
 		File:  file,
 		Model: openaisdk.AudioModelWhisper1,
@@ -46,8 +42,7 @@ func (c *OpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (
 	return resp.Text, nil
 }
 
-// CreateChatCompletion implements the chat completion method
-func (c *OpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
+func (c *sdkClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
 	oaiModel := openaisdk.ChatModel(model)
 
 	resp, err := c.client.Chat.Completions.New(ctx, openaisdk.ChatCompletionNewParams{
@@ -67,7 +62,7 @@ func (c *OpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt s
 
 // AI handles OpenAI API interactions for transcription and summarization
 type AI struct {
-	client       OpenAIClientInterface
+	client       client
 	audio        *Audio
 	model        string
 	whisperLimit int64
@@ -89,20 +84,17 @@ type Config struct {
 	Quiet        bool
 }
 
-// NewAI creates a new AI processor
-func NewAI(client OpenAIClientInterface, audio *Audio, config Config) (*AI, error) {
-	if client == nil {
-		return nil, fmt.Errorf("OpenAI client is required")
-	}
-	return newAI(client, "", audio, config)
-}
-
 // NewAIWithKey creates a new AI processor with lazy client initialization.
 func NewAIWithKey(apiKey string, audio *Audio, config Config) (*AI, error) {
-	return newAI(nil, apiKey, audio, config)
+	ai, err := newAI(audio, config)
+	if err != nil {
+		return nil, err
+	}
+	ai.apiKey = apiKey
+	return ai, nil
 }
 
-func newAI(client OpenAIClientInterface, apiKey string, audio *Audio, config Config) (*AI, error) {
+func newAI(audio *Audio, config Config) (*AI, error) {
 	if audio == nil {
 		return nil, fmt.Errorf("audio processor is required")
 	}
@@ -116,14 +108,12 @@ func newAI(client OpenAIClientInterface, apiKey string, audio *Audio, config Con
 		return nil, fmt.Errorf("timeout must not be negative")
 	}
 	return &AI{
-		client:       client,
 		audio:        audio,
 		model:        config.Model,
 		whisperLimit: config.WhisperLimit,
 		timeout:      config.Timeout,
 		verbose:      config.Verbose,
 		quiet:        config.Quiet,
-		apiKey:       apiKey,
 		log:          discardLogSink{},
 	}, nil
 }
@@ -142,7 +132,7 @@ func (ai *AI) ensureClient() error {
 			ai.clientErr = validateAPIKey("")
 			return
 		}
-		ai.client = NewOpenAIClient(ai.apiKey)
+		ai.client = newSDKClient(ai.apiKey)
 	})
 
 	return ai.clientErr
