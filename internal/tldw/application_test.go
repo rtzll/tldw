@@ -33,45 +33,71 @@ func TestNewEngineRejectsInvalidDependenciesAndConfig(t *testing.T) {
 }
 
 func TestEngineAppliesWhisperTimeout(t *testing.T) {
-	fixture := newEngineFixture(t, tldw.Config{WhisperTimeout: time.Minute})
-	fixture.video.audioPath = "audio.mp3"
-	fixture.ai.transcription = "transcript"
+	video := &videoStub{audioPath: "audio.mp3"}
+	ai := &aiStub{transcription: "transcript"}
+	engine, err := tldw.NewEngine(tldw.Config{WhisperTimeout: time.Minute}, tldw.Dependencies{
+		Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	ref, err := tldw.ParseVideoRef(testVideoID)
+	if err != nil {
+		t.Fatalf("ParseVideoRef() error = %v", err)
+	}
 
-	if _, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+	if _, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
 		Policy: tldw.TranscriptPolicyWhisperOnly,
 	}); err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if !fixture.ai.sawDeadline {
+	if !ai.sawDeadline {
 		t.Fatal("AI Transcribe context had no deadline")
 	}
 }
 
 func TestEngineVideoOnlyMethodsRejectPlaylist(t *testing.T) {
-	fixture := newEngineFixture(t, tldw.Config{})
-	playlist := playlistRef(t)
+	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+		Video: &videoStub{}, Store: &memoryStore{}, AI: &aiStub{}, Prompts: &promptStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	playlist, err := tldw.ParseReference("PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
+	if err != nil {
+		t.Fatalf("ParseReference() error = %v", err)
+	}
 
-	if _, err := fixture.engine.Transcript(context.Background(), playlist, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly}); err == nil {
+	if _, err := engine.Transcript(context.Background(), playlist, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly}); err == nil {
 		t.Fatal("Transcript() accepted a playlist")
 	}
-	if _, err := fixture.engine.MetadataFor(context.Background(), playlist); err == nil {
+	if _, err := engine.MetadataFor(context.Background(), playlist); err == nil {
 		t.Fatal("MetadataFor() accepted a playlist")
 	}
 }
 
 func TestEngineRefreshesIncompleteCachedMetadata(t *testing.T) {
-	fixture := newEngineFixture(t, tldw.Config{})
-	fixture.store.metadata = &tldw.VideoMetadata{Title: "Cached", HasCaptions: true, CaptionLanguages: []string{"en"}}
-	fixture.video.metadata = &tldw.VideoMetadata{Title: "Fresh", Channel: "AI Engineer", Creators: []string{"AI Engineer", "Matt Pocock"}}
+	store := &memoryStore{metadata: &tldw.VideoMetadata{Title: "Cached", HasCaptions: true, CaptionLanguages: []string{"en"}}}
+	video := &videoStub{metadata: &tldw.VideoMetadata{Title: "Fresh", Channel: "AI Engineer", Creators: []string{"AI Engineer", "Matt Pocock"}}}
+	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+		Video: video, Store: store, AI: &aiStub{}, Prompts: &promptStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	ref, err := tldw.ParseVideoRef(testVideoID)
+	if err != nil {
+		t.Fatalf("ParseVideoRef() error = %v", err)
+	}
 
-	metadata, err := fixture.engine.MetadataFor(context.Background(), videoRef(t))
+	metadata, err := engine.MetadataFor(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("MetadataFor() error = %v", err)
 	}
 	if metadata.Title != "Fresh" || metadata.Channel != "AI Engineer" || len(metadata.Creators) != 2 {
 		t.Fatalf("MetadataFor() = %+v", metadata)
 	}
-	if fixture.video.metadataCalls != 1 || fixture.store.metadataSaves != 1 || fixture.store.metadata != metadata {
-		t.Fatalf("metadata calls = %d, saves = %d, cached = %+v", fixture.video.metadataCalls, fixture.store.metadataSaves, fixture.store.metadata)
+	if video.metadataCalls != 1 || store.metadataSaves != 1 || store.metadata != metadata {
+		t.Fatalf("metadata calls = %d, saves = %d, cached = %+v", video.metadataCalls, store.metadataSaves, store.metadata)
 	}
 }

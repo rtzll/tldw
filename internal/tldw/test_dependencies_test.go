@@ -2,7 +2,6 @@ package tldw_test
 
 import (
 	"context"
-	"testing"
 
 	"github.com/rtzll/tldw/internal/tldw"
 )
@@ -105,48 +104,4 @@ func (stub *promptStub) CreatePrompt(transcript string, metadata *tldw.VideoMeta
 	stub.transcript = transcript
 	stub.metadata = metadata
 	return stub.prompt, stub.err
-}
-
-type engineFixture struct {
-	engine  *tldw.Engine
-	video   *videoStub
-	store   *memoryStore
-	ai      *aiStub
-	prompts *promptStub
-}
-
-func newEngineFixture(t *testing.T, config tldw.Config) *engineFixture {
-	t.Helper()
-	fixture := &engineFixture{
-		video:   &videoStub{},
-		store:   &memoryStore{},
-		ai:      &aiStub{},
-		prompts: &promptStub{},
-	}
-	engine, err := tldw.NewEngine(config, tldw.Dependencies{
-		Video: fixture.video, Store: fixture.store, AI: fixture.ai, Prompts: fixture.prompts,
-	})
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-	fixture.engine = engine
-	return fixture
-}
-
-func videoRef(t *testing.T) tldw.YouTubeRef {
-	t.Helper()
-	ref, err := tldw.ParseVideoRef(testVideoID)
-	if err != nil {
-		t.Fatalf("ParseVideoRef() error = %v", err)
-	}
-	return ref
-}
-
-func playlistRef(t *testing.T) tldw.YouTubeRef {
-	t.Helper()
-	ref, err := tldw.ParseReference("PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
-	if err != nil {
-		t.Fatalf("ParseReference() error = %v", err)
-	}
-	return ref
 }
