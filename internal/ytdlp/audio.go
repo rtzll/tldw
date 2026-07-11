@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // Audio gets mp3 audio from a YouTube video
-func (yt *YouTube) audio(ctx context.Context, ref YouTubeRef) (string, error) {
+func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading audio...\n")
 	}

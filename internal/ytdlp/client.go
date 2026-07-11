@@ -9,22 +9,6 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-// ErrDownloadFailed indicates a retryable download failure from yt-dlp.
-var ErrDownloadFailed = tldw.ErrDownloadFailed
-
-type VideoMetadata = tldw.VideoMetadata
-type VideoChapter = tldw.VideoChapter
-type YouTubeRef = tldw.YouTubeRef
-type Transcript = tldw.Transcript
-type TranscriptSegment = tldw.TranscriptSegment
-type PlaylistInfo = tldw.PlaylistInfo
-
-const (
-	ContentTypeVideo            = tldw.ContentTypeVideo
-	TranscriptSourceCaptions    = tldw.TranscriptSourceCaptions
-	TranscriptRenderFormatPlain = tldw.TranscriptRenderFormatPlain
-)
-
 type discardLogSink struct{}
 
 func (discardLogSink) Printf(string, ...any) {}
@@ -67,18 +51,18 @@ func (yt *YouTube) SetLogSink(log tldw.LogSink) {
 	yt.log = log
 }
 
-func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+func (yt *YouTube) FetchMetadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
 	return yt.metadata(ctx, ref)
 }
 
-func (yt *YouTube) FetchCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) (*Transcript, error) {
+func (yt *YouTube) FetchCaptions(ctx context.Context, ref tldw.YouTubeRef, preferredLangs []string, originalLang string) (*tldw.Transcript, error) {
 	return yt.fetchStructuredTranscript(ctx, ref, preferredLangs, originalLang)
 }
 
-func (yt *YouTube) DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error) {
+func (yt *YouTube) DownloadAudio(ctx context.Context, ref tldw.YouTubeRef) (string, error) {
 	return yt.audio(ctx, ref)
 }
 
-func (yt *YouTube) FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
+func (yt *YouTube) FetchPlaylist(ctx context.Context, ref tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
 	return yt.playlistVideoURLs(ctx, ref)
 }

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func (yt *YouTube) metadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting video metadata...\n")
 	}
@@ -36,7 +38,7 @@ func (yt *YouTube) metadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata
 
 	// Parse JSON once to populate metadata and caption availability
 	var raw struct {
-		VideoMetadata
+		tldw.VideoMetadata
 		Uploader          string             `json:"uploader"`
 		UploaderURL       string             `json:"uploader_url"`
 		Creator           string             `json:"creator"`
@@ -57,7 +59,7 @@ func (yt *YouTube) metadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata
 	metadata.HasCaptions = len(languages) > 0
 	metadata.CaptionLanguages = languages
 	metadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
-	metadata.Channel = bestMetadataChannel(metadata.Channel, raw.Uploader, raw.Creator, metadata.Creators)
+	metadata.Channel = bestMetadataChannel(metadata.Channel, raw.Uploader)
 	metadata.ChannelURL = bestMetadataChannelURL(metadata.ChannelURL, raw.UploaderURL)
 	metadata.PublishedAt = bestMetadataPublishedAt(metadata.PublishedAt, raw.UploadDate)
 
@@ -106,7 +108,7 @@ func bestMetadataCreators(creator string, creators []string) []string {
 	return nil
 }
 
-func bestMetadataChannel(channel, uploader, creator string, creators []string) string {
+func bestMetadataChannel(channel, uploader string) string {
 	for _, candidate := range []string{channel, uploader} {
 		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
 			return trimmed

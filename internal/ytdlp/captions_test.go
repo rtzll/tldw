@@ -1,12 +1,16 @@
 package ytdlp
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/rtzll/tldw/internal/tldw"
+)
 
 func TestParseSRT(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    []TranscriptSegment
+		want    []tldw.TranscriptSegment
 	}{
 		{
 			name: "basic SRT",
@@ -18,7 +22,7 @@ Hello world
 00:00:05,000 --> 00:00:07,000
 Second line
 `,
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 1, End: 4, Text: "Hello world"},
 				{Start: 5, End: 7, Text: "Second line"},
 			},
@@ -34,7 +38,7 @@ Second line
 00:00:05,000 --> 00:00:07,000
 Third line
 `,
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 1, End: 4, Text: "First line Second line"},
 				{Start: 5, End: 7, Text: "Third line"},
 			},
@@ -50,7 +54,7 @@ Third line
 00:00:01,000 --> 00:00:04,000
 {\an8}Hello world
 `,
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 1, End: 4, Text: "Hello world"},
 			},
 		},
@@ -60,7 +64,7 @@ Third line
 00:00:01,000 --> 00:00:04,000
 <b>Hello</b> world
 `,
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 1, End: 4, Text: "Hello world"},
 			},
 		},
@@ -73,7 +77,7 @@ Valid line
 invalid timing --> 00:00:06,000
 Skipped line
 `,
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 1, End: 4, Text: "Valid line"},
 			},
 		},
@@ -183,59 +187,59 @@ func TestIsSRTSequenceNumber(t *testing.T) {
 func TestCondenseSubtitleSegments(t *testing.T) {
 	tests := []struct {
 		name     string
-		segments []TranscriptSegment
-		want     []TranscriptSegment
+		segments []tldw.TranscriptSegment
+		want     []tldw.TranscriptSegment
 	}{
 		{
 			name: "no overlap",
-			segments: []TranscriptSegment{
+			segments: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello"},
 				{Start: 1, End: 2, Text: "world"},
 			},
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello"},
 				{Start: 1, End: 2, Text: "world"},
 			},
 		},
 		{
 			name: "prefix overlap",
-			segments: []TranscriptSegment{
+			segments: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello world"},
 				{Start: 1, End: 2, Text: "Hello world today"},
 			},
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello world"},
 				{Start: 1, End: 2, Text: "today"},
 			},
 		},
 		{
 			name: "exact duplicate",
-			segments: []TranscriptSegment{
+			segments: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello"},
 				{Start: 1, End: 2, Text: "Hello"},
 			},
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello"},
 			},
 		},
 		{
 			name: "suffix overlap skipped",
-			segments: []TranscriptSegment{
+			segments: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello world"},
 				{Start: 1, End: 2, Text: "world"},
 			},
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello world"},
 			},
 		},
 		{
 			name: "empty text skipped",
-			segments: []TranscriptSegment{
+			segments: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello"},
 				{Start: 1, End: 2, Text: ""},
 				{Start: 2, End: 3, Text: "world"},
 			},
-			want: []TranscriptSegment{
+			want: []tldw.TranscriptSegment{
 				{Start: 0, End: 1, Text: "Hello"},
 				{Start: 2, End: 3, Text: "world"},
 			},
@@ -366,27 +370,6 @@ func TestExtractCaptionLanguages(t *testing.T) {
 					t.Errorf("extractCaptionLanguages() = %v, want %v", got, tt.want)
 					return
 				}
-			}
-		})
-	}
-}
-
-func TestCaptionsAvailable(t *testing.T) {
-	tests := []struct {
-		name         string
-		subtitles    map[string]any
-		autoCaptions map[string]any
-		want         bool
-	}{
-		{"none", nil, nil, false},
-		{"manual", map[string]any{"en": nil}, nil, true},
-		{"auto", nil, map[string]any{"en": nil}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := captionsAvailable(tt.subtitles, tt.autoCaptions); got != tt.want {
-				t.Errorf("captionsAvailable() = %v, want %v", got, tt.want)
 			}
 		})
 	}

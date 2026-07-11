@@ -8,21 +8,16 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-// PlaylistEntry represents a single video in a playlist
-type PlaylistEntry struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
-	URL   string `json:"url"`
+type playlistEntry struct {
+	ID string `json:"id"`
 }
 
-// PlaylistMetadata contains YouTube playlist information
-type PlaylistMetadata struct {
+type playlistMetadata struct {
 	Title   string          `json:"title"`
-	Entries []PlaylistEntry `json:"entries"`
+	Entries []playlistEntry `json:"entries"`
 }
 
-// PlaylistVideoURLs fetches all video URLs from a YouTube playlist
-func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
+func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting playlist video URLs...\n")
 	}
@@ -49,7 +44,7 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref YouTubeRef) (*Play
 	}
 
 	// Parse the JSON output
-	var playlist PlaylistMetadata
+	var playlist playlistMetadata
 	if err := json.Unmarshal(output, &playlist); err != nil {
 		if yt.verbose {
 			yt.log.Printf("Failed to parse playlist JSON: %v\n", err)
@@ -58,7 +53,7 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref YouTubeRef) (*Play
 	}
 
 	// Extract video URLs
-	var videos []YouTubeRef
+	var videos []tldw.YouTubeRef
 	for _, entry := range playlist.Entries {
 		if tldw.IsValidVideoID(entry.ID) {
 			ref, err := tldw.ParseVideoRef(entry.ID)
@@ -72,7 +67,7 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref YouTubeRef) (*Play
 		yt.log.Printf("Found %d videos in playlist: %s\n", len(videos), playlist.Title)
 	}
 
-	return &PlaylistInfo{
+	return &tldw.PlaylistInfo{
 		Title:  playlist.Title,
 		Videos: videos,
 	}, nil

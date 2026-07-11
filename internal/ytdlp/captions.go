@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 func fileExists(path string) bool {
@@ -116,7 +118,7 @@ func prioritizeCaptionLanguages(preferred []string, originalLang string) []strin
 // downloadCaptions fetches subtitles using yt-dlp.
 // preferredLangs allows us to target known caption languages (from metadata) instead of hardcoding English.
 // originalLang is the video's declared language; when English captions are absent we prefer this.
-func (yt *YouTube) downloadCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) error {
+func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, preferredLangs []string, originalLang string) error {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading subtitles...\n")
 	}
@@ -166,7 +168,7 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref YouTubeRef, preferr
 
 		// Check if this was a rate limit error - if so, don't retry with more variants
 		if strings.Contains(string(output), "429") || strings.Contains(string(output), "Too Many Requests") {
-			return fmt.Errorf("%w: rate limited", ErrDownloadFailed)
+			return fmt.Errorf("%w: rate limited", tldw.ErrDownloadFailed)
 		}
 
 		// Retry with a broader English wildcard when available
@@ -193,10 +195,10 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref YouTubeRef, preferr
 					yt.log.Printf("Fallback subtitle download error: %v\n", err)
 					yt.log.Printf("Command output: %s\n", string(output))
 				}
-				return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+				return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
 			}
 		} else {
-			return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+			return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
 		}
 	}
 
@@ -230,7 +232,7 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref YouTubeRef, preferr
 					yt.log.Printf("Fallback subtitle download error: %v\n", err)
 					yt.log.Printf("Command output: %s\n", string(output))
 				}
-				return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+				return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
 			}
 			files, err = filepath.Glob(pattern)
 		}
@@ -251,7 +253,7 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref YouTubeRef, preferr
 	return nil
 }
 
-func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref YouTubeRef, subLangs []string, originalLang string) (*Transcript, error) {
+func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTubeRef, subLangs []string, originalLang string) (*tldw.Transcript, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Looking for existing transcript for video ID: %s\n", ref.ID())
 	}
@@ -330,7 +332,7 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 }
 
 // processSrtTranscript converts SRT to the canonical transcript representation.
-func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
+func (yt *YouTube) processSrtTranscript(filePath string) (*tldw.Transcript, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Processing SRT transcript: %s\n", filePath)
 	}
@@ -344,13 +346,13 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 	id := strings.Split(filepath.Base(filePath), ".")[0]
 	segments := parseSRT(string(content))
 	deduplicatedSegments := condenseSubtitleSegments(segments)
-	transcript := &Transcript{
+	transcript := &tldw.Transcript{
 		VideoID:  id,
-		Source:   TranscriptSourceCaptions,
+		Source:   tldw.TranscriptSourceCaptions,
 		Segments: deduplicatedSegments,
 	}
 
-	text, err := transcript.Render(TranscriptRenderFormatPlain)
+	text, err := transcript.Render(tldw.TranscriptRenderFormatPlain)
 	if err != nil {
 		return nil, err
 	}
@@ -368,9 +370,9 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 }
 
 // parseSRT extracts timed transcript segments from SRT format.
-func parseSRT(content string) []TranscriptSegment {
-	var segments []TranscriptSegment
-	var current *TranscriptSegment
+func parseSRT(content string) []tldw.TranscriptSegment {
+	var segments []tldw.TranscriptSegment
+	var current *tldw.TranscriptSegment
 	var textParts []string
 
 	flushCurrent := func() {
@@ -407,7 +409,7 @@ func parseSRT(content string) []TranscriptSegment {
 				continue
 			}
 
-			current = &TranscriptSegment{
+			current = &tldw.TranscriptSegment{
 				Start: start,
 				End:   end,
 			}
@@ -527,8 +529,8 @@ func parseSRTTimestamp(value string) (float64, error) {
 }
 
 // condenseSubtitleSegments trims rolling subtitle windows down to newly introduced text.
-func condenseSubtitleSegments(segments []TranscriptSegment) []TranscriptSegment {
-	result := make([]TranscriptSegment, 0, len(segments))
+func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.TranscriptSegment {
+	result := make([]tldw.TranscriptSegment, 0, len(segments))
 	prevText := ""
 
 	for _, segment := range segments {
@@ -580,11 +582,6 @@ func longestSubtitleOverlap(previous, current string) string {
 	}
 
 	return ""
-}
-
-// captionsAvailable returns true if either manual or automatic captions exist.
-func captionsAvailable(subtitles, autoCaptions map[string]any) bool {
-	return len(extractCaptionLanguages(subtitles, autoCaptions)) > 0
 }
 
 // extractCaptionLanguages returns a sorted, de-duplicated list of caption languages.
