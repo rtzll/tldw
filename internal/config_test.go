@@ -8,6 +8,8 @@ import (
 )
 
 func TestInitConfigUsesExplicitFile(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
 	configPath := filepath.Join(t.TempDir(), "custom.toml")
 	content := []byte(`
 tldr_model = "gpt-5-mini"

@@ -4,7 +4,6 @@ import (
 	"embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -83,11 +82,6 @@ func EnsureDefaultPrompt(configDir string) error {
 
 // InitConfig initializes Viper and loads configuration
 func InitConfig(configFile string) (*Config, error) {
-	_, err := exec.LookPath("yt-dlp")
-	if err != nil {
-		return nil, fmt.Errorf("yt-dlp not found: %w", err)
-	}
-
 	// XDG standard directories
 	configDir := filepath.Join(xdg.ConfigHome, "tldw")
 	dataDir := filepath.Join(xdg.DataHome, "tldw")
