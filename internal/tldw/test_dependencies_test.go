@@ -76,17 +76,16 @@ func (store *memoryStore) SaveMetadata(_ string, metadata *tldw.VideoMetadata) e
 }
 
 type aiStub struct {
-	transcription    string
-	transcriptionErr error
-	summary          string
-	transcribeCalls  int
-	sawDeadline      bool
+	transcription   string
+	summary         string
+	transcribeCalls int
+	sawDeadline     bool
 }
 
 func (stub *aiStub) Transcribe(ctx context.Context, _ string) (string, error) {
 	stub.transcribeCalls++
 	_, stub.sawDeadline = ctx.Deadline()
-	return stub.transcription, stub.transcriptionErr
+	return stub.transcription, nil
 }
 
 func (stub *aiStub) Summary(context.Context, string) (string, error) {
@@ -95,13 +94,10 @@ func (stub *aiStub) Summary(context.Context, string) (string, error) {
 
 type promptStub struct {
 	prompt     string
-	err        error
 	transcript string
-	metadata   *tldw.VideoMetadata
 }
 
-func (stub *promptStub) CreatePrompt(transcript string, metadata *tldw.VideoMetadata) (string, error) {
+func (stub *promptStub) CreatePrompt(transcript string, _ *tldw.VideoMetadata) (string, error) {
 	stub.transcript = transcript
-	stub.metadata = metadata
-	return stub.prompt, stub.err
+	return stub.prompt, nil
 }
