@@ -34,19 +34,15 @@ func (ct ContentType) String() string {
 // created by the parsing functions in this package.
 type YouTubeRef struct {
 	kind          ContentType
-	originalInput string
 	normalizedURL string
 	id            string
 }
 
 func (ref YouTubeRef) Kind() ContentType { return ref.kind }
-func (ref YouTubeRef) Original() string  { return ref.originalInput }
 func (ref YouTubeRef) URL() string       { return ref.normalizedURL }
 func (ref YouTubeRef) ID() string        { return ref.id }
 func (ref YouTubeRef) IsVideo() bool     { return ref.kind == ContentTypeVideo }
 func (ref YouTubeRef) IsPlaylist() bool  { return ref.kind == ContentTypePlaylist }
-func (ref YouTubeRef) IsChannel() bool   { return ref.kind == ContentTypeChannel }
-func (ref YouTubeRef) String() string    { return ref.normalizedURL }
 
 type PlaylistInfo struct {
 	Title  string
@@ -90,20 +86,20 @@ func ParseReference(input string) (YouTubeRef, error) {
 		return parseReferenceURL(original)
 	}
 	if IsValidVideoID(original) {
-		return videoRef(original, original), nil
+		return videoRef(original), nil
 	}
 	if IsValidPlaylistID(original) {
-		return playlistRef(original, original), nil
+		return playlistRef(original), nil
 	}
 	if channelIDPattern.MatchString(original) {
-		return channelRef(original, original, "https://www.youtube.com/channel/"+original), nil
+		return channelRef(original, "https://www.youtube.com/channel/"+original), nil
 	}
 	if isLikelyChannelHandle(original) {
 		handle := original
 		if !strings.HasPrefix(handle, "@") {
 			handle = "@" + handle
 		}
-		return channelRef(original, handle, "https://www.youtube.com/"+handle), nil
+		return channelRef(handle, "https://www.youtube.com/"+handle), nil
 	}
 	return YouTubeRef{}, fmt.Errorf("unable to determine YouTube content type for %q", original)
 }
@@ -134,16 +130,16 @@ func parseReferenceURL(original string) (YouTubeRef, error) {
 		if !IsValidVideoID(id) {
 			return YouTubeRef{}, fmt.Errorf("invalid video ID in youtu.be URL: %s", id)
 		}
-		return videoRef(original, id), nil
+		return videoRef(id), nil
 	}
 
 	switch {
 	case parsed.Path == "/watch":
 		if id := parsed.Query().Get("v"); IsValidVideoID(id) {
-			return videoRef(original, id), nil
+			return videoRef(id), nil
 		}
 		if id := parsed.Query().Get("list"); IsValidPlaylistID(id) {
-			return playlistRef(original, id), nil
+			return playlistRef(id), nil
 		}
 		return YouTubeRef{}, fmt.Errorf("no valid video or playlist ID found in watch URL")
 	case parsed.Path == "/playlist":
@@ -151,45 +147,45 @@ func parseReferenceURL(original string) (YouTubeRef, error) {
 		if !IsValidPlaylistID(id) {
 			return YouTubeRef{}, fmt.Errorf("invalid playlist ID: %s", id)
 		}
-		return playlistRef(original, id), nil
+		return playlistRef(id), nil
 	case strings.HasPrefix(parsed.Path, "/channel/"):
 		id := strings.TrimPrefix(parsed.Path, "/channel/")
 		if !channelIDPattern.MatchString(id) {
 			return YouTubeRef{}, fmt.Errorf("invalid channel ID: %s", id)
 		}
-		return channelRef(original, id, "https://www.youtube.com/channel/"+id), nil
+		return channelRef(id, "https://www.youtube.com/channel/"+id), nil
 	case strings.HasPrefix(parsed.Path, "/@"):
 		handle := strings.TrimPrefix(parsed.Path, "/")
 		if !channelHandlePattern.MatchString(handle) {
 			return YouTubeRef{}, fmt.Errorf("invalid channel handle: %s", handle)
 		}
-		return channelRef(original, handle, "https://www.youtube.com/"+handle), nil
+		return channelRef(handle, "https://www.youtube.com/"+handle), nil
 	case strings.HasPrefix(parsed.Path, "/c/"):
-		return parseNamedChannel(original, strings.TrimPrefix(parsed.Path, "/c/"), "/c/")
+		return parseNamedChannel(strings.TrimPrefix(parsed.Path, "/c/"), "/c/")
 	case strings.HasPrefix(parsed.Path, "/user/"):
-		return parseNamedChannel(original, strings.TrimPrefix(parsed.Path, "/user/"), "/user/")
+		return parseNamedChannel(strings.TrimPrefix(parsed.Path, "/user/"), "/user/")
 	default:
 		return YouTubeRef{}, fmt.Errorf("unsupported YouTube URL path: %s", parsed.Path)
 	}
 }
 
-func parseNamedChannel(original, name, prefix string) (YouTubeRef, error) {
+func parseNamedChannel(name, prefix string) (YouTubeRef, error) {
 	if len(name) < 3 || len(name) > 30 || !validIDCharacters.MatchString(name) {
 		return YouTubeRef{}, fmt.Errorf("invalid channel name: %s", name)
 	}
-	return channelRef(original, name, "https://www.youtube.com"+prefix+name), nil
+	return channelRef(name, "https://www.youtube.com"+prefix+name), nil
 }
 
-func videoRef(original, id string) YouTubeRef {
-	return YouTubeRef{kind: ContentTypeVideo, originalInput: original, normalizedURL: "https://www.youtube.com/watch?v=" + id, id: id}
+func videoRef(id string) YouTubeRef {
+	return YouTubeRef{kind: ContentTypeVideo, normalizedURL: "https://www.youtube.com/watch?v=" + id, id: id}
 }
 
-func playlistRef(original, id string) YouTubeRef {
-	return YouTubeRef{kind: ContentTypePlaylist, originalInput: original, normalizedURL: "https://www.youtube.com/playlist?list=" + id, id: id}
+func playlistRef(id string) YouTubeRef {
+	return YouTubeRef{kind: ContentTypePlaylist, normalizedURL: "https://www.youtube.com/playlist?list=" + id, id: id}
 }
 
-func channelRef(original, id, normalized string) YouTubeRef {
-	return YouTubeRef{kind: ContentTypeChannel, originalInput: original, normalizedURL: normalized, id: id}
+func channelRef(id, normalized string) YouTubeRef {
+	return YouTubeRef{kind: ContentTypeChannel, normalizedURL: normalized, id: id}
 }
 
 func isLikelyChannelHandle(input string) bool {
