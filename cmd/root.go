@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -99,53 +99,20 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {
-	// Create a cancellable context for the entire application
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	// Set up signal handling for graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
-	// Handle shutdown signal in a separate goroutine
-	go func() {
-		<-sigCh
-		fmt.Fprintln(os.Stderr, "\nReceived interrupt signal. Cleaning up and shutting down...")
-
-		// Cancel the main context to signal all operations to stop
-		cancel()
-
-		// Create a context with timeout for cleanup operations
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cleanupCancel()
-
-		// Run cleanup with timeout context
-		cleanupDone := make(chan struct{})
-		go func() {
-			if config != nil {
-				if err := internal.CleanupTempDir(config.TempDir); err != nil {
-					fmt.Fprintf(os.Stderr, "failed to clean up temporary files: %v\n", err)
-				}
-			}
-			close(cleanupDone)
-		}()
-
-		// Wait for either cleanup to complete or timeout
-		select {
-		case <-cleanupDone:
-			// Cleanup completed successfully
-		case <-cleanupCtx.Done():
-			// Timeout occurred
-			fmt.Fprintln(os.Stderr, "cleanup timed out, forcing exit")
-		}
-
-		// Exit the program
-		os.Exit(0)
-	}()
-
-	// Set context on root command
 	rootCmd.SetContext(ctx)
-	return rootCmd.Execute()
+	err := rootCmd.Execute()
+	if ctx.Err() == nil || config == nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stderr, "\nReceived interrupt signal. Cleaning up and shutting down...")
+	if cleanupErr := internal.CleanupTempDir(config.TempDir); cleanupErr != nil {
+		return errors.Join(err, fmt.Errorf("cleaning up temporary files: %w", cleanupErr))
+	}
+	return err
 }
 
 func init() {
