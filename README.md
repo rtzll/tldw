@@ -4,6 +4,9 @@ Transform YouTube videos and playlists into concise summaries using AI. Works
 with existing captions (free) or Whisper transcription (paid). Includes MCP
 server for Claude and other AI assistants and CLI.
 
+See [docs/architecture.md](docs/architecture.md) for the project structure and
+dependency direction.
+
 ## Installation
 
 ```bash
@@ -106,6 +109,19 @@ tldw metadata "https://youtu.be/tAP1eZYEuKA"
 tldw metadata tAP1eZYEuKA -o metadata.json   # Save to file
 tldw metadata tAP1eZYEuKA --pretty           # Format JSON output
 ```
+
+### Transcription smoke test
+
+Run the opt-in end-to-end check with:
+
+```bash
+just smoke-transcription
+```
+
+It builds `tldw`, transcribes the README video through both the CLI and the HTTP
+MCP `get_youtube_transcript` tool, and verifies that their timestamped outputs
+match. The test uses isolated temporary XDG directories and requires `yt-dlp`
+and network access. It is intentionally excluded from the default test suite.
 
 #### Playlists
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // PromptData supplies template fields.
@@ -43,7 +45,7 @@ func NewPromptManager(configDir, promptSetting string) *PromptManager {
 }
 
 // CreatePrompt builds a prompt from a transcript and metadata.
-func (pm *PromptManager) CreatePrompt(transcript string, metadata *VideoMetadata) (string, error) {
+func (pm *PromptManager) CreatePrompt(transcript string, metadata *tldw.VideoMetadata) (string, error) {
 	var tmplContent string
 
 	if pm.promptString != "" {
@@ -68,7 +70,7 @@ func (pm *PromptManager) CreatePrompt(transcript string, metadata *VideoMetadata
 }
 
 // buildPromptFromTemplate builds the AI prompt from template content.
-func (pm *PromptManager) buildPromptFromTemplate(templateContent, transcript string, metadata *VideoMetadata) (string, error) {
+func (pm *PromptManager) buildPromptFromTemplate(templateContent, transcript string, metadata *tldw.VideoMetadata) (string, error) {
 	// Parse the template
 	tmpl, err := template.New("prompt").Parse(templateContent)
 	if err != nil {

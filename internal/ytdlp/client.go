@@ -1,15 +1,12 @@
-package internal
+package ytdlp
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,46 +14,43 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/rtzll/tldw/internal/process"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // ErrDownloadFailed indicates a retryable download failure from yt-dlp
-var ErrDownloadFailed = errors.New("yt-dlp download failed")
+var ErrDownloadFailed = tldw.ErrDownloadFailed
 
-// VideoMetadata contains YouTube video information
-type VideoMetadata struct {
-	Title            string         `json:"title"`
-	Description      string         `json:"description"`
-	Channel          string         `json:"channel"`
-	ChannelURL       string         `json:"channel_url,omitempty"`
-	Creators         []string       `json:"creators,omitempty"`
-	PublishedAt      string         `json:"published_at,omitempty"`
-	Duration         float64        `json:"duration"`
-	Language         string         `json:"language"`
-	Categories       []string       `json:"categories"`
-	Tags             []string       `json:"tags"`
-	Chapters         []VideoChapter `json:"chapters"`
-	HasCaptions      bool           `json:"has_captions"`
-	CaptionLanguages []string       `json:"caption_languages"`
-
-	// CacheVersion is internal bookkeeping for on-disk metadata cache migrations.
-	CacheVersion int `json:"-"`
+type VideoMetadata = tldw.VideoMetadata
+type VideoChapter = tldw.VideoChapter
+type YouTubeRef = tldw.YouTubeRef
+type Transcript = tldw.Transcript
+type TranscriptSegment = tldw.TranscriptSegment
+type PlaylistInfo = tldw.PlaylistInfo
+type ProgressBar interface {
+	Set(int)
+	Describe(string)
+	Finish()
 }
 
-// VideoChapter represents a video chapter marker
-type VideoChapter struct {
-	StartTime float64 `json:"start_time"`
-	EndTime   float64 `json:"end_time"`
-	Title     string  `json:"title"`
-}
+const (
+	ContentTypeVideo            = tldw.ContentTypeVideo
+	TranscriptSourceCaptions    = tldw.TranscriptSourceCaptions
+	TranscriptRenderFormatPlain = tldw.TranscriptRenderFormatPlain
+)
+
+type discardLogSink struct{}
+
+func (discardLogSink) Printf(string, ...any) {}
 
 // YouTube handles YouTube video and transcript operations
 type YouTube struct {
-	fs             fs.FS
 	transcriptsDir string
 	cacheDir       string
 	verbose        bool
 	quiet          bool
-	cmdRunner      CommandRunner
+	log            tldw.LogSink
+	executor       process.Executor
 }
 
 func defaultYouTubeCacheDir() string {
@@ -64,29 +58,64 @@ func defaultYouTubeCacheDir() string {
 }
 
 // NewYouTube creates a new YouTube downloader.
-func NewYouTube(filesystem fs.FS, transcriptsDir string, verbose bool, quiet bool) *YouTube {
-	return NewYouTubeWithCache(filesystem, transcriptsDir, defaultYouTubeCacheDir(), verbose, quiet)
+func NewYouTube(transcriptsDir string, verbose bool, quiet bool) *YouTube {
+	return NewYouTubeWithCache(transcriptsDir, defaultYouTubeCacheDir(), verbose, quiet)
 }
 
 // NewYouTubeWithCache creates a new YouTube downloader with an explicit cache directory.
-func NewYouTubeWithCache(filesystem fs.FS, transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouTube {
+func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouTube {
 	if cacheDir == "" {
 		cacheDir = defaultYouTubeCacheDir()
 	}
 	return &YouTube{
-		fs:             filesystem,
 		transcriptsDir: transcriptsDir,
 		cacheDir:       cacheDir,
 		verbose:        verbose,
 		quiet:          quiet,
-		cmdRunner:      &DefaultCommandRunner{},
+		log:            discardLogSink{},
+		executor:       &process.CommandRunner{},
 	}
+}
+
+func (yt *YouTube) SetLogSink(log tldw.LogSink) {
+	yt.log = log
+}
+
+func (yt *YouTube) SetExecutor(executor process.Executor) { yt.executor = executor }
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func getVideoID(youtubeURL string) (string, error) {
+	parsed, err := tldw.ParseVideoRef(youtubeURL)
+	if err != nil {
+		return "", err
+	}
+	return parsed.ID, nil
+}
+
+func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+	return yt.Metadata(ctx, ref.NormalizedURL)
+}
+
+func (yt *YouTube) FetchCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) (*Transcript, error) {
+	return yt.FetchStructuredTranscript(ctx, ref.NormalizedURL, preferredLangs, originalLang)
+}
+
+func (yt *YouTube) DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error) {
+	return yt.Audio(ctx, ref.NormalizedURL)
+}
+
+func (yt *YouTube) FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
+	return yt.PlaylistVideoURLs(ctx, ref.NormalizedURL)
 }
 
 // Metadata fetches video details using direct yt-dlp command execution
 func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
 	if yt.verbose && !yt.quiet {
-		fmt.Println("Extracting video metadata...")
+		yt.log.Printf("Extracting video metadata...\n")
 	}
 
 	// Build arguments for yt-dlp command
@@ -102,11 +131,11 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	}
 
 	// Run the command
-	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if err != nil {
 		if yt.verbose {
-			fmt.Printf("Metadata extraction error: %v\n", err)
-			fmt.Printf("Command output: %s\n", string(output))
+			yt.log.Printf("Metadata extraction error: %v\n", err)
+			yt.log.Printf("Command output: %s\n", string(output))
 		}
 		return nil, fmt.Errorf("extracting video metadata: %w", err)
 	}
@@ -124,25 +153,25 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	}
 	if err := json.Unmarshal(output, &raw); err != nil {
 		if yt.verbose {
-			fmt.Printf("Failed to parse metadata JSON: %v\n", err)
+			yt.log.Printf("Failed to parse metadata JSON: %v\n", err)
 		}
 		return nil, fmt.Errorf("parsing video metadata: %w", err)
 	}
 
 	languages := extractCaptionLanguages(raw.Subtitles, raw.AutomaticCaptions)
-	raw.VideoMetadata.HasCaptions = len(languages) > 0
-	raw.VideoMetadata.CaptionLanguages = languages
-	raw.VideoMetadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
-	raw.VideoMetadata.Channel = bestMetadataChannel(raw.VideoMetadata.Channel, raw.Uploader, raw.Creator, raw.VideoMetadata.Creators)
-	raw.VideoMetadata.ChannelURL = bestMetadataChannelURL(raw.VideoMetadata.ChannelURL, raw.UploaderURL)
-	raw.VideoMetadata.PublishedAt = bestMetadataPublishedAt(raw.VideoMetadata.PublishedAt, raw.UploadDate)
 	metadata := raw.VideoMetadata
+	metadata.HasCaptions = len(languages) > 0
+	metadata.CaptionLanguages = languages
+	metadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
+	metadata.Channel = bestMetadataChannel(metadata.Channel, raw.Uploader, raw.Creator, metadata.Creators)
+	metadata.ChannelURL = bestMetadataChannelURL(metadata.ChannelURL, raw.UploaderURL)
+	metadata.PublishedAt = bestMetadataPublishedAt(metadata.PublishedAt, raw.UploadDate)
 
 	if yt.verbose && !yt.quiet {
-		fmt.Println("Metadata extraction completed")
-		fmt.Printf("Title: %s\n", metadata.Title)
-		fmt.Printf("Channel: %s\n", metadata.Channel)
-		fmt.Printf("Duration: %.2f seconds\n", metadata.Duration)
+		yt.log.Printf("Metadata extraction completed\n")
+		yt.log.Printf("Title: %s\n", metadata.Title)
+		yt.log.Printf("Channel: %s\n", metadata.Channel)
+		yt.log.Printf("Duration: %.2f seconds\n", metadata.Duration)
 	}
 
 	return &metadata, nil
@@ -250,7 +279,7 @@ func (yt *YouTube) Audio(ctx context.Context, youtubeURL string) (string, error)
 // AudioWithProgress downloads audio with optional progress tracking
 func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, progressBar ProgressBar) (string, error) {
 	if yt.verbose && !yt.quiet && progressBar == nil {
-		fmt.Println("Downloading audio...")
+		yt.log.Printf("Downloading audio...\n")
 	}
 
 	// Extract video ID to construct the output filename
@@ -261,7 +290,7 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, pro
 
 	// Create path in configured cache directory
 	cacheDir := yt.cacheDir
-	if err := EnsureDirs(cacheDir); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -284,17 +313,17 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, pro
 		err = yt.runWithProgress(ctx, args, progressBar)
 	} else {
 		// Use existing command runner for verbose or non-progress mode
-		output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+		output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 		if err != nil {
 			if yt.verbose {
-				fmt.Printf("Audio download error: %v\n", err)
-				fmt.Printf("Command output: %s\n", string(output))
+				yt.log.Printf("Audio download error: %v\n", err)
+				yt.log.Printf("Command output: %s\n", string(output))
 			}
 			return "", fmt.Errorf("yt-dlp failed: %w\nOutput: %s", err, string(output))
 		}
 
 		if yt.verbose && !yt.quiet {
-			fmt.Println("Audio download completed")
+			yt.log.Printf("Audio download completed\n")
 		}
 	}
 
@@ -317,7 +346,7 @@ func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL strin
 
 	// Create path in configured cache directory
 	cacheDir := yt.cacheDir
-	if err := EnsureDirs(cacheDir); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -354,8 +383,10 @@ const (
 var englishCaptionPreference = []string{"en-US", "en", "en-GB", "en-CA", "en-AU", "en-NZ", "en-orig"}
 
 var (
-	assOverrideTagRegex = regexp.MustCompile(`\{\\[^}]*\}`)
-	htmlTagRegex        = regexp.MustCompile(`<[^>]+>`)
+	assOverrideTagRegex   = regexp.MustCompile(`\{\\[^}]*\}`)
+	htmlTagRegex          = regexp.MustCompile(`<[^>]+>`)
+	downloadProgressRegex = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%`)
+	extractAudioRegex     = regexp.MustCompile(`\[ExtractAudio\]`)
 )
 
 // setSubLangsArg updates the value that follows the --sub-langs flag in-place
@@ -447,7 +478,7 @@ func prioritizeCaptionLanguages(preferred []string, originalLang string) []strin
 // originalLang is the video's declared language; when English captions are absent we prefer this.
 func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredLangs []string, originalLang string) error {
 	if yt.verbose && !yt.quiet {
-		fmt.Println("Downloading subtitles...")
+		yt.log.Printf("Downloading subtitles...\n")
 	}
 
 	// Get video ID for checking files
@@ -458,7 +489,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 
 	// Create path in configured cache directory
 	cacheDir := yt.cacheDir
-	if err := EnsureDirs(cacheDir); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -482,21 +513,21 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 	}
 
 	// Run the command (and optional fallback)
-	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	attemptedFallback := false
 	if err != nil {
 		// If subtitles were partially downloaded, allow success
 		if files, globErr := filepath.Glob(pattern); globErr == nil && len(files) > 0 {
 			if yt.verbose && !yt.quiet {
-				fmt.Printf("Subtitles downloaded despite errors (%s): %v\n", primarySubLangs, files)
+				yt.log.Printf("Subtitles downloaded despite errors (%s): %v\n", primarySubLangs, files)
 			}
 			err = nil
 		}
 	}
 	if err != nil {
 		if yt.verbose {
-			fmt.Printf("Subtitle download error (%s): %v\n", primarySubLangs, err)
-			fmt.Printf("Command output: %s\n", string(output))
+			yt.log.Printf("Subtitle download error (%s): %v\n", primarySubLangs, err)
+			yt.log.Printf("Command output: %s\n", string(output))
 		}
 
 		// Check if this was a rate limit error - if so, don't retry with more variants
@@ -507,26 +538,26 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 		// Retry with a broader English wildcard when available
 		if fallbackSubLangs != "" {
 			if yt.verbose && !yt.quiet {
-				fmt.Printf("Trying fallback subtitle languages: %s\n", fallbackSubLangs)
+				yt.log.Printf("Trying fallback subtitle languages: %s\n", fallbackSubLangs)
 			}
 			if err := setSubLangsArg(args, fallbackSubLangs); err != nil {
 				return fmt.Errorf("configuring fallback subtitle languages: %w", err)
 			}
-			output, err = yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+			output, err = yt.executor.Run(ctx, "yt-dlp", args...)
 			attemptedFallback = true
 			if err != nil {
 				// If subtitles were partially downloaded, allow success
 				if files, globErr := filepath.Glob(pattern); globErr == nil && len(files) > 0 {
 					if yt.verbose && !yt.quiet {
-						fmt.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, files)
+						yt.log.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, files)
 					}
 					err = nil
 				}
 			}
 			if err != nil {
 				if yt.verbose {
-					fmt.Printf("Fallback subtitle download error: %v\n", err)
-					fmt.Printf("Command output: %s\n", string(output))
+					yt.log.Printf("Fallback subtitle download error: %v\n", err)
+					yt.log.Printf("Command output: %s\n", string(output))
 				}
 				return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
 			}
@@ -536,7 +567,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 	}
 
 	if yt.verbose && !yt.quiet {
-		fmt.Println("Subtitle download completed")
+		yt.log.Printf("Subtitle download completed\n")
 	}
 
 	// Check for the downloaded subtitle files
@@ -545,25 +576,25 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 		// If no files were found and we haven't tried the fallback yet, give it one more attempt
 		if len(files) == 0 && fallbackSubLangs != "" && !attemptedFallback {
 			if yt.verbose && !yt.quiet {
-				fmt.Printf("No subtitles found for %s, retrying with: %s\n", primarySubLangs, fallbackSubLangs)
+				yt.log.Printf("No subtitles found for %s, retrying with: %s\n", primarySubLangs, fallbackSubLangs)
 			}
 			if err := setSubLangsArg(args, fallbackSubLangs); err != nil {
 				return fmt.Errorf("configuring fallback subtitle languages: %w", err)
 			}
-			output, err = yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+			output, err = yt.executor.Run(ctx, "yt-dlp", args...)
 			if err != nil {
 				// If subtitles were partially downloaded, allow success
 				if files, globErr := filepath.Glob(pattern); globErr == nil && len(files) > 0 {
 					if yt.verbose && !yt.quiet {
-						fmt.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, files)
+						yt.log.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, files)
 					}
 					err = nil
 				}
 			}
 			if err != nil {
 				if yt.verbose {
-					fmt.Printf("Fallback subtitle download error: %v\n", err)
-					fmt.Printf("Command output: %s\n", string(output))
+					yt.log.Printf("Fallback subtitle download error: %v\n", err)
+					yt.log.Printf("Command output: %s\n", string(output))
 				}
 				return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
 			}
@@ -572,15 +603,15 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 
 		if err != nil || len(files) == 0 {
 			if yt.verbose {
-				fmt.Println("No subtitle files found after download")
-				fmt.Printf("Searched for pattern: %s\n", pattern)
+				yt.log.Printf("No subtitle files found after download\n")
+				yt.log.Printf("Searched for pattern: %s\n", pattern)
 			}
 			return fmt.Errorf("no subtitle files found after download")
 		}
 	}
 
 	if yt.verbose && !yt.quiet {
-		fmt.Printf("Found %d subtitle file(s): %v\n", len(files), files)
+		yt.log.Printf("Found %d subtitle file(s): %v\n", len(files), files)
 	}
 
 	return nil
@@ -604,7 +635,7 @@ func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL str
 	}
 
 	if yt.verbose && !yt.quiet {
-		fmt.Printf("Looking for existing transcript for video ID: %s\n", youtubeID)
+		yt.log.Printf("Looking for existing transcript for video ID: %s\n", youtubeID)
 	}
 
 	// Look for an existing transcript first
@@ -615,14 +646,14 @@ func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL str
 
 	if transcriptPath != "" {
 		if yt.verbose && !yt.quiet {
-			fmt.Printf("Found existing transcript: %s\n", transcriptPath)
+			yt.log.Printf("Found existing transcript: %s\n", transcriptPath)
 		}
 		// Process the existing transcript
 		return yt.processSrtTranscript(transcriptPath)
 	}
 
 	if yt.verbose && !yt.quiet {
-		fmt.Println("No existing transcript found, attempting to download...")
+		yt.log.Printf("No existing transcript found, attempting to download...\n")
 	}
 
 	// No existing transcript found, try to download one
@@ -636,13 +667,13 @@ func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL str
 	transcriptPath, err = yt.findExistingTranscript(youtubeID)
 	if err != nil || transcriptPath == "" {
 		if yt.verbose {
-			fmt.Printf("Could not find downloaded transcript: %v\n", err)
+			yt.log.Printf("Could not find downloaded transcript: %v\n", err)
 		}
 		return nil, fmt.Errorf("downloaded transcript not found")
 	}
 
 	if yt.verbose && !yt.quiet {
-		fmt.Printf("Successfully downloaded transcript: %s\n", transcriptPath)
+		yt.log.Printf("Successfully downloaded transcript: %s\n", transcriptPath)
 	}
 
 	return yt.processSrtTranscript(transcriptPath)
@@ -652,7 +683,7 @@ func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL str
 func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 	// Look in configured cache directory
 	cacheDir := yt.cacheDir
-	if FileExists(cacheDir) {
+	if fileExists(cacheDir) {
 		cacheFiles, err := os.ReadDir(cacheDir)
 		if err == nil {
 			for _, entry := range cacheFiles {
@@ -665,7 +696,7 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 	}
 
 	// Look in transcripts directory for already processed transcripts
-	if FileExists(yt.transcriptsDir) {
+	if fileExists(yt.transcriptsDir) {
 		transcriptFiles, err := os.ReadDir(yt.transcriptsDir)
 		if err == nil {
 			for _, entry := range transcriptFiles {
@@ -683,7 +714,7 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 // processSrtTranscript converts SRT to the canonical transcript representation.
 func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 	if yt.verbose && !yt.quiet {
-		fmt.Printf("Processing SRT transcript: %s\n", filePath)
+		yt.log.Printf("Processing SRT transcript: %s\n", filePath)
 	}
 
 	content, err := os.ReadFile(filePath)
@@ -707,19 +738,11 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 	}
 	transcript.Text = text
 
-	// Save canonical and rendered forms to the transcripts directory.
-	if err := SaveStructuredTranscript(transcript, yt.transcriptsDir); err != nil {
-		return nil, err
-	}
-	if err := SaveTranscript(id, text, yt.transcriptsDir); err != nil {
-		return nil, err
-	}
-
 	// If the file is in the cache directory, remove it after processing
 	cacheDir := yt.cacheDir
-	if strings.HasPrefix(filePath, cacheDir) && FileExists(filePath) {
+	if strings.HasPrefix(filePath, cacheDir) && fileExists(filePath) {
 		if err := os.Remove(filePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove SRT file from cache: %v\n", err)
+			yt.log.Printf("Warning: failed to remove SRT file from cache: %v\n", err)
 		}
 	}
 
@@ -938,16 +961,10 @@ type PlaylistMetadata struct {
 	Entries []PlaylistEntry `json:"entries"`
 }
 
-// PlaylistInfo contains both playlist metadata and video URLs
-type PlaylistInfo struct {
-	Title     string
-	VideoURLs []string
-}
-
 // PlaylistVideoURLs fetches all video URLs from a YouTube playlist
 func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
 	if yt.verbose && !yt.quiet {
-		fmt.Println("Extracting playlist video URLs...")
+		yt.log.Printf("Extracting playlist video URLs...\n")
 	}
 
 	// Build arguments for yt-dlp command
@@ -962,11 +979,11 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	}
 
 	// Run the command
-	output, err := yt.cmdRunner.Run(ctx, "yt-dlp", args...)
+	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if err != nil {
 		if yt.verbose {
-			fmt.Printf("Playlist extraction error: %v\n", err)
-			fmt.Printf("Command output: %s\n", string(output))
+			yt.log.Printf("Playlist extraction error: %v\n", err)
+			yt.log.Printf("Command output: %s\n", string(output))
 		}
 		return nil, fmt.Errorf("extracting playlist URLs: %w", err)
 	}
@@ -975,27 +992,32 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	var playlist PlaylistMetadata
 	if err := json.Unmarshal(output, &playlist); err != nil {
 		if yt.verbose {
-			fmt.Printf("Failed to parse playlist JSON: %v\n", err)
+			yt.log.Printf("Failed to parse playlist JSON: %v\n", err)
 		}
 		return nil, fmt.Errorf("parsing playlist metadata: %w", err)
 	}
 
 	// Extract video URLs
-	var videoURLs []string
+	var videos []YouTubeRef
 	for _, entry := range playlist.Entries {
-		if IsValidYouTubeID(entry.ID) {
+		if tldw.IsValidVideoID(entry.ID) {
 			videoURL := "https://www.youtube.com/watch?v=" + entry.ID
-			videoURLs = append(videoURLs, videoURL)
+			videos = append(videos, YouTubeRef{
+				ContentType:   ContentTypeVideo,
+				OriginalInput: entry.URL,
+				NormalizedURL: videoURL,
+				ID:            entry.ID,
+			})
 		}
 	}
 
 	if yt.verbose && !yt.quiet {
-		fmt.Printf("Found %d videos in playlist: %s\n", len(videoURLs), playlist.Title)
+		yt.log.Printf("Found %d videos in playlist: %s\n", len(videos), playlist.Title)
 	}
 
 	return &PlaylistInfo{
-		Title:     playlist.Title,
-		VideoURLs: videoURLs,
+		Title:  playlist.Title,
+		Videos: videos,
 	}, nil
 }
 
@@ -1037,32 +1059,9 @@ func extractCaptionLanguages(subtitles, autoCaptions map[string]any) []string {
 // runWithProgress executes yt-dlp with real-time progress tracking
 // This method should receive a progress bar from the caller, not create one
 func (yt *YouTube) runWithProgress(ctx context.Context, args []string, progressBar ProgressBar) error {
-
-	// Create command
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-
-	// Get combined output pipe
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating stdout pipe: %w", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("creating stderr pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting yt-dlp: %w", err)
-	}
-
-	// Parse progress from both stdout and stderr
-	go yt.parseProgress(stdout, progressBar)
-	go yt.parseProgress(stderr, progressBar)
-
-	// Wait for command to complete
-	err = cmd.Wait()
+	err := yt.executor.RunStreaming(ctx, "yt-dlp", args, func(line string) {
+		yt.updateProgress(line, progressBar)
+	})
 	if progressBar != nil {
 		progressBar.Finish()
 	}
@@ -1070,113 +1069,71 @@ func (yt *YouTube) runWithProgress(ctx context.Context, args []string, progressB
 	return err
 }
 
-// parseProgress parses yt-dlp progress output and updates the progress bar
-func (yt *YouTube) parseProgress(pipe io.ReadCloser, progressBar ProgressBar) {
-	defer pipe.Close()
-	scanner := bufio.NewScanner(pipe)
+func (yt *YouTube) updateProgress(line string, progressBar ProgressBar) {
+	if progressBar != nil {
+		applyYTProgress(parseYTProgress(line), progressBar, progressWindow{start: 0, end: 100})
+	}
+}
 
-	// Regex patterns for different stages
-	downloadRegex := regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%`)
-	extractRegex := regexp.MustCompile(`\[ExtractAudio\]`)
+type ytProgress struct {
+	downloadPercent float64
+	hasDownload     bool
+	converting      bool
+}
 
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Parse download progress (0-80%)
-		if matches := downloadRegex.FindStringSubmatch(line); matches != nil {
-			if percent, err := strconv.ParseFloat(matches[1], 64); err == nil && progressBar != nil {
-				// Map download progress to 0-80% of total progress
-				progress := int(percent * 0.8)
-				progressBar.Set(progress)
-			}
-		}
-
-		// Detect audio extraction stage (80-100%)
-		if extractRegex.MatchString(line) && progressBar != nil {
-			progressBar.Describe("Converting audio")
-			progressBar.Set(80)
-
-			// Simulate conversion progress 80-100%
-			for i := 80; i <= 100; i += 5 {
-				progressBar.Set(i)
-				// Small delay to show conversion progress
-				// Note: This is a simulation since yt-dlp doesn't provide extraction progress
-			}
+func parseYTProgress(line string) ytProgress {
+	event := ytProgress{converting: extractAudioRegex.MatchString(line)}
+	if matches := downloadProgressRegex.FindStringSubmatch(line); matches != nil {
+		if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			event.downloadPercent = percent
+			event.hasDownload = true
 		}
 	}
+	return event
+}
+
+type progressWindow struct {
+	start int
+	end   int
+}
+
+func applyYTProgress(event ytProgress, bar ProgressBar, window progressWindow) {
+	size := window.end - window.start
+	if event.hasDownload {
+		bar.Set(window.start + int(event.downloadPercent*0.8*float64(size)/100))
+	}
+	if !event.converting {
+		return
+	}
+	bar.Describe("Converting audio")
+	conversionStart := window.start + int(0.8*float64(size))
+	step := (window.end - conversionStart) / 10
+	if step < 1 {
+		step = 1
+	}
+	for i := conversionStart; i <= window.end; i += step {
+		bar.Set(i)
+	}
+	bar.Set(window.end)
 }
 
 // runWithSharedProgress executes yt-dlp with shared progress bar within specified range
 func (yt *YouTube) runWithSharedProgress(ctx context.Context, args []string, bar ProgressBar, startPercent, endPercent int) error {
-	// Create command
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-
-	// Get combined output pipe
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating stdout pipe: %w", err)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("creating stderr pipe: %w", err)
-	}
-
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("starting yt-dlp: %w", err)
-	}
-
-	// Parse progress from both stdout and stderr within the specified range
-	go yt.parseSharedProgress(stdout, bar, startPercent, endPercent)
-	go yt.parseSharedProgress(stderr, bar, startPercent, endPercent)
-
-	// Wait for command to complete
-	return cmd.Wait()
+	return yt.executor.RunStreaming(ctx, "yt-dlp", args, func(line string) {
+		yt.updateSharedProgress(line, bar, startPercent, endPercent)
+	})
 }
 
 // parseSharedProgress parses yt-dlp progress output and updates shared progress bar within range
 func (yt *YouTube) parseSharedProgress(pipe io.ReadCloser, bar ProgressBar, startPercent, endPercent int) {
-	defer pipe.Close()
+	defer func() { _ = pipe.Close() }()
 	scanner := bufio.NewScanner(pipe)
 
-	// Regex patterns for different stages
-	downloadRegex := regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%`)
-	extractRegex := regexp.MustCompile(`\[ExtractAudio\]`)
-
-	progressRange := endPercent - startPercent
-
 	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Parse download progress (maps to 0-80% of our range)
-		if matches := downloadRegex.FindStringSubmatch(line); matches != nil {
-			if percent, err := strconv.ParseFloat(matches[1], 64); err == nil {
-				// Map download progress to 0-80% of our allocated range
-				localProgress := percent * 0.8 // 0-80%
-				globalProgress := startPercent + int(localProgress*float64(progressRange)/100)
-				bar.Set(globalProgress)
-			}
-		}
-
-		// Detect audio extraction stage (maps to 80-100% of our range)
-		if extractRegex.MatchString(line) {
-			bar.Describe("Converting audio")
-
-			// Map conversion to 80-100% of our allocated range
-			conversionStart := startPercent + int(0.8*float64(progressRange))
-			conversionEnd := endPercent
-
-			// Simulate conversion progress 80-100%
-			step := (conversionEnd - conversionStart) / 10
-			if step < 1 {
-				step = 1
-			}
-			for i := conversionStart; i <= conversionEnd; i += step {
-				bar.Set(i)
-				// Small delay to show conversion progress
-			}
-			bar.Set(endPercent)
-		}
+		yt.updateSharedProgress(scanner.Text(), bar, startPercent, endPercent)
 	}
+}
+
+func (yt *YouTube) updateSharedProgress(line string, bar ProgressBar, startPercent, endPercent int) {
+	applyYTProgress(parseYTProgress(line), bar, progressWindow{start: startPercent, end: endPercent})
 }

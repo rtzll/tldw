@@ -1,4 +1,4 @@
-package internal
+package openai
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 )
+
+const WhisperLimit int64 = 25 << 20
 
 type mockOpenAIClient struct {
 	transcription string
@@ -80,7 +82,9 @@ func TestAIProcessAudioChunksWithProgress(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create temp file: %v", err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatalf("closing temp chunk: %v", err)
+		}
 		chunks[i] = f.Name()
 	}
 
@@ -105,7 +109,9 @@ func TestAIProcessAudioChunksError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("closing temp chunk: %v", err)
+	}
 
 	_, err = ai.processAudioChunksWithProgress(context.Background(), []string{f.Name()}, nil)
 	if err == nil {

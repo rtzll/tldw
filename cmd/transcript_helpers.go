@@ -1,69 +1,57 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/rtzll/tldw/internal"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func requestedTranscriptFormat(cmd *cobra.Command) internal.TranscriptRenderFormat {
+func requestedTranscriptFormat(cmd *cobra.Command) tldw.TranscriptRenderFormat {
 	includeTimestamps, _ := cmd.Flags().GetBool("timestamps")
 	if includeTimestamps {
-		return internal.TranscriptRenderFormatTimestamps
+		return tldw.TranscriptRenderFormatTimestamps
 	}
 
-	return internal.TranscriptRenderFormatPlain
+	return tldw.TranscriptRenderFormatPlain
 }
 
 // fetchTranscript retrieves a transcript for the given argument and optionally falls back to Whisper.
-func fetchTranscript(cmd *cobra.Command, app *internal.App, arg string) (string, error) {
+func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, error) {
 	parsed, err := internal.ParseVideoArg(arg)
 	if err != nil {
 		return "", err
 	}
-	youtubeURL := parsed.NormalizedURL
 	format := requestedTranscriptFormat(cmd)
 
-	transcript, err := app.GetTranscriptOutput(cmd.Context(), youtubeURL, format)
-	if err == nil {
-		return transcript, nil
+	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
+	if format == tldw.TranscriptRenderFormatTimestamps {
+		transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{
+			Policy:            tldw.TranscriptPolicyCaptionsOnly,
+			RequireTimestamps: true,
+		})
+		if err != nil {
+			if fallbackWhisper {
+				return "", fmt.Errorf("timestamps are not supported with Whisper fallback yet")
+			}
+			return "", err
+		}
+		return transcript.Render(format)
 	}
 
-	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-	if !fallbackWhisper {
+	policy := tldw.TranscriptPolicyCaptionsOnly
+	if fallbackWhisper {
+		policy = tldw.TranscriptPolicyCaptionsThenWhisper
+	}
+	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy})
+	if errors.Is(err, tldw.ErrCaptionsUnavailable) && fallbackWhisper {
+		transcript, err = app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
+	}
+	if err != nil {
 		return "", err
 	}
-
-	if format == internal.TranscriptRenderFormatTimestamps {
-		return "", fmt.Errorf("timestamps are not supported with Whisper fallback yet")
-	}
-
-	audioFile, audioErr := app.DownloadAudio(cmd.Context(), youtubeURL)
-	if audioErr != nil {
-		return "", audioErr
-	}
-
-	structuredTranscript, whisperErr := app.TranscribeAudioStructured(cmd.Context(), audioFile)
-	if whisperErr != nil {
-		return "", whisperErr
-	}
-
-	structuredTranscript.VideoID = parsed.ID
-
-	transcript, renderErr := structuredTranscript.Render(internal.TranscriptRenderFormatPlain)
-	if renderErr != nil {
-		return "", renderErr
-	}
-
-	if saveErr := internal.SaveStructuredTranscript(structuredTranscript, config.TranscriptsDir); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", saveErr)
-	}
-	if saveErr := internal.SaveTranscript(parsed.ID, transcript, config.TranscriptsDir); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", saveErr)
-	}
-
-	return transcript, nil
+	return transcript.Render(tldw.TranscriptRenderFormatPlain)
 }

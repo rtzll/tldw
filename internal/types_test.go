@@ -48,6 +48,17 @@ func TestParsedArgIsValid(t *testing.T) {
 	}
 }
 
+func TestParsedArgRefPreservesValidatedReference(t *testing.T) {
+	parsed := ParseArgNew("dQw4w9WgXcQ")
+	ref, err := parsed.Ref()
+	if err != nil {
+		t.Fatalf("Ref() error = %v", err)
+	}
+	if ref.ID != "dQw4w9WgXcQ" || ref.ContentType != ContentTypeVideo || ref.NormalizedURL == "" {
+		t.Fatalf("Ref() = %+v", ref)
+	}
+}
+
 var errTest = errTestType{}
 
 type errTestType struct{}
@@ -56,34 +67,34 @@ func (errTestType) Error() string { return "test error" }
 
 func TestParsedArgSuggestCorrection(t *testing.T) {
 	tests := []struct {
-		name             string
-		arg              *ParsedArg
+		name              string
+		arg               *ParsedArg
 		availableCommands []string
-		want             string
+		want              string
 	}{
 		{
-			name:             "not a command",
-			arg:              &ParsedArg{ContentType: ContentTypeVideo, OriginalInput: "video"},
+			name:              "not a command",
+			arg:               &ParsedArg{ContentType: ContentTypeVideo, OriginalInput: "video"},
 			availableCommands: []string{"help", "version"},
-			want:             "",
+			want:              "",
 		},
 		{
-			name:             "exact match",
-			arg:              &ParsedArg{ContentType: ContentTypeCommand, OriginalInput: "help"},
+			name:              "exact match",
+			arg:               &ParsedArg{ContentType: ContentTypeCommand, OriginalInput: "help"},
 			availableCommands: []string{"help", "version"},
-			want:             "did you mean: help",
+			want:              "did you mean: help",
 		},
 		{
-			name:             "partial match",
-			arg:              &ParsedArg{ContentType: ContentTypeCommand, OriginalInput: "ver"},
+			name:              "partial match",
+			arg:               &ParsedArg{ContentType: ContentTypeCommand, OriginalInput: "ver"},
 			availableCommands: []string{"help", "version"},
-			want:             "did you mean: version",
+			want:              "did you mean: version",
 		},
 		{
-			name:             "no match",
-			arg:              &ParsedArg{ContentType: ContentTypeCommand, OriginalInput: "xyz"},
+			name:              "no match",
+			arg:               &ParsedArg{ContentType: ContentTypeCommand, OriginalInput: "xyz"},
 			availableCommands: []string{"help", "version"},
-			want:             "use --help to see available commands",
+			want:              "use --help to see available commands",
 		},
 	}
 

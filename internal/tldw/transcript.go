@@ -1,4 +1,5 @@
-package internal
+// Package tldw contains the transport-neutral domain model and application workflows.
+package tldw
 
 import (
 	"errors"
@@ -32,7 +33,7 @@ type TranscriptSegment struct {
 	Text  string  `json:"text"`
 }
 
-// Transcript is the canonical transcript representation used internally.
+// Transcript is the canonical transcript representation.
 type Transcript struct {
 	VideoID  string              `json:"video_id,omitempty"`
 	Language string              `json:"language,omitempty"`
@@ -46,7 +47,6 @@ func (t *Transcript) PlainText() string {
 	if t == nil {
 		return ""
 	}
-
 	if len(t.Segments) > 0 {
 		lines := make([]string, 0, len(t.Segments))
 		for _, segment := range t.Segments {
@@ -57,7 +57,6 @@ func (t *Transcript) PlainText() string {
 		}
 		return strings.TrimSpace(strings.Join(lines, "\n"))
 	}
-
 	return strings.TrimSpace(t.Text)
 }
 
@@ -79,7 +78,6 @@ func (t *Transcript) Render(format TranscriptRenderFormat) (string, error) {
 		if !t.HasTimestamps() {
 			return "", ErrTranscriptTimestampsUnavailable
 		}
-
 		lines := make([]string, 0, len(t.Segments))
 		for _, segment := range t.Segments {
 			text := strings.TrimSpace(segment.Text)
@@ -88,11 +86,9 @@ func (t *Transcript) Render(format TranscriptRenderFormat) (string, error) {
 			}
 			lines = append(lines, fmt.Sprintf("[%s] %s", formatTranscriptTimestamp(segment.Start), text))
 		}
-
 		if len(lines) == 0 {
 			return "", fmt.Errorf("transcript is empty")
 		}
-
 		return strings.Join(lines, "\n"), nil
 	default:
 		return "", fmt.Errorf("unsupported transcript render format: %s", format)
@@ -103,15 +99,12 @@ func formatTranscriptTimestamp(seconds float64) string {
 	if seconds < 0 {
 		seconds = 0
 	}
-
 	totalSeconds := int(seconds)
 	hours := totalSeconds / 3600
 	minutes := (totalSeconds % 3600) / 60
 	remainingSeconds := totalSeconds % 60
-
 	if hours > 0 {
 		return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, remainingSeconds)
 	}
-
 	return fmt.Sprintf("%02d:%02d", minutes, remainingSeconds)
 }

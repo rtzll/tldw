@@ -1,20 +1,83 @@
-package internal
+package ytdlp
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
-	"os"
 	"path/filepath"
 )
 
+type mockCommandRunner struct {
+	output []byte
+	err    error
+}
+
+func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return m.output, m.err
+}
+
+func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
+	return m.err
+}
+
+type fakeStreamingRunner struct {
+	lines []string
+	err   error
+	calls int
+}
+
+func (r *fakeStreamingRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return nil, r.err
+}
+
+func (r *fakeStreamingRunner) RunStreaming(_ context.Context, _ string, _ []string, onLine func(string)) error {
+	r.calls++
+	for _, line := range r.lines {
+		onLine(line)
+	}
+	return r.err
+}
+
+func TestAudioWithProgressUsesStreamingCommandAdapter(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	stream := &fakeStreamingRunner{lines: []string{"[download] 50.0%", "[ExtractAudio]"}}
+	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
+	yt.executor = stream
+	progress := &mockProgressBar{}
+
+	_, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", progress)
+	if err != nil {
+		t.Fatalf("AudioWithProgress() error = %v", err)
+	}
+	if stream.calls != 1 {
+		t.Fatalf("streaming command calls = %d, want 1", stream.calls)
+	}
+	if len(progress.sets) == 0 || progress.sets[0] != 40 {
+		t.Fatalf("progress sets = %v, want first value 40", progress.sets)
+	}
+	if progress.desc != "Converting audio" {
+		t.Fatalf("progress description = %q, want %q", progress.desc, "Converting audio")
+	}
+}
+
+func TestAudioWithProgressReturnsStreamingCommandError(t *testing.T) {
+	yt := NewYouTubeWithCache(t.TempDir(), t.TempDir(), false, true)
+	yt.executor = &fakeStreamingRunner{err: errors.New("stream failed")}
+
+	_, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", &mockProgressBar{})
+	if err == nil || !strings.Contains(err.Error(), "stream failed") {
+		t.Fatalf("AudioWithProgress() error = %v, want streaming error", err)
+	}
+}
+
 func TestAudioWithProgressUsesConfiguredCacheDir(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
-	yt := NewYouTubeWithCache(nil, t.TempDir(), cacheDir, false, true)
-	yt.cmdRunner = &mockCommandRunner{}
+	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
+	yt.executor = &mockCommandRunner{}
 
 	got, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", nil)
 	if err != nil {
@@ -28,8 +91,8 @@ func TestAudioWithProgressUsesConfiguredCacheDir(t *testing.T) {
 }
 
 func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
-	yt := NewYouTube(nil, t.TempDir(), false, true)
-	yt.cmdRunner = &mockCommandRunner{output: []byte(`{
+	yt := NewYouTube(t.TempDir(), false, true)
+	yt.executor = &mockCommandRunner{output: []byte(`{
 		"title":"Playlist",
 		"entries":[
 			{"id":"dQw4w9WgXcQ","title":"valid"},
@@ -41,11 +104,11 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlaylistVideoURLs() error = %v", err)
 	}
-	if len(info.VideoURLs) != 1 {
-		t.Fatalf("VideoURLs length = %d, want 1 (%v)", len(info.VideoURLs), info.VideoURLs)
+	if len(info.Videos) != 1 {
+		t.Fatalf("Videos length = %d, want 1 (%v)", len(info.Videos), info.Videos)
 	}
-	if info.VideoURLs[0] != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
-		t.Fatalf("VideoURLs[0] = %q", info.VideoURLs[0])
+	if info.Videos[0].NormalizedURL != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+		t.Fatalf("Videos[0] = %+v", info.Videos[0])
 	}
 }
 
@@ -69,8 +132,8 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(nil, t.TempDir(), false, true)
-			yt.cmdRunner = &mockCommandRunner{output: []byte(tt.json)}
+			yt := NewYouTube(t.TempDir(), false, true)
+			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 
 			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 			if err != nil {
@@ -84,8 +147,8 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 }
 
 func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
-	yt := NewYouTube(nil, t.TempDir(), false, true)
-	yt.cmdRunner = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
+	yt := NewYouTube(t.TempDir(), false, true)
+	yt.executor = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
 
 	metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 	if err != nil {
@@ -137,8 +200,8 @@ func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(nil, t.TempDir(), false, true)
-			yt.cmdRunner = &mockCommandRunner{output: []byte(tt.json)}
+			yt := NewYouTube(t.TempDir(), false, true)
+			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 
 			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 			if err != nil {
@@ -584,84 +647,6 @@ func TestSetSubLangsArg(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadStructuredTranscript(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	original := &Transcript{
-		VideoID:  "dQw4w9WgXcQ",
-		Language: "en",
-		Source:   TranscriptSourceCaptions,
-		Text:     "Hello world",
-		Segments: []TranscriptSegment{
-			{Start: 0, End: 1, Text: "Hello world"},
-		},
-	}
-
-	if err := SaveStructuredTranscript(original, tmpDir); err != nil {
-		t.Fatalf("SaveStructuredTranscript() error = %v", err)
-	}
-
-	loaded, err := LoadStructuredTranscript("dQw4w9WgXcQ", tmpDir)
-	if err != nil {
-		t.Fatalf("LoadStructuredTranscript() error = %v", err)
-	}
-
-	if loaded.VideoID != original.VideoID || loaded.Language != original.Language || loaded.Text != original.Text {
-		t.Errorf("LoadStructuredTranscript() = %+v, want %+v", loaded, original)
-	}
-	if len(loaded.Segments) != len(original.Segments) {
-		t.Errorf("LoadStructuredTranscript() segments = %d, want %d", len(loaded.Segments), len(original.Segments))
-	}
-}
-
-func TestCurrentMetadataCacheVersion(t *testing.T) {
-	const want = 3
-	if currentMetadataCacheVersion != want {
-		t.Fatalf("currentMetadataCacheVersion = %d, want %d", currentMetadataCacheVersion, want)
-	}
-}
-
-func TestSaveAndLoadMetadata(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	original := &VideoMetadata{
-		Title:       "Test Video",
-		Channel:     "Test Channel",
-		ChannelURL:  "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA",
-		PublishedAt: "2026-06-29",
-		Duration:    120,
-		Description: "A test video",
-		HasCaptions: true,
-	}
-
-	if err := SaveMetadata("dQw4w9WgXcQ", original, tmpDir); err != nil {
-		t.Fatalf("SaveMetadata() error = %v", err)
-	}
-
-	loaded, err := LoadCachedMetadata("dQw4w9WgXcQ", tmpDir)
-	if err != nil {
-		t.Fatalf("LoadCachedMetadata() error = %v", err)
-	}
-
-	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.ChannelURL != original.ChannelURL || loaded.PublishedAt != original.PublishedAt || loaded.Duration != original.Duration {
-		t.Errorf("LoadCachedMetadata() = %+v, want %+v", loaded, original)
-	}
-	if loaded.CacheVersion != currentMetadataCacheVersion {
-		t.Errorf("LoadCachedMetadata() CacheVersion = %d, want %d", loaded.CacheVersion, currentMetadataCacheVersion)
-	}
-
-	data, err := os.ReadFile(filepath.Join(tmpDir, "dQw4w9WgXcQ.meta.json"))
-	if err != nil {
-		t.Fatalf("reading saved metadata: %v", err)
-	}
-	if !strings.Contains(string(data), `"published_at": "2026-06-29"`) {
-		t.Fatalf("saved metadata missing published_at: %s", data)
-	}
-	if !strings.Contains(string(data), `"channel_url": "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA"`) {
-		t.Fatalf("saved metadata missing channel_url: %s", data)
-	}
-}
-
 type mockProgressBar struct {
 	desc string
 	sets []int
@@ -719,52 +704,5 @@ func TestParseSharedProgressConversionStep(t *testing.T) {
 				t.Errorf("last Set() = %d, want %d", last, tt.wantLastSet)
 			}
 		})
-	}
-}
-
-func TestSaveTranscript(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	if err := SaveTranscript("dQw4w9WgXcQ", "Hello world", tmpDir); err != nil {
-		t.Fatalf("SaveTranscript() error = %v", err)
-	}
-
-	content, err := os.ReadFile(filepath.Join(tmpDir, "dQw4w9WgXcQ.txt"))
-	if err != nil {
-		t.Fatalf("reading saved transcript: %v", err)
-	}
-
-	if string(content) != "Hello world" {
-		t.Errorf("saved transcript = %q, want %q", string(content), "Hello world")
-	}
-}
-
-func TestCacheHelpersRejectInvalidVideoIDs(t *testing.T) {
-	baseDir := t.TempDir()
-	transcriptsDir := filepath.Join(baseDir, "transcripts")
-	if err := os.Mkdir(transcriptsDir, 0755); err != nil {
-		t.Fatalf("creating transcripts dir: %v", err)
-	}
-
-	metadata := &VideoMetadata{Title: "Test"}
-	structured := &Transcript{VideoID: "../outside", Source: TranscriptSourceCaptions, Text: "secret"}
-
-	if err := SaveTranscript("../outside", "secret", transcriptsDir); err == nil {
-		t.Fatal("SaveTranscript() expected invalid ID error")
-	}
-	if err := SaveStructuredTranscript(structured, transcriptsDir); err == nil {
-		t.Fatal("SaveStructuredTranscript() expected invalid ID error")
-	}
-	if _, err := LoadStructuredTranscript("../outside", transcriptsDir); err == nil {
-		t.Fatal("LoadStructuredTranscript() expected invalid ID error")
-	}
-	if err := SaveMetadata("../outside", metadata, transcriptsDir); err == nil {
-		t.Fatal("SaveMetadata() expected invalid ID error")
-	}
-	if _, err := LoadCachedMetadata("../outside", transcriptsDir); err == nil {
-		t.Fatal("LoadCachedMetadata() expected invalid ID error")
-	}
-	if FileExists(filepath.Join(baseDir, "outside.txt")) {
-		t.Fatal("invalid transcript ID wrote outside transcripts dir")
 	}
 }

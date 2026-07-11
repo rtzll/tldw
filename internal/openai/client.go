@@ -1,4 +1,4 @@
-package internal
+package openai
 
 import (
 	"context"
@@ -9,9 +9,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openai/openai-go/v3"
+	openaisdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/rtzll/tldw/internal/tldw"
 )
+
+type ProgressBar interface {
+	Set(current int)
+	Finish()
+}
+
+type discardLogSink struct{}
+
+func (discardLogSink) Printf(string, ...any) {}
 
 // OpenAIClientInterface defines the interface for OpenAI client operations
 type OpenAIClientInterface interface {
@@ -21,20 +31,20 @@ type OpenAIClientInterface interface {
 
 // OpenAIClient wraps the official OpenAI Go SDK
 type OpenAIClient struct {
-	client *openai.Client
+	client *openaisdk.Client
 }
 
 // NewOpenAIClient creates a new OpenAI client
 func NewOpenAIClient(apiKey string) *OpenAIClient {
-	client := openai.NewClient(option.WithAPIKey(apiKey))
+	client := openaisdk.NewClient(option.WithAPIKey(apiKey))
 	return &OpenAIClient{client: &client}
 }
 
 // CreateTranscription implements the transcription method
 func (c *OpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
-	resp, err := c.client.Audio.Transcriptions.New(ctx, openai.AudioTranscriptionNewParams{
+	resp, err := c.client.Audio.Transcriptions.New(ctx, openaisdk.AudioTranscriptionNewParams{
 		File:  file,
-		Model: openai.AudioModelWhisper1,
+		Model: openaisdk.AudioModelWhisper1,
 	})
 	if err != nil {
 		return "", err
@@ -44,12 +54,12 @@ func (c *OpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (
 
 // CreateChatCompletion implements the chat completion method
 func (c *OpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
-	oaiModel := openai.ChatModel(model)
+	oaiModel := openaisdk.ChatModel(model)
 
-	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	resp, err := c.client.Chat.Completions.New(ctx, openaisdk.ChatCompletionNewParams{
 		Model: oaiModel,
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.UserMessage(prompt),
+		Messages: []openaisdk.ChatCompletionMessageParamUnion{
+			openaisdk.UserMessage(prompt),
 		},
 	})
 	if err != nil {
@@ -73,6 +83,7 @@ type AI struct {
 	apiKey       string
 	clientOnce   sync.Once
 	clientErr    error
+	log          tldw.LogSink
 }
 
 // NewAI creates a new AI processor
@@ -85,6 +96,7 @@ func NewAI(client OpenAIClientInterface, audio *Audio, model string, whisperLimi
 		timeout:      timeout,
 		verbose:      verbose,
 		quiet:        quiet,
+		log:          discardLogSink{},
 	}
 }
 
@@ -99,7 +111,12 @@ func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64,
 		verbose:      verbose,
 		quiet:        quiet,
 		apiKey:       apiKey,
+		log:          discardLogSink{},
 	}
+}
+
+func (ai *AI) SetLogSink(log tldw.LogSink) {
+	ai.log = log
 }
 
 // ensureClient initializes the OpenAI client if needed
@@ -109,13 +126,20 @@ func (ai *AI) ensureClient() error {
 			return
 		}
 		if ai.apiKey == "" {
-			ai.clientErr = ValidateOpenAIAPIKey("")
+			ai.clientErr = validateAPIKey("")
 			return
 		}
 		ai.client = NewOpenAIClient(ai.apiKey)
 	})
 
 	return ai.clientErr
+}
+
+func validateAPIKey(apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("OpenAI API key is required - set it in config.toml or OPENAI_API_KEY environment variable")
+	}
+	return nil
 }
 
 // Transcribe transcribes audio using OpenAI's Whisper API
@@ -131,7 +155,7 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, prog
 	}
 
 	if ai.verbose && !ai.quiet {
-		fmt.Printf("Transcribing audio file: %s\n", audioFile)
+		ai.log.Printf("Transcribing audio file: %s\n", audioFile)
 	}
 
 	info, err := os.Stat(audioFile)
@@ -175,7 +199,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 	numChunks := len(chunks)
 
 	if ai.verbose && !ai.quiet {
-		fmt.Printf("Transcribing chunks (%d)\n", numChunks)
+		ai.log.Printf("Transcribing chunks (%d)\n", numChunks)
 	}
 
 	// Progress bar should be created by UIManager and passed in
@@ -193,7 +217,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 
 		text, err := ai.client.CreateTranscription(ctx, file)
 		if closeErr := file.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close file %s: %v\n", chunkPath, closeErr)
+			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
 		}
 		if err != nil {
 			return "", fmt.Errorf("transcribing chunk %d: %w", i+1, err)
@@ -205,7 +229,7 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 		}
 
 		if ai.verbose && !ai.quiet {
-			fmt.Printf("Transcribed chunk %d/%d\n", i+1, numChunks)
+			ai.log.Printf("Transcribed chunk %d/%d\n", i+1, numChunks)
 		}
 	}
 
@@ -290,7 +314,7 @@ func (ai *AI) processAudioChunksWithSharedProgress(ctx context.Context, chunks [
 
 		text, err := ai.client.CreateTranscription(ctx, file)
 		if closeErr := file.Close(); closeErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close file %s: %v\n", chunkPath, closeErr)
+			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
 		}
 		if err != nil {
 			return "", fmt.Errorf("transcribing chunk %d: %w", i+1, err)

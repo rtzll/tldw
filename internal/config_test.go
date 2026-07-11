@@ -53,8 +53,12 @@ func TestCleanupTempDir(t *testing.T) {
 		tmpDir := t.TempDir()
 		f1 := filepath.Join(tmpDir, "file1.txt")
 		f2 := filepath.Join(tmpDir, "file2.txt")
-		os.WriteFile(f1, []byte("data"), 0644)
-		os.WriteFile(f2, []byte("data"), 0644)
+		if err := os.WriteFile(f1, []byte("data"), 0644); err != nil {
+			t.Fatalf("WriteFile(%q) error = %v", f1, err)
+		}
+		if err := os.WriteFile(f2, []byte("data"), 0644); err != nil {
+			t.Fatalf("WriteFile(%q) error = %v", f2, err)
+		}
 
 		if err := CleanupTempDir(tmpDir); err != nil {
 			t.Fatalf("CleanupTempDir() error = %v", err)

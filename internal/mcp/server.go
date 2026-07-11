@@ -1,4 +1,4 @@
-package internal
+package mcpserver
 
 import (
 	"context"
@@ -12,14 +12,34 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rtzll/tldw/internal/tldw"
+)
+
+type YouTubeRef = tldw.YouTubeRef
+type VideoMetadata = tldw.VideoMetadata
+type Transcript = tldw.Transcript
+type TranscriptRequest = tldw.TranscriptRequest
+
+const (
+	TranscriptRenderFormatPlain      = tldw.TranscriptRenderFormatPlain
+	TranscriptRenderFormatTimestamps = tldw.TranscriptRenderFormatTimestamps
+	TranscriptPolicyCaptionsOnly     = tldw.TranscriptPolicyCaptionsOnly
+	TranscriptPolicyWhisperOnly      = tldw.TranscriptPolicyWhisperOnly
+	TranscriptSourceCaptions         = tldw.TranscriptSourceCaptions
+	TranscriptSourceWhisper          = tldw.TranscriptSourceWhisper
 )
 
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
-	app                *App
+	engine             MCPApplication
 	mcpServer          *mcp.Server
 	stdioToolMu        sync.Mutex
 	stdioSerializeOnce sync.Once
+}
+
+type MCPApplication interface {
+	MetadataFor(context.Context, YouTubeRef) (*VideoMetadata, error)
+	Transcript(context.Context, YouTubeRef, TranscriptRequest) (*Transcript, error)
 }
 
 const (
@@ -73,8 +93,7 @@ type mcpTranscriptOutput struct {
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer(app *App) *MCPServer {
-	InitMCPLogging(app.config)
+func NewMCPServer(engine MCPApplication) *MCPServer {
 	MCPLogInfo("Initializing MCP server (tldw-server v%s)", mcpServerVersion)
 
 	mcpServer := mcp.NewServer(&mcp.Implementation{
@@ -87,7 +106,7 @@ func NewMCPServer(app *App) *MCPServer {
 	})
 
 	s := &MCPServer{
-		app:       app,
+		engine:    engine,
 		mcpServer: mcpServer,
 	}
 
@@ -115,29 +134,29 @@ func (s *MCPServer) registerTools() {
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_youtube_metadata",
 		Description: mcpGetMetadataDescription,
-		Annotations: mcpToolAnnotations(),
+		Annotations: mcpToolAnnotations(true),
 	}, s.handleGetMetadata)
 
 	// get_youtube_transcript tool (free - existing captions only)
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "get_youtube_transcript",
 		Description: mcpGetTranscriptDescription,
-		Annotations: mcpToolAnnotations(),
+		Annotations: mcpToolAnnotations(true),
 	}, s.handleGetTranscript)
 
 	// transcribe_youtube_whisper tool (paid - creates transcript using AI)
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "transcribe_youtube_whisper",
 		Description: mcpWhisperDescription,
-		Annotations: mcpToolAnnotations(),
+		Annotations: mcpToolAnnotations(false),
 	}, s.handleWhisperTranscribe)
 }
 
-func mcpToolAnnotations() *mcp.ToolAnnotations {
+func mcpToolAnnotations(readOnly bool) *mcp.ToolAnnotations {
 	destructive := false
 	openWorld := true
 	return &mcp.ToolAnnotations{
-		ReadOnlyHint:    true,
+		ReadOnlyHint:    readOnly,
 		DestructiveHint: &destructive,
 		OpenWorldHint:   &openWorld,
 	}
@@ -153,7 +172,7 @@ func mcpTextResult(text string) *mcp.CallToolResult {
 func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetMetadataInput) (*mcp.CallToolResult, mcpMetadataOutput, error) {
 	var zero mcpMetadataOutput
 	url := input.URL
-	parsed, err := ParseVideoArg(url)
+	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_metadata - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
@@ -162,7 +181,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
 
 	// Get metadata from YouTube
-	metadata, err := s.app.youtube.Metadata(ctx, url)
+	metadata, err := s.engine.MetadataFor(ctx, parsed)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_metadata failed - %v", err)
 		return nil, zero, fmt.Errorf("metadata error: %w", err)
@@ -185,36 +204,32 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 		Chapters:         make([]mcpChapterOutput, 0, len(metadata.Chapters)),
 	}
 	for _, ch := range metadata.Chapters {
-		output.Chapters = append(output.Chapters, mcpChapterOutput{
-			StartTime: ch.StartTime,
-			EndTime:   ch.EndTime,
-			Title:     ch.Title,
-		})
+		output.Chapters = append(output.Chapters, mcpChapterOutput(ch))
 	}
 
 	// Format metadata as text
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("Title: %s\n", metadata.Title))
-	buf.WriteString(fmt.Sprintf("Channel: %s\n", metadata.Channel))
+	fmt.Fprintf(&buf, "Title: %s\n", metadata.Title)
+	fmt.Fprintf(&buf, "Channel: %s\n", metadata.Channel)
 	if len(metadata.Creators) > 0 {
-		buf.WriteString(fmt.Sprintf("Creators: %s\n", strings.Join(metadata.Creators, ", ")))
+		fmt.Fprintf(&buf, "Creators: %s\n", strings.Join(metadata.Creators, ", "))
 	}
-	buf.WriteString(fmt.Sprintf("Duration: %.0f seconds\n", metadata.Duration))
-	buf.WriteString(fmt.Sprintf("Description: %s\n", metadata.Description))
+	fmt.Fprintf(&buf, "Duration: %.0f seconds\n", metadata.Duration)
+	fmt.Fprintf(&buf, "Description: %s\n", metadata.Description)
 
 	// Caption availability information
-	buf.WriteString(fmt.Sprintf("Has Captions: %t\n", metadata.HasCaptions))
+	fmt.Fprintf(&buf, "Has Captions: %t\n", metadata.HasCaptions)
 
 	if len(metadata.Tags) > 0 {
-		buf.WriteString(fmt.Sprintf("Tags: %s\n", strings.Join(metadata.Tags, ", ")))
+		fmt.Fprintf(&buf, "Tags: %s\n", strings.Join(metadata.Tags, ", "))
 	}
 
 	if len(metadata.Categories) > 0 {
-		buf.WriteString(fmt.Sprintf("Categories: %s\n", strings.Join(metadata.Categories, ", ")))
+		fmt.Fprintf(&buf, "Categories: %s\n", strings.Join(metadata.Categories, ", "))
 	}
 
 	for _, ch := range metadata.Chapters {
-		buf.WriteString(fmt.Sprintf("Chapter (%.0f–%.0f): %s\n", ch.StartTime, ch.EndTime, ch.Title))
+		fmt.Fprintf(&buf, "Chapter (%.0f–%.0f): %s\n", ch.StartTime, ch.EndTime, ch.Title)
 	}
 
 	return mcpTextResult(buf.String()), output, nil
@@ -224,7 +239,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetTranscriptInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
 	url := input.URL
-	parsed, err := ParseVideoArg(url)
+	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
@@ -238,11 +253,17 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 		format = TranscriptRenderFormatTimestamps
 	}
 
-	// Try to get transcript from YouTube captions only (no Whisper fallback)
-	transcript, err := s.app.GetTranscriptOutput(ctx, url, format)
+	structured, err := s.engine.Transcript(ctx, parsed, TranscriptRequest{
+		Policy:            TranscriptPolicyCaptionsOnly,
+		RequireTimestamps: includeTimestamps,
+	})
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
 		return nil, zero, fmt.Errorf("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid): %w", err)
+	}
+	transcript, err := structured.Render(format)
+	if err != nil {
+		return nil, zero, err
 	}
 
 	MCPLogInfo("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
@@ -261,7 +282,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallToolRequest, input mcpWhisperInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
 	url := input.URL
-	parsed, err := ParseVideoArg(url)
+	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
@@ -274,19 +295,14 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 		return nil, zero, err
 	}
 
-	// Download audio and transcribe using Whisper (this costs money)
-	audioFile, err := s.app.DownloadAudio(ctx, url)
-	if err != nil {
-		MCPLogError("Tool: transcribe_youtube_whisper - audio download failed: %v", err)
-		return nil, zero, fmt.Errorf("failed to download audio: %w", err)
-	}
-
-	MCPLogInfo("Tool: transcribe_youtube_whisper - audio downloaded, starting transcription")
-
-	transcript, err := s.app.TranscribeAudio(ctx, audioFile)
+	structured, err := s.engine.Transcript(ctx, parsed, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly})
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - transcription failed: %v", err)
 		return nil, zero, fmt.Errorf("failed to transcribe audio with Whisper: %w", err)
+	}
+	transcript, err := structured.Render(TranscriptRenderFormatPlain)
+	if err != nil {
+		return nil, zero, err
 	}
 
 	MCPLogInfo("Tool: transcribe_youtube_whisper succeeded - transcript length: %d characters", len(transcript))
@@ -333,8 +349,10 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := httpServer.Shutdown(shutdownCtx); err != nil {
-				MCPLogError("HTTP server shutdown failed: %v", err)
-				return err
+				if closeErr := httpServer.Close(); closeErr != nil {
+					MCPLogError("HTTP server forced close failed: %v", closeErr)
+					return closeErr
+				}
 			}
 			if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 				MCPLogError("HTTP server failed: %v", err)

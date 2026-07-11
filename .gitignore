@@ -3,7 +3,7 @@
 *.out
 transcripts
 temp_chunks
-tldw
+/tldw
 dist/
 bin/tldw
 bin/tunnel-client

@@ -1,4 +1,4 @@
-package internal
+package openai
 
 import (
 	"context"
@@ -15,6 +15,10 @@ type mockCommandRunner struct {
 func (m *mockCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	m.calls = append(m.calls, name)
 	return m.output, m.err
+}
+
+func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
+	return m.err
 }
 
 func TestAudioDuration(t *testing.T) {

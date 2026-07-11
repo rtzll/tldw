@@ -1,23 +1,8 @@
 package internal
 
 import (
-	"context"
 	"testing"
-	"time"
 )
-
-func TestSleepWithContextReturnsOnCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	start := time.Now()
-	if err := sleepWithContext(ctx, time.Minute); err == nil {
-		t.Fatal("sleepWithContext() expected cancellation error")
-	}
-	if time.Since(start) > 100*time.Millisecond {
-		t.Fatal("sleepWithContext() did not return promptly after cancellation")
-	}
-}
 
 func TestDetectVideoID(t *testing.T) {
 	tests := []struct {
