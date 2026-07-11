@@ -34,7 +34,7 @@ func TestProcessSRTTranscriptRemovesOnlyCacheFiles(t *testing.T) {
 				t.Fatalf("WriteFile() error = %v", err)
 			}
 
-			yt := NewYouTubeWithCache(persistentDir, cacheDir, false, true)
+			yt := NewYouTube(persistentDir, cacheDir, false, true)
 			if _, err := yt.processSrtTranscript(path); err != nil {
 				t.Fatalf("processSrtTranscript() error = %v", err)
 			}

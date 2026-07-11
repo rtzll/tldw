@@ -10,7 +10,7 @@ import (
 
 func TestAudioUsesConfiguredCacheDir(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
-	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
+	yt := NewYouTube(t.TempDir(), cacheDir, false, true)
 	yt.executor = &mockCommandRunner{}
 	ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	if err != nil {

@@ -2,9 +2,7 @@ package ytdlp
 
 import (
 	"context"
-	"path/filepath"
 
-	"github.com/adrg/xdg"
 	"github.com/rtzll/tldw/internal/process"
 	"github.com/rtzll/tldw/internal/tldw"
 )
@@ -25,20 +23,8 @@ type YouTube struct {
 	executor       process.Runner
 }
 
-func defaultYouTubeCacheDir() string {
-	return filepath.Join(xdg.CacheHome, "tldw")
-}
-
-// NewYouTube creates a new YouTube downloader.
-func NewYouTube(transcriptsDir string, verbose bool, quiet bool) *YouTube {
-	return NewYouTubeWithCache(transcriptsDir, defaultYouTubeCacheDir(), verbose, quiet)
-}
-
-// NewYouTubeWithCache creates a new YouTube downloader with an explicit cache directory.
-func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouTube {
-	if cacheDir == "" {
-		cacheDir = defaultYouTubeCacheDir()
-	}
+// NewYouTube creates a YouTube downloader with explicit storage paths.
+func NewYouTube(transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouTube {
 	return &YouTube{
 		transcriptsDir: transcriptsDir,
 		cacheDir:       cacheDir,

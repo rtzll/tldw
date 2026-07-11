@@ -32,7 +32,7 @@ func (silentLogSink) Printf(string, ...any) {}
 func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error) {
 	runner := &process.CommandRunner{}
 	audio := openaiadapter.NewAudio(runner, config.TempDir, config.Verbose)
-	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
+	youtube := ytdlpadapter.NewYouTube(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
 	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
 		Model: config.TLDRModel, WhisperLimit: internal.WhisperLimit, Timeout: config.SummaryTimeout,
 		Verbose: config.Verbose, Quiet: config.Quiet,

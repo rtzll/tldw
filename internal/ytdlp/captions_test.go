@@ -11,7 +11,7 @@ func TestFindExistingTranscriptReturnsDirectoryErrors(t *testing.T) {
 	if err := os.WriteFile(cachePath, []byte("not a directory"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	yt := NewYouTubeWithCache(t.TempDir(), cachePath, false, true)
+	yt := NewYouTube(t.TempDir(), cachePath, false, true)
 
 	if _, err := yt.findExistingTranscript("dQw4w9WgXcQ"); err == nil {
 		t.Fatal("findExistingTranscript() ignored an unreadable cache directory")

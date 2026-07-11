@@ -28,7 +28,7 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(t.TempDir(), false, true)
+			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
 			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 			ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			if err != nil {
@@ -47,7 +47,7 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 }
 
 func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
-	yt := NewYouTube(t.TempDir(), false, true)
+	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
 	yt.executor = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
 	ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	if err != nil {
@@ -104,7 +104,7 @@ func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(t.TempDir(), false, true)
+			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
 			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 			ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			if err != nil {
