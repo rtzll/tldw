@@ -8,31 +8,6 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func TestIsLikelyFilePath(t *testing.T) {
-	tests := []struct {
-		name string
-		s    string
-		want bool
-	}{
-		{"unix path", "./prompts/custom.txt", true},
-		{"windows path", `C:\Users\test\prompt.txt`, true},
-		{"txt extension", "customprompt.txt", true},
-		{"md extension", "customprompt.md", true},
-		{"long string no spaces", "a" + string(make([]byte, 210)), false},
-		{"with spaces", "This is a prompt string", false},
-		{"with newline", "Line1\nLine2", false},
-		{"short no indicators", "prompt", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsLikelyFilePath(tt.s); got != tt.want {
-				t.Errorf("IsLikelyFilePath(%q) = %v, want %v", tt.s, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestPromptManagerCreatePrompt(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -54,7 +29,7 @@ func TestPromptManagerCreatePrompt(t *testing.T) {
 	})
 
 	t.Run("custom prompt file", func(t *testing.T) {
-		customPath := filepath.Join(tmpDir, "custom.txt")
+		customPath := filepath.Join(tmpDir, "custom prompt")
 		if err := os.WriteFile(customPath, []byte("File: {{.Transcript}}"), 0644); err != nil {
 			t.Fatalf("failed to write custom prompt file: %v", err)
 		}
@@ -97,64 +72,17 @@ func TestPromptManagerCreatePrompt(t *testing.T) {
 	})
 
 	t.Run("missing file", func(t *testing.T) {
-		pm := NewPromptManager(tmpDir, "")
-		// Overwrite promptFile to non-existent path
-		pm.promptFile = filepath.Join(tmpDir, "nonexistent.txt")
-		pm.promptString = ""
+		pm := NewPromptManager(t.TempDir(), "")
 		_, err := pm.CreatePrompt("Hello", nil)
 		if err == nil {
 			t.Error("CreatePrompt() expected error for missing file, got nil")
 		}
 	})
-}
 
-func TestPromptManagerBuildPromptFromTemplate(t *testing.T) {
-	pm := &PromptManager{}
-
-	tests := []struct {
-		name       string
-		template   string
-		transcript string
-		metadata   *tldw.VideoMetadata
-		want       string
-		wantErr    bool
-	}{
-		{
-			name:       "simple template",
-			template:   "Transcript: {{.Transcript}}",
-			transcript: "Hello",
-			metadata:   nil,
-			want:       "Transcript: Hello",
-			wantErr:    false,
-		},
-		{
-			name:       "with metadata",
-			template:   "Title: {{.Title}}\nTranscript: {{.Transcript}}",
-			transcript: "Hello",
-			metadata:   &tldw.VideoMetadata{Title: "Test"},
-			want:       "Title: Test\nTranscript: Hello",
-			wantErr:    false,
-		},
-		{
-			name:       "invalid template",
-			template:   "{{.NonExistent}}",
-			transcript: "Hello",
-			metadata:   nil,
-			want:       "",
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := pm.buildPromptFromTemplate(tt.template, tt.transcript, tt.metadata)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("buildPromptFromTemplate() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("buildPromptFromTemplate() = %q, want %q", got, tt.want)
-			}
-		})
-	}
+	t.Run("invalid template", func(t *testing.T) {
+		pm := NewPromptManager(tmpDir, "{{.NonExistent}}")
+		if _, err := pm.CreatePrompt("Hello", nil); err == nil {
+			t.Fatal("CreatePrompt() accepted an invalid template")
+		}
+	})
 }

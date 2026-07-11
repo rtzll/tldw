@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/template"
 
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-// PromptData supplies template fields.
-type PromptData struct {
+type promptData struct {
 	Title       string
 	Channel     string
 	Description string
@@ -34,10 +32,8 @@ func NewPromptManager(configDir, promptSetting string) *PromptManager {
 
 	// Configure prompt based on config setting.
 	if promptSetting != "" {
-		if IsLikelyFilePath(promptSetting) {
-			if _, err := os.Stat(promptSetting); err == nil {
-				pm.promptFile = promptSetting
-			}
+		if _, err := os.Stat(promptSetting); err == nil {
+			pm.promptFile = promptSetting
 		}
 		if pm.promptFile == "" {
 			pm.promptString = promptSetting
@@ -69,19 +65,13 @@ func (pm *PromptManager) CreatePrompt(transcript string, metadata *tldw.VideoMet
 		tmplContent = string(content)
 	}
 
-	return pm.buildPromptFromTemplate(tmplContent, transcript, metadata)
-}
-
-// buildPromptFromTemplate builds the AI prompt from template content.
-func (pm *PromptManager) buildPromptFromTemplate(templateContent, transcript string, metadata *tldw.VideoMetadata) (string, error) {
-	// Parse the template
-	tmpl, err := template.New("prompt").Parse(templateContent)
+	tmpl, err := template.New("prompt").Parse(tmplContent)
 	if err != nil {
 		return "", fmt.Errorf("parsing prompt template: %w", err)
 	}
 
 	// Prepare the data for the template
-	data := PromptData{
+	data := promptData{
 		Transcript: transcript,
 	}
 
@@ -100,26 +90,4 @@ func (pm *PromptManager) buildPromptFromTemplate(templateContent, transcript str
 	}
 
 	return buf.String(), nil
-}
-
-// IsLikelyFilePath uses heuristics to determine if a string is likely a file path
-func IsLikelyFilePath(s string) bool {
-	// Check for common file path indicators
-	if strings.Contains(s, "/") || strings.Contains(s, "\\") {
-		return true
-	}
-
-	// Check for common file extensions
-	if strings.Contains(s, ".txt") || strings.Contains(s, ".md") ||
-		strings.Contains(s, ".template") || strings.Contains(s, ".tmpl") {
-		return true
-	}
-
-	// If it's longer than 200 characters, it's likely a prompt string
-	if len(s) > 200 {
-		return false
-	}
-
-	// Default to treating as file path if it doesn't contain spaces and newlines
-	return !strings.Contains(s, " ") && !strings.Contains(s, "\n")
 }
