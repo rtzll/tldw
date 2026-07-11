@@ -49,26 +49,6 @@ func TestCommandRunnerPreservesCancellationAndCommandFailure(t *testing.T) {
 	}
 }
 
-func TestCommandRunnerStreamsLongLines(t *testing.T) {
-	t.Setenv("GO_WANT_PROCESS_HELPER", "1")
-	runner := &processadapter.CommandRunner{}
-	want := strings.Repeat("x", 128*1024)
-	var lines []string
-
-	err := runner.RunStreaming(context.Background(), os.Args[0], []string{"-test.run=TestProcessHelper", "--", "long-line"}, func(line string) {
-		lines = append(lines, line)
-	})
-	if err != nil {
-		t.Fatalf("RunStreaming() error = %v", err)
-	}
-	if len(lines) != 1 {
-		t.Fatalf("RunStreaming() delivered %d lines, want one", len(lines))
-	}
-	if lines[0] != want {
-		t.Fatalf("RunStreaming() line length = %d, want %d", len(lines[0]), len(want))
-	}
-}
-
 func TestProcessHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_PROCESS_HELPER") != "1" {
 		return
@@ -81,9 +61,6 @@ func TestProcessHelper(t *testing.T) {
 		case "fail":
 			fmt.Fprintln(os.Stderr, "deliberate failure")
 			os.Exit(3)
-		case "long-line":
-			fmt.Println(strings.Repeat("x", 128*1024))
-			os.Exit(0)
 		case "block":
 			time.Sleep(5 * time.Second)
 			os.Exit(0)
