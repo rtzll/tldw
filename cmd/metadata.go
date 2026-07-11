@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rtzll/tldw/internal"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // metadataCmd represents the metadata command
@@ -29,7 +29,7 @@ var metadataCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
-		parsed, err := internal.ParseVideoArg(args[0])
+		parsed, err := tldw.ParseVideoRef(args[0])
 		if err != nil {
 			return err
 		}

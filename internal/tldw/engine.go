@@ -94,13 +94,6 @@ type PlaylistSummaryResult struct {
 	Skipped   []string
 }
 
-// WithLogSink supplies diagnostic event handling for the application module.
-func WithLogSink(log LogSink) EngineOption {
-	return func(a *Engine) {
-		a.log = log
-	}
-}
-
 // Transcript acquires a canonical transcript through one workflow shared by
 // CLI, MCP, summaries, and playlists.
 func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request TranscriptRequest) (*Transcript, error) {

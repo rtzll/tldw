@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rtzll/tldw/internal"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
@@ -21,7 +20,7 @@ func requestedTranscriptFormat(cmd *cobra.Command) tldw.TranscriptRenderFormat {
 
 // fetchTranscript retrieves a transcript for the given argument and optionally falls back to Whisper.
 func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, error) {
-	parsed, err := internal.ParseVideoArg(arg)
+	parsed, err := tldw.ParseVideoRef(arg)
 	if err != nil {
 		return "", err
 	}

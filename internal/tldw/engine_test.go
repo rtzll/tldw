@@ -56,7 +56,7 @@ func WithYouTube(youtube *ytdlpadapter.YouTube) EngineOption {
 func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose, quiet bool) *ytdlpadapter.YouTube {
 	return ytdlpadapter.NewYouTubeWithCache(transcriptsDir, cacheDir, verbose, quiet)
 }
-func ParseYouTubeArg(input string) (YouTubeRef, error) { return legacy.ParseYouTubeArg(input) }
+func ParseYouTubeArg(input string) (YouTubeRef, error) { return tldw.ParseReference(input) }
 func SaveStructuredTranscript(transcript *Transcript, dir string) error {
 	return store.SaveTranscript(transcript, dir)
 }

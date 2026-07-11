@@ -22,6 +22,7 @@ type Dependencies struct {
 	Store   VideoStore
 	AI      AIAdapter
 	Prompts PromptBuilder
+	Log     LogSink
 }
 
 // Engine is the application's deep module and owns workflow policy.
@@ -37,7 +38,7 @@ type Engine struct {
 }
 
 // NewEngine initializes a fully usable application module.
-func NewEngine(config Config, dependencies Dependencies, options ...EngineOption) (*Engine, error) {
+func NewEngine(config Config, dependencies Dependencies) (*Engine, error) {
 	if dependencies.Video == nil {
 		return nil, fmt.Errorf("video adapter is required")
 	}
@@ -53,28 +54,21 @@ func NewEngine(config Config, dependencies Dependencies, options ...EngineOption
 	if config.WhisperTimeout < 0 {
 		return nil, fmt.Errorf("whisper timeout must not be negative")
 	}
+	log := dependencies.Log
+	if log == nil {
+		log = discardLogSink{}
+	}
 	app := &Engine{
 		video:         dependencies.Video,
 		store:         dependencies.Store,
 		ai:            dependencies.AI,
 		promptManager: dependencies.Prompts,
 		config:        config,
-		log:           discardLogSink{},
+		log:           log,
 		metadataCache: make(map[string]*VideoMetadata),
 	}
-	// Apply any custom options
-	for _, option := range options {
-		option(app)
-	}
-	if app.log == nil {
-		return nil, fmt.Errorf("log sink must not be nil")
-	}
-
 	return app, nil
 }
-
-// EngineOption customizes Engine creation.
-type EngineOption func(*Engine)
 
 // getCachedMetadata returns metadata from the in-memory cache if available
 func (app *Engine) getCachedMetadata(id string) (*VideoMetadata, bool) {

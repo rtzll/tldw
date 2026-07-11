@@ -7,18 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"time"
 
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
 const MetadataCacheVersion = 3
-
-// ErrMetadataStale is retained for callers migrating to tldw.ErrStoreStale.
-var ErrMetadataStale = tldw.ErrStoreStale
-
-var videoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // File is the filesystem adapter for the application's persistence seam.
 type File struct {
@@ -67,7 +61,7 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error 
 }
 
 func cachePath(videoID, dir, suffix string) (string, error) {
-	if !videoIDPattern.MatchString(videoID) {
+	if !tldw.IsValidVideoID(videoID) {
 		return "", fmt.Errorf("invalid YouTube video ID: %q", videoID)
 	}
 	return filepath.Join(dir, videoID+suffix), nil

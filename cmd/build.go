@@ -55,7 +55,7 @@ func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error
 			Store:   store.NewFile(config.TranscriptsDir),
 			AI:      ai,
 			Prompts: internal.NewPromptManager(config.ConfigDir, config.Prompt),
+			Log:     log,
 		},
-		tldw.WithLogSink(log),
 	)
 }
