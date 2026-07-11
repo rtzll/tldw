@@ -10,14 +10,14 @@ import (
 )
 
 type summaryProgress struct {
-	bar     internal.ProgressBar
+	bar     internal.Spinner
 	verbose bool
 }
 
 func newSummaryProgress(config *internal.Config, description string) *summaryProgress {
-	bar := internal.ProgressBar(&internal.NoOpProgressBar{})
+	bar := internal.Spinner(internal.NoOpSpinner{})
 	if !config.Quiet && !config.Verbose {
-		bar = internal.NewUIManager(config.Verbose, config.Quiet).NewSpinner(description)
+		bar = internal.NewSpinner(description)
 	}
 	return &summaryProgress{bar: bar, verbose: config.Verbose && !config.Quiet}
 }
