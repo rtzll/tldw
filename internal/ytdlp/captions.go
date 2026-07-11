@@ -113,18 +113,12 @@ func prioritizeCaptionLanguages(preferred []string, originalLang string) []strin
 	return ordered
 }
 
-// Transcript fetches subtitles using yt-dlp
+// downloadCaptions fetches subtitles using yt-dlp.
 // preferredLangs allows us to target known caption languages (from metadata) instead of hardcoding English.
 // originalLang is the video's declared language; when English captions are absent we prefer this.
-func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredLangs []string, originalLang string) error {
+func (yt *YouTube) downloadCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) error {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading subtitles...\n")
-	}
-
-	// Get video ID for checking files
-	videoID, err := getVideoID(youtubeURL)
-	if err != nil {
-		return fmt.Errorf("failed to extract video ID: %w", err)
 	}
 
 	// Create path in configured cache directory
@@ -135,7 +129,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 
 	// Set output path in cache directory
 	outputPath := filepath.Join(cacheDir, "%(id)s")
-	pattern := filepath.Join(cacheDir, fmt.Sprintf("%s*.srt", videoID))
+	pattern := filepath.Join(cacheDir, fmt.Sprintf("%s*.srt", ref.ID()))
 
 	primarySubLangs, fallbackSubLangs := buildSubLangs(preferredLangs, originalLang)
 
@@ -149,7 +143,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 		"--max-sleep-interval", "5",
 		"--extractor-args", "youtube:player_client=web,android,-tv",
 		"-o", outputPath, // Output to XDG cache directory
-		youtubeURL,
+		ref.URL(),
 	}
 
 	// Run the command (and optional fallback)
@@ -257,18 +251,13 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 	return nil
 }
 
-func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (*Transcript, error) {
-	youtubeID, err := getVideoID(youtubeURL)
-	if err != nil {
-		return nil, fmt.Errorf("extracting video ID: %w", err)
-	}
-
+func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref YouTubeRef, subLangs []string, originalLang string) (*Transcript, error) {
 	if yt.verbose && !yt.quiet {
-		yt.log.Printf("Looking for existing transcript for video ID: %s\n", youtubeID)
+		yt.log.Printf("Looking for existing transcript for video ID: %s\n", ref.ID())
 	}
 
 	// Look for an existing transcript first
-	transcriptPath, err := yt.findExistingTranscript(youtubeID)
+	transcriptPath, err := yt.findExistingTranscript(ref.ID())
 	if err != nil {
 		return nil, fmt.Errorf("error searching for existing transcript: %w", err)
 	}
@@ -286,14 +275,14 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, youtubeURL str
 	}
 
 	// No existing transcript found, try to download one
-	err = yt.Transcript(ctx, youtubeURL, subLangs, originalLang)
+	err = yt.downloadCaptions(ctx, ref, subLangs, originalLang)
 	if err != nil {
 		// Preserve the error type for retry logic
 		return nil, err
 	}
 
 	// Look for the downloaded transcript
-	transcriptPath, err = yt.findExistingTranscript(youtubeID)
+	transcriptPath, err = yt.findExistingTranscript(ref.ID())
 	if err != nil || transcriptPath == "" {
 		if yt.verbose {
 			yt.log.Printf("Could not find downloaded transcript: %v\n", err)

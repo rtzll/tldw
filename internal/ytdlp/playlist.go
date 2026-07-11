@@ -22,7 +22,7 @@ type PlaylistMetadata struct {
 }
 
 // PlaylistVideoURLs fetches all video URLs from a YouTube playlist
-func (yt *YouTube) playlistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
+func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting playlist video URLs...\n")
 	}
@@ -35,7 +35,7 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, playlistURL string) (*
 		"--max-sleep-interval", "3",
 		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
 		"-q", // Quiet mode
-		playlistURL,
+		ref.URL(),
 	}
 
 	// Run the command

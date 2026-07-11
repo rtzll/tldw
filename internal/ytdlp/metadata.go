@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func (yt *YouTube) metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
+func (yt *YouTube) metadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting video metadata...\n")
 	}
@@ -21,7 +21,7 @@ func (yt *YouTube) metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 		"--max-sleep-interval", "3",
 		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
 		"-q", // Quiet mode
-		youtubeURL,
+		ref.URL(),
 	}
 
 	// Run the command

@@ -5,28 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func getVideoID(youtubeURL string) (string, error) {
-	parsed, err := tldw.ParseVideoRef(youtubeURL)
-	if err != nil {
-		return "", err
-	}
-	return parsed.ID(), nil
-}
-
 // Audio gets mp3 audio from a YouTube video
-func (yt *YouTube) audio(ctx context.Context, youtubeURL string) (string, error) {
+func (yt *YouTube) audio(ctx context.Context, ref YouTubeRef) (string, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading audio...\n")
-	}
-
-	// Extract video ID to construct the output filename
-	videoID, err := getVideoID(youtubeURL)
-	if err != nil {
-		return "", fmt.Errorf("extracting video ID: %w", err)
 	}
 
 	// Create path in configured cache directory
@@ -45,7 +29,7 @@ func (yt *YouTube) audio(ctx context.Context, youtubeURL string) (string, error)
 		"--audio-format", "mp3", // Convert to MP3 format
 		"--audio-quality", "10", // Set audio quality (0 is best, 10 is worst)
 		"-o", outputPath, // Output to XDG cache directory
-		youtubeURL, // The YouTube URL or ID
+		ref.URL(), // The YouTube URL
 	}
 
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
@@ -61,6 +45,6 @@ func (yt *YouTube) audio(ctx context.Context, youtubeURL string) (string, error)
 	}
 
 	// Return the full path to the downloaded file
-	outputFile := filepath.Join(cacheDir, videoID+".mp3")
+	outputFile := filepath.Join(cacheDir, ref.ID()+".mp3")
 	return outputFile, nil
 }

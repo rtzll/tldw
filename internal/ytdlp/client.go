@@ -68,17 +68,17 @@ func (yt *YouTube) SetLogSink(log tldw.LogSink) {
 }
 
 func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
-	return yt.metadata(ctx, ref.URL())
+	return yt.metadata(ctx, ref)
 }
 
 func (yt *YouTube) FetchCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) (*Transcript, error) {
-	return yt.fetchStructuredTranscript(ctx, ref.URL(), preferredLangs, originalLang)
+	return yt.fetchStructuredTranscript(ctx, ref, preferredLangs, originalLang)
 }
 
 func (yt *YouTube) DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error) {
-	return yt.audio(ctx, ref.URL())
+	return yt.audio(ctx, ref)
 }
 
 func (yt *YouTube) FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
-	return yt.playlistVideoURLs(ctx, ref.URL())
+	return yt.playlistVideoURLs(ctx, ref)
 }
