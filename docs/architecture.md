@@ -10,6 +10,7 @@ the application knows only domain interfaces.
 main.go
 └── cmd/                    Cobra commands, terminal presentation, composition
     ├── build.go            Constructs production adapters and the engine
+    ├── flags.go            Maps Cobra flags into runtime configuration
     └── mcp.go              Starts the MCP transport
 
 internal/
@@ -27,8 +28,7 @@ internal/
 ├── process/                External command execution and error reporting
 ├── config.go               XDG configuration used by CLI composition
 ├── prompt.go               Filesystem-backed prompt template adapter
-├── progress.go             Terminal summary spinner
-└── flags.go                Cobra flag handling
+└── progress.go             Terminal summary spinner
 
 smoke/
 └── transcription_test.go   Opt-in real CLI + HTTP MCP transcription check
@@ -81,9 +81,13 @@ cache directory and are managed by external adapters.
 ## Verification
 
 - `go test ./...` runs deterministic package and workflow tests.
+- `go test -race ./...` checks concurrent paths under the race detector.
+- `just fuzz` exercises reference and subtitle parsers with bounded fuzz runs.
 - `just lint` runs the repository lint gate.
 - `just smoke-transcription` builds the real binary, fetches the README video
   through the CLI, starts HTTP MCP, calls `get_youtube_transcript`, and requires
   the timestamped MCP result to match the CLI result exactly.
 
 The smoke test is opt-in because it requires `yt-dlp` and network access.
+Pull requests and pushes to `main` run module tidiness, tests, race tests, and
+lint in CI; the external smoke remains a deliberate local/release gate.
