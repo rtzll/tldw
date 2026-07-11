@@ -1,6 +1,22 @@
 package ytdlp
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestFindExistingTranscriptReturnsDirectoryErrors(t *testing.T) {
+	cachePath := filepath.Join(t.TempDir(), "cache")
+	if err := os.WriteFile(cachePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	yt := NewYouTubeWithCache(t.TempDir(), cachePath, false, true)
+
+	if _, err := yt.findExistingTranscript("dQw4w9WgXcQ"); err == nil {
+		t.Fatal("findExistingTranscript() ignored an unreadable cache directory")
+	}
+}
 
 func TestBuildSubLangs(t *testing.T) {
 	tests := []struct {

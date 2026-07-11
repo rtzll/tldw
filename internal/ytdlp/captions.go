@@ -11,11 +11,6 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 const (
 	subLangsFlag            = "--sub-langs"
 	englishFallbackSubLangs = "en.*,en"
@@ -283,33 +278,32 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTu
 
 // findExistingTranscript locates a previously downloaded transcript
 func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
-	// Look in configured cache directory
-	cacheDir := yt.cacheDir
-	if fileExists(cacheDir) {
-		cacheFiles, err := os.ReadDir(cacheDir)
-		if err == nil {
-			for _, entry := range cacheFiles {
-				name := entry.Name()
-				if strings.HasPrefix(name, videoID) && strings.HasSuffix(name, ".srt") {
-					return filepath.Join(cacheDir, name), nil
-				}
-			}
+	for _, dir := range []string{yt.cacheDir, yt.transcriptsDir} {
+		path, err := findTranscriptInDirectory(dir, videoID)
+		if err != nil {
+			return "", fmt.Errorf("searching transcript directory %q: %w", dir, err)
+		}
+		if path != "" {
+			return path, nil
 		}
 	}
+	return "", nil
+}
 
-	// Look in transcripts directory for already processed transcripts
-	if fileExists(yt.transcriptsDir) {
-		transcriptFiles, err := os.ReadDir(yt.transcriptsDir)
-		if err == nil {
-			for _, entry := range transcriptFiles {
-				name := entry.Name()
-				if strings.HasPrefix(name, videoID) && strings.HasSuffix(name, ".srt") {
-					return filepath.Join(yt.transcriptsDir, name), nil
-				}
-			}
+func findTranscriptInDirectory(dir, videoID string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, videoID) && strings.HasSuffix(name, ".srt") {
+			return filepath.Join(dir, name), nil
 		}
 	}
-
 	return "", nil
 }
 
