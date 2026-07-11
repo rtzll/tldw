@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/rtzll/tldw/internal"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 var (
@@ -58,6 +59,9 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	},
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if suggestion, ok := commandSuggestion(args[0]); ok {
+			return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
+		}
 		if err := internal.ValidateOpenAIRequirements(cmd, config); err != nil {
 			return err
 		}
@@ -70,12 +74,8 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		ref, err := internal.ParseYouTubeArg(args[0])
+		ref, err := tldw.ParseReference(args[0])
 		if err != nil {
-			if internal.IsLikelyCommand(args[0]) {
-				availableCommands := []string{"mcp", "transcribe", "cp", "version", "paths", "help"}
-				return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], internal.SuggestCommand(args[0], availableCommands))
-			}
 			return fmt.Errorf("invalid input %q: %w", args[0], err)
 		}
 		fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
