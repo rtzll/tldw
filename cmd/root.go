@@ -59,7 +59,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	},
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if suggestion, ok := commandSuggestion(args[0]); ok {
+		if suggestion, ok := commandSuggestion(args[0], cmd.Root().Commands()); ok {
 			return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
 		}
 		if err := internal.ValidateOpenAIRequirements(cmd, config); err != nil {
