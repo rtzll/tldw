@@ -1,10 +1,54 @@
 package ytdlp
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rtzll/tldw/internal/tldw"
 )
+
+func TestProcessSRTTranscriptRemovesOnlyCacheFiles(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "cache")
+	persistentDir := filepath.Join(root, "cache-archive")
+	for _, dir := range []string{cacheDir, persistentDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q) error = %v", dir, err)
+		}
+	}
+
+	tests := []struct {
+		name       string
+		dir        string
+		wantExists bool
+	}{
+		{name: "cache file", dir: cacheDir, wantExists: false},
+		{name: "persistent prefix sibling", dir: persistentDir, wantExists: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(tt.dir, "dQw4w9WgXcQ.en.srt")
+			if err := os.WriteFile(path, []byte("1\n00:00:01,000 --> 00:00:02,000\nHello\n"), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			yt := NewYouTubeWithCache(persistentDir, cacheDir, false, true)
+			if _, err := yt.processSrtTranscript(path); err != nil {
+				t.Fatalf("processSrtTranscript() error = %v", err)
+			}
+
+			_, err := os.Stat(path)
+			if tt.wantExists && err != nil {
+				t.Fatalf("persistent transcript was removed: %v", err)
+			}
+			if !tt.wantExists && !os.IsNotExist(err) {
+				t.Fatalf("cache transcript still exists: %v", err)
+			}
+		})
+	}
+}
 
 func TestParseSRT(t *testing.T) {
 	tests := []struct {

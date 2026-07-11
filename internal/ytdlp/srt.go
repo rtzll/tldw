@@ -42,15 +42,22 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*tldw.Transcript, erro
 	}
 	transcript.Text = text
 
-	// If the file is in the cache directory, remove it after processing
-	cacheDir := yt.cacheDir
-	if strings.HasPrefix(filePath, cacheDir) && fileExists(filePath) {
+	// Remove downloaded cache files after processing, but retain persistent transcripts.
+	if pathWithinDirectory(filePath, yt.cacheDir) {
 		if err := os.Remove(filePath); err != nil {
 			yt.log.Printf("Warning: failed to remove SRT file from cache: %v\n", err)
 		}
 	}
 
 	return transcript, nil
+}
+
+func pathWithinDirectory(path, directory string) bool {
+	relative, err := filepath.Rel(directory, path)
+	if err != nil {
+		return false
+	}
+	return relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 // parseSRT extracts timed transcript segments from SRT format.
