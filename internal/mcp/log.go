@@ -1,4 +1,4 @@
-package internal
+package mcpserver
 
 import (
 	"log"
@@ -44,10 +44,10 @@ func initMCPLogger(enabled bool) {
 	mcpLogger = log.New(logFile, "", log.LstdFlags|log.Lmicroseconds)
 }
 
-// InitMCPLogging initializes MCP logging based on config
-func InitMCPLogging(config *Config) {
+// InitLogging initializes MCP logging.
+func InitLogging(enabled bool) {
 	mcpLoggerOnce.Do(func() {
-		initMCPLogger(config.MCPLogEnabled)
+		initMCPLogger(enabled)
 	})
 }
 

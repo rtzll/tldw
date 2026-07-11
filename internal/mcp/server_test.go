@@ -1,4 +1,4 @@
-package internal
+package mcpserver
 
 import (
 	"context"
@@ -15,7 +15,55 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	legacy "github.com/rtzll/tldw/internal"
+	openaiadapter "github.com/rtzll/tldw/internal/openai"
+	"github.com/rtzll/tldw/internal/store"
+	"github.com/rtzll/tldw/internal/tldw"
+	ytdlpadapter "github.com/rtzll/tldw/internal/ytdlp"
 )
+
+type Config = legacy.Config
+type Engine = tldw.Engine
+type YouTube = ytdlpadapter.YouTube
+type TranscriptSegment = tldw.TranscriptSegment
+
+const WhisperLimit = legacy.WhisperLimit
+
+var SaveStructuredTranscript = store.SaveTranscript
+var NewAudio = openaiadapter.NewAudio
+var NewAI = openaiadapter.NewAI
+var NewYouTubeWithCache = ytdlpadapter.NewYouTubeWithCache
+var WithVideoAdapter = tldw.WithVideoAdapter
+
+func WithAI(ai *openaiadapter.AI) tldw.EngineOption { return tldw.WithAIAdapter(ai) }
+
+func newTestEngine(config *Config, options ...tldw.EngineOption) *Engine {
+	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, false, true)
+	audio := openaiadapter.NewAudio(&mockCommandRunner{}, config.TempDir, false)
+	defaults := []tldw.EngineOption{
+		tldw.WithVideoAdapter(youtube),
+		tldw.WithVideoStore(store.NewFile(config.TranscriptsDir)),
+		tldw.WithAIAdapter(openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, false, true)),
+	}
+	return tldw.NewEngine(
+		tldw.Config{WhisperTimeout: config.WhisperTimeout, MetadataCacheVersion: store.MetadataCacheVersion},
+		legacy.NewPromptManager(config.ConfigDir, config.Prompt),
+		append(defaults, options...)...,
+	)
+}
+
+type mockCommandRunner struct {
+	output []byte
+	err    error
+}
+
+func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return m.output, m.err
+}
+
+func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
+	return m.err
+}
 
 func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 	server := NewMCPServer(newTestMCPApp(t))

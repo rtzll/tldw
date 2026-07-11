@@ -11,7 +11,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
 
-	"github.com/rtzll/tldw/internal"
+	mcpserver "github.com/rtzll/tldw/internal/mcp"
 )
 
 // mcpCmd represents the mcp command
@@ -54,8 +54,8 @@ Transport options:
 
 		app := newMCPEngine(config)
 
-		internal.InitMCPLogging(config)
-		mcpServer := internal.NewMCPServer(app)
+		mcpserver.InitLogging(config.MCPLogEnabled)
+		mcpServer := mcpserver.NewMCPServer(app)
 
 		// Start the server (this will block until context is cancelled)
 		return mcpServer.Start(cmd.Context(), transport, host, port)
