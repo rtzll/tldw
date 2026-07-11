@@ -9,15 +9,6 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-type mockCommandRunner struct {
-	output []byte
-	err    error
-}
-
-func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
-	return m.output, m.err
-}
-
 func TestAudioUsesConfiguredCacheDir(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
