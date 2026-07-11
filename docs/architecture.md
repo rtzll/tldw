@@ -18,10 +18,10 @@ internal/
 ├── ytdlp/                  YouTube metadata, captions, playlists, and audio
 ├── openai/                 OpenAI/Whisper and ffmpeg audio preparation
 ├── mcp/                    MCP tools and HTTP/stdio transports
-├── process/                Buffered and streaming command execution
+├── process/                External command execution and error reporting
 ├── config.go               XDG configuration used by CLI composition
 ├── prompt.go               Filesystem-backed prompt template adapter
-├── progress.go             Terminal progress implementations
+├── progress.go             Terminal summary spinner
 └── flags.go                Cobra flag handling
 
 smoke/
