@@ -2,13 +2,9 @@ package ytdlp
 
 import (
 	"context"
-	"errors"
-	"io"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"path/filepath"
 )
 
 type mockCommandRunner struct {
@@ -20,73 +16,19 @@ func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, err
 	return m.output, m.err
 }
 
-func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
-	return m.err
-}
-
-type fakeStreamingRunner struct {
-	lines []string
-	err   error
-	calls int
-}
-
-func (r *fakeStreamingRunner) Run(context.Context, string, ...string) ([]byte, error) {
-	return nil, r.err
-}
-
-func (r *fakeStreamingRunner) RunStreaming(_ context.Context, _ string, _ []string, onLine func(string)) error {
-	r.calls++
-	for _, line := range r.lines {
-		onLine(line)
-	}
-	return r.err
-}
-
-func TestAudioWithProgressUsesStreamingCommandAdapter(t *testing.T) {
-	cacheDir := filepath.Join(t.TempDir(), "cache")
-	stream := &fakeStreamingRunner{lines: []string{"[download] 50.0%", "[ExtractAudio]"}}
-	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
-	yt.executor = stream
-	progress := &mockProgressBar{}
-
-	_, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", progress)
-	if err != nil {
-		t.Fatalf("AudioWithProgress() error = %v", err)
-	}
-	if stream.calls != 1 {
-		t.Fatalf("streaming command calls = %d, want 1", stream.calls)
-	}
-	if len(progress.sets) == 0 || progress.sets[0] != 40 {
-		t.Fatalf("progress sets = %v, want first value 40", progress.sets)
-	}
-	if progress.desc != "Converting audio" {
-		t.Fatalf("progress description = %q, want %q", progress.desc, "Converting audio")
-	}
-}
-
-func TestAudioWithProgressReturnsStreamingCommandError(t *testing.T) {
-	yt := NewYouTubeWithCache(t.TempDir(), t.TempDir(), false, true)
-	yt.executor = &fakeStreamingRunner{err: errors.New("stream failed")}
-
-	_, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", &mockProgressBar{})
-	if err == nil || !strings.Contains(err.Error(), "stream failed") {
-		t.Fatalf("AudioWithProgress() error = %v, want streaming error", err)
-	}
-}
-
-func TestAudioWithProgressUsesConfiguredCacheDir(t *testing.T) {
+func TestAudioUsesConfiguredCacheDir(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
 	yt.executor = &mockCommandRunner{}
 
-	got, err := yt.AudioWithProgress(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ", nil)
+	got, err := yt.Audio(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
 	if err != nil {
-		t.Fatalf("AudioWithProgress() error = %v", err)
+		t.Fatalf("Audio() error = %v", err)
 	}
 
 	want := filepath.Join(cacheDir, "dQw4w9WgXcQ.mp3")
 	if got != want {
-		t.Fatalf("AudioWithProgress() = %q, want %q", got, want)
+		t.Fatalf("Audio() = %q, want %q", got, want)
 	}
 }
 
@@ -646,66 +588,6 @@ func TestSetSubLangsArg(t *testing.T) {
 						t.Errorf("setSubLangsArg() args[%d] = %q, want %q", i, args[i], tt.want[i])
 					}
 				}
-			}
-		})
-	}
-}
-
-type mockProgressBar struct {
-	desc string
-	sets []int
-}
-
-func (m *mockProgressBar) Set(current int) {
-	m.sets = append(m.sets, current)
-}
-
-func (m *mockProgressBar) Describe(description string) {
-	m.desc = description
-}
-
-func (m *mockProgressBar) Finish() {}
-
-func (m *mockProgressBar) Advance() {}
-
-func TestParseSharedProgressConversionStep(t *testing.T) {
-	yt := &YouTube{}
-
-	tests := []struct {
-		name         string
-		startPercent int
-		endPercent   int
-		wantLastSet  int
-	}{
-		{"small range", 0, 5, 5},
-		{"zero range", 0, 0, 0},
-		{"large range", 0, 100, 100},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			bar := &mockProgressBar{}
-			pipe := io.NopCloser(strings.NewReader("[ExtractAudio]\n"))
-
-			done := make(chan struct{})
-			go func() {
-				yt.parseSharedProgress(pipe, bar, tt.startPercent, tt.endPercent)
-				close(done)
-			}()
-
-			select {
-			case <-done:
-				// success
-			case <-time.After(2 * time.Second):
-				t.Fatal("parseSharedProgress timed out — possible infinite loop")
-			}
-
-			if len(bar.sets) == 0 {
-				t.Fatal("expected at least one Set call")
-			}
-			last := bar.sets[len(bar.sets)-1]
-			if last != tt.wantLastSet {
-				t.Errorf("last Set() = %d, want %d", last, tt.wantLastSet)
 			}
 		})
 	}
