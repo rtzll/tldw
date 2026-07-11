@@ -11,22 +11,18 @@ const testVideoID = "dQw4w9WgXcQ"
 
 type videoStub struct {
 	metadata      *tldw.VideoMetadata
-	metadataErr   error
 	captions      *tldw.Transcript
 	captionsErr   error
 	playlist      *tldw.PlaylistInfo
-	playlistErr   error
 	audioPath     string
-	audioErr      error
 	metadataCalls int
 	captionCalls  int
 	audioCalls    int
-	playlistCalls int
 }
 
 func (stub *videoStub) FetchMetadata(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
 	stub.metadataCalls++
-	return stub.metadata, stub.metadataErr
+	return stub.metadata, nil
 }
 
 func (stub *videoStub) FetchCaptions(context.Context, tldw.YouTubeRef, []string, string) (*tldw.Transcript, error) {
@@ -36,27 +32,22 @@ func (stub *videoStub) FetchCaptions(context.Context, tldw.YouTubeRef, []string,
 
 func (stub *videoStub) DownloadAudio(context.Context, tldw.YouTubeRef) (string, error) {
 	stub.audioCalls++
-	return stub.audioPath, stub.audioErr
+	return stub.audioPath, nil
 }
 
 func (stub *videoStub) FetchPlaylist(context.Context, tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
-	stub.playlistCalls++
-	return stub.playlist, stub.playlistErr
+	return stub.playlist, nil
 }
 
 type memoryStore struct {
-	transcript       *tldw.Transcript
-	transcriptErr    error
-	metadata         *tldw.VideoMetadata
-	metadataErr      error
-	transcriptSaves  int
-	metadataSaves    int
-	loadTranscriptID string
-	loadMetadataID   string
+	transcript      *tldw.Transcript
+	transcriptErr   error
+	metadata        *tldw.VideoMetadata
+	transcriptSaves int
+	metadataSaves   int
 }
 
 func (store *memoryStore) LoadTranscript(videoID string) (*tldw.Transcript, error) {
-	store.loadTranscriptID = videoID
 	if store.transcriptErr != nil {
 		return nil, store.transcriptErr
 	}
@@ -73,10 +64,6 @@ func (store *memoryStore) SaveTranscript(transcript *tldw.Transcript) error {
 }
 
 func (store *memoryStore) LoadMetadata(videoID string) (*tldw.VideoMetadata, error) {
-	store.loadMetadataID = videoID
-	if store.metadataErr != nil {
-		return nil, store.metadataErr
-	}
 	if store.metadata == nil {
 		return nil, tldw.ErrStoreNotFound
 	}
@@ -93,9 +80,7 @@ type aiStub struct {
 	transcription    string
 	transcriptionErr error
 	summary          string
-	summaryErr       error
 	transcribeCalls  int
-	summaryCalls     int
 	sawDeadline      bool
 }
 
@@ -106,8 +91,7 @@ func (stub *aiStub) Transcribe(ctx context.Context, _ string) (string, error) {
 }
 
 func (stub *aiStub) Summary(context.Context, string) (string, error) {
-	stub.summaryCalls++
-	return stub.summary, stub.summaryErr
+	return stub.summary, nil
 }
 
 type promptStub struct {
