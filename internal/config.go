@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/adrg/xdg"
@@ -83,7 +82,7 @@ func EnsureDefaultPrompt(configDir string) error {
 }
 
 // InitConfig initializes Viper and loads configuration
-func InitConfig() (*Config, error) {
+func InitConfig(configFile string) (*Config, error) {
 	_, err := exec.LookPath("yt-dlp")
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp not found: %w", err)
@@ -112,16 +111,18 @@ func InitConfig() (*Config, error) {
 	v.SetDefault("mcp_log_enabled", false)
 
 	// Set config name and paths.
-	v.SetConfigName("config")
-	v.SetConfigType("toml")
-	v.AddConfigPath(configDir)
-	v.AddConfigPath(".")
+	if configFile != "" {
+		v.SetConfigFile(configFile)
+	} else {
+		v.SetConfigName("config")
+		v.SetConfigType("toml")
+		v.AddConfigPath(configDir)
+		v.AddConfigPath(".")
+	}
 
 	// Environment variables.
 	v.SetEnvPrefix("TLDW")
 	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer("_", "_"))
-
 	// Special case for OpenAI API Key - check both Viper and direct env var.
 	_ = v.BindEnv("openai_api_key", "OPENAI_API_KEY")
 
@@ -130,6 +131,9 @@ func InitConfig() (*Config, error) {
 
 	// Read config file.
 	if err := v.ReadInConfig(); err != nil {
+		if configFile != "" {
+			return nil, fmt.Errorf("reading config file %q: %w", configFile, err)
+		}
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			fmt.Fprintf(os.Stderr, "Warning: Error reading config file: %v\n", err)
 		}

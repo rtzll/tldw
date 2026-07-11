@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/rtzll/tldw/internal"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -52,6 +51,23 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   # Run quietly without progress bars or extra output
   tldw "https://youtu.be/tAP1eZYEuKA" --quiet`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		configFile, err := cmd.Root().PersistentFlags().GetString("config")
+		if err != nil {
+			return fmt.Errorf("reading config flag: %w", err)
+		}
+		config, err = internal.InitConfig(configFile)
+		if err != nil {
+			return fmt.Errorf("initializing configuration: %w", err)
+		}
+		if err := internal.EnsureDirs(config.ConfigDir, config.DataDir, config.CacheDir); err != nil {
+			return fmt.Errorf("creating XDG directories: %w", err)
+		}
+		if err := internal.EnsureDefaultConfig(config.ConfigDir); err != nil {
+			return fmt.Errorf("ensuring default config: %w", err)
+		}
+		if err := internal.EnsureDefaultPrompt(config.ConfigDir); err != nil {
+			return fmt.Errorf("ensuring default prompt: %w", err)
+		}
 		return applyOutputFlags(cmd, config)
 	},
 	Args: cobra.ExactArgs(1),
@@ -87,28 +103,6 @@ func Execute() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Initialize configuration with Viper
-	var err error
-	config, err = internal.InitConfig()
-	if err != nil {
-		return fmt.Errorf("initializing configuration: %w", err)
-	}
-
-	// Ensure XDG directories exist
-	if err := internal.EnsureDirs(config.ConfigDir, config.DataDir, config.CacheDir); err != nil {
-		return fmt.Errorf("creating XDG directories: %w", err)
-	}
-
-	// Ensure default config exists in XDG config directory
-	if err := internal.EnsureDefaultConfig(config.ConfigDir); err != nil {
-		return fmt.Errorf("ensuring default config: %w", err)
-	}
-
-	// Ensure default prompt exists in XDG config directory
-	if err := internal.EnsureDefaultPrompt(config.ConfigDir); err != nil {
-		return fmt.Errorf("ensuring default prompt: %w", err)
-	}
-
 	// Set up signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -128,8 +122,10 @@ func Execute() error {
 		// Run cleanup with timeout context
 		cleanupDone := make(chan struct{})
 		go func() {
-			if err := internal.CleanupTempDir(config.TempDir); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to clean up temporary files: %v\n", err)
+			if config != nil {
+				if err := internal.CleanupTempDir(config.TempDir); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to clean up temporary files: %v\n", err)
+				}
 			}
 			close(cleanupDone)
 		}()
@@ -160,9 +156,4 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress progress bars and non-essential output")
 	rootCmd.PersistentFlags().StringP("config", "c", "", "Config file (default is $XDG_CONFIG_HOME/tldw/config.toml)")
 
-	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
-	_ = viper.BindPFlag("quiet", rootCmd.PersistentFlags().Lookup("quiet"))
-	_ = viper.BindPFlag("config", rootCmd.PersistentFlags().Lookup("config"))
-	_ = viper.BindPFlag("tldr_model", rootCmd.Flags().Lookup("model"))
-	_ = viper.BindPFlag("prompt", rootCmd.Flags().Lookup("prompt"))
 }
