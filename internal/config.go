@@ -1,8 +1,6 @@
 package internal
 
 import (
-	"bytes"
-	"context"
 	"embed"
 	"fmt"
 	"os"
@@ -14,33 +12,6 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/spf13/viper"
 )
-
-// CommandRunner executes external commands
-type CommandRunner interface {
-	Run(ctx context.Context, name string, args ...string) ([]byte, error)
-}
-
-// DefaultCommandRunner implements CommandRunner
-type DefaultCommandRunner struct{}
-
-func (r *DefaultCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err != nil {
-		// Include stderr in error message for debugging
-		if stderr.Len() > 0 {
-			return stdout.Bytes(), fmt.Errorf("command failed: %w, stderr: %s", err, stderr.String())
-		}
-		return stdout.Bytes(), fmt.Errorf("command failed: %w", err)
-	}
-
-	return stdout.Bytes(), nil
-}
 
 // Config holds application settings
 type Config struct {
