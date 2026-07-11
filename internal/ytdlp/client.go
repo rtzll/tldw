@@ -867,10 +867,16 @@ func parseSRTTimestamp(value string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid SRT timestamp hours: %w", err)
 	}
+	if hours < 0 {
+		return 0, fmt.Errorf("invalid SRT timestamp hours: %d", hours)
+	}
 
 	minutes, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 	if err != nil {
 		return 0, fmt.Errorf("invalid SRT timestamp minutes: %w", err)
+	}
+	if minutes < 0 || minutes > 59 {
+		return 0, fmt.Errorf("invalid SRT timestamp minutes: %d", minutes)
 	}
 
 	secondsParts := strings.Split(parts[2], ",")
@@ -882,10 +888,17 @@ func parseSRTTimestamp(value string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid SRT timestamp seconds: %w", err)
 	}
+	if seconds < 0 || seconds > 59 {
+		return 0, fmt.Errorf("invalid SRT timestamp seconds: %d", seconds)
+	}
 
-	milliseconds, err := strconv.Atoi(strings.TrimSpace(secondsParts[1]))
+	millisecondText := strings.TrimSpace(secondsParts[1])
+	milliseconds, err := strconv.Atoi(millisecondText)
 	if err != nil {
 		return 0, fmt.Errorf("invalid SRT timestamp milliseconds: %w", err)
+	}
+	if len(millisecondText) != 3 || milliseconds < 0 || milliseconds > 999 {
+		return 0, fmt.Errorf("invalid SRT timestamp milliseconds: %s", millisecondText)
 	}
 
 	totalSeconds := float64(hours*3600+minutes*60+seconds) + float64(milliseconds)/1000

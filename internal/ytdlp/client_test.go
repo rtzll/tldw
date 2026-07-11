@@ -352,6 +352,10 @@ func TestParseSRTTimestamp(t *testing.T) {
 		{"invalid minutes", "00:ab:00,000", 0, true},
 		{"invalid seconds", "00:00:ab,000", 0, true},
 		{"invalid ms", "00:00:00,abc", 0, true},
+		{"negative hours", "-1:00:00,000", 0, true},
+		{"minutes out of range", "00:60:00,000", 0, true},
+		{"seconds out of range", "00:00:60,000", 0, true},
+		{"milliseconds out of range", "00:00:00,1000", 0, true},
 	}
 
 	for _, tt := range tests {
