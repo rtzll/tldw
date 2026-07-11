@@ -15,20 +15,6 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-type YouTubeRef = tldw.YouTubeRef
-type VideoMetadata = tldw.VideoMetadata
-type Transcript = tldw.Transcript
-type TranscriptRequest = tldw.TranscriptRequest
-
-const (
-	TranscriptRenderFormatPlain      = tldw.TranscriptRenderFormatPlain
-	TranscriptRenderFormatTimestamps = tldw.TranscriptRenderFormatTimestamps
-	TranscriptPolicyCaptionsOnly     = tldw.TranscriptPolicyCaptionsOnly
-	TranscriptPolicyWhisperOnly      = tldw.TranscriptPolicyWhisperOnly
-	TranscriptSourceCaptions         = tldw.TranscriptSourceCaptions
-	TranscriptSourceWhisper          = tldw.TranscriptSourceWhisper
-)
-
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
 	engine             MCPApplication
@@ -38,8 +24,8 @@ type MCPServer struct {
 }
 
 type MCPApplication interface {
-	MetadataFor(context.Context, YouTubeRef) (*VideoMetadata, error)
-	Transcript(context.Context, YouTubeRef, TranscriptRequest) (*Transcript, error)
+	MetadataFor(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error)
+	Transcript(context.Context, tldw.YouTubeRef, tldw.TranscriptRequest) (*tldw.Transcript, error)
 }
 
 const (
@@ -248,13 +234,13 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
 	includeTimestamps := input.IncludeTimestamps
 
-	format := TranscriptRenderFormatPlain
+	format := tldw.TranscriptRenderFormatPlain
 	if includeTimestamps {
-		format = TranscriptRenderFormatTimestamps
+		format = tldw.TranscriptRenderFormatTimestamps
 	}
 
-	structured, err := s.engine.Transcript(ctx, parsed, TranscriptRequest{
-		Policy:            TranscriptPolicyCaptionsOnly,
+	structured, err := s.engine.Transcript(ctx, parsed, tldw.TranscriptRequest{
+		Policy:            tldw.TranscriptPolicyCaptionsOnly,
 		RequireTimestamps: includeTimestamps,
 	})
 	if err != nil {
@@ -271,7 +257,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	output := mcpTranscriptOutput{
 		URL:               url,
 		Transcript:        transcript,
-		Source:            string(TranscriptSourceCaptions),
+		Source:            string(tldw.TranscriptSourceCaptions),
 		IncludeTimestamps: includeTimestamps,
 	}
 
@@ -295,12 +281,12 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 		return nil, zero, err
 	}
 
-	structured, err := s.engine.Transcript(ctx, parsed, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly})
+	structured, err := s.engine.Transcript(ctx, parsed, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - transcription failed: %v", err)
 		return nil, zero, fmt.Errorf("failed to transcribe audio with Whisper: %w", err)
 	}
-	transcript, err := structured.Render(TranscriptRenderFormatPlain)
+	transcript, err := structured.Render(tldw.TranscriptRenderFormatPlain)
 	if err != nil {
 		return nil, zero, err
 	}
@@ -310,7 +296,7 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 	output := mcpTranscriptOutput{
 		URL:               url,
 		Transcript:        transcript,
-		Source:            string(TranscriptSourceWhisper),
+		Source:            string(tldw.TranscriptSourceWhisper),
 		IncludeTimestamps: false,
 	}
 

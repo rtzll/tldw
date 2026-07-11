@@ -18,21 +18,21 @@ import (
 )
 
 type applicationStub struct {
-	metadata        *VideoMetadata
+	metadata        *tldw.VideoMetadata
 	metadataErr     error
-	transcript      *Transcript
+	transcript      *tldw.Transcript
 	transcriptErr   error
 	metadataCalls   int
 	transcriptCalls int
-	lastRequest     TranscriptRequest
+	lastRequest     tldw.TranscriptRequest
 }
 
-func (stub *applicationStub) MetadataFor(context.Context, YouTubeRef) (*VideoMetadata, error) {
+func (stub *applicationStub) MetadataFor(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
 	stub.metadataCalls++
 	return stub.metadata, stub.metadataErr
 }
 
-func (stub *applicationStub) Transcript(_ context.Context, _ YouTubeRef, request TranscriptRequest) (*Transcript, error) {
+func (stub *applicationStub) Transcript(_ context.Context, _ tldw.YouTubeRef, request tldw.TranscriptRequest) (*tldw.Transcript, error) {
 	stub.transcriptCalls++
 	stub.lastRequest = request
 	return stub.transcript, stub.transcriptErr
@@ -182,7 +182,7 @@ func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
 
 func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
-	app.metadata = &VideoMetadata{
+	app.metadata = &tldw.VideoMetadata{
 		Title: "Test Video", Description: "Test Description", Channel: "Test Channel",
 		Creators: []string{"Test Channel", "Guest Creator"}, Duration: 42, Language: "en",
 		Categories: []string{"Education"}, Tags: []string{"go", "mcp"},
@@ -243,10 +243,10 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 
 func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
-	app.transcript = &Transcript{
+	app.transcript = &tldw.Transcript{
 		VideoID:  "dQw4w9WgXcQ",
 		Language: "en",
-		Source:   TranscriptSourceCaptions,
+		Source:   tldw.TranscriptSourceCaptions,
 		Segments: []tldw.TranscriptSegment{
 			{Start: 1, End: 3, Text: "Hello world"},
 		},
@@ -281,20 +281,20 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	if output.Transcript != wantTranscript {
 		t.Errorf("structured transcript = %q, want %q", output.Transcript, wantTranscript)
 	}
-	if output.Source != string(TranscriptSourceCaptions) {
+	if output.Source != string(tldw.TranscriptSourceCaptions) {
 		t.Errorf("structured source = %q, want captions", output.Source)
 	}
 	if !output.IncludeTimestamps {
 		t.Error("structured include_timestamps = false, want true")
 	}
-	if app.transcriptCalls != 1 || app.lastRequest.Policy != TranscriptPolicyCaptionsOnly || !app.lastRequest.RequireTimestamps {
+	if app.transcriptCalls != 1 || app.lastRequest.Policy != tldw.TranscriptPolicyCaptionsOnly || !app.lastRequest.RequireTimestamps {
 		t.Fatalf("Transcript() calls = %d, request = %+v", app.transcriptCalls, app.lastRequest)
 	}
 }
 
 func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
-	app.transcript = &Transcript{VideoID: "dQw4w9WgXcQ", Source: TranscriptSourceWhisper, Text: "whisper transcript"}
+	app.transcript = &tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: tldw.TranscriptSourceWhisper, Text: "whisper transcript"}
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -322,13 +322,13 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	if output.Transcript != "whisper transcript" {
 		t.Errorf("structured transcript = %q, want whisper transcript", output.Transcript)
 	}
-	if output.Source != string(TranscriptSourceWhisper) {
+	if output.Source != string(tldw.TranscriptSourceWhisper) {
 		t.Errorf("structured source = %q, want whisper", output.Source)
 	}
 	if output.IncludeTimestamps {
 		t.Error("structured include_timestamps = true, want false")
 	}
-	if app.transcriptCalls != 1 || app.lastRequest.Policy != TranscriptPolicyWhisperOnly {
+	if app.transcriptCalls != 1 || app.lastRequest.Policy != tldw.TranscriptPolicyWhisperOnly {
 		t.Fatalf("Transcript() calls = %d, policy = %v", app.transcriptCalls, app.lastRequest.Policy)
 	}
 }
