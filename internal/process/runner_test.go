@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	processadapter "github.com/rtzll/tldw/internal/process"
 )
@@ -22,6 +24,28 @@ func TestCommandRunnerReturnsInspectableCommandError(t *testing.T) {
 	}
 	if commandErr.Name != os.Args[0] || !strings.Contains(commandErr.Stderr, "deliberate failure") {
 		t.Fatalf("CommandError = %+v", commandErr)
+	}
+}
+
+func TestCommandRunnerPreservesCancellationAndCommandFailure(t *testing.T) {
+	t.Setenv("GO_WANT_PROCESS_HELPER", "1")
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := (&processadapter.CommandRunner{}).Run(ctx, os.Args[0], "-test.run=TestProcessHelper", "--", "block")
+	var commandErr *processadapter.CommandError
+	if !errors.As(err, &commandErr) {
+		t.Fatalf("Run() error = %T %v, want *CommandError", err, err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("Run() error = %v, want preserved exec.ExitError", err)
 	}
 }
 
@@ -59,6 +83,9 @@ func TestProcessHelper(t *testing.T) {
 			os.Exit(3)
 		case "long-line":
 			fmt.Println(strings.Repeat("x", 128*1024))
+			os.Exit(0)
+		case "block":
+			time.Sleep(5 * time.Second)
 			os.Exit(0)
 		}
 	}

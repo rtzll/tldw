@@ -116,7 +116,7 @@ func readLines(reader io.Reader, onLine func(string)) error {
 
 func commandError(ctx context.Context, name string, args []string, stderr string, err error) *CommandError {
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		err = ctxErr
+		err = errors.Join(err, ctxErr)
 	}
 	return &CommandError{Name: name, Args: append([]string(nil), args...), Stderr: stderr, Err: err}
 }
