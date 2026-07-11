@@ -33,7 +33,7 @@ func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, 
 			RequireTimestamps: true,
 		})
 		if err != nil {
-			if fallbackWhisper {
+			if fallbackWhisper && (errors.Is(err, tldw.ErrCaptionsUnavailable) || errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable)) {
 				return "", fmt.Errorf("timestamps are not supported with Whisper fallback yet")
 			}
 			return "", err
@@ -46,9 +46,6 @@ func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, 
 		policy = tldw.TranscriptPolicyCaptionsThenWhisper
 	}
 	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy})
-	if errors.Is(err, tldw.ErrCaptionsUnavailable) && fallbackWhisper {
-		transcript, err = app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
-	}
 	if err != nil {
 		return "", err
 	}
