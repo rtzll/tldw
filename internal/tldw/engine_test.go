@@ -227,6 +227,33 @@ func TestEngineFallsBackToWhisperWhenCaptionsAreUnavailable(t *testing.T) {
 	}
 }
 
+func TestEngineDoesNotFallBackToWhisperAfterCaptionCancellation(t *testing.T) {
+	video := &videoStub{
+		metadata:    &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
+		captionsErr: context.Canceled,
+	}
+	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+		Video: video, Store: &memoryStore{}, AI: &aiStub{}, Prompts: &promptStub{},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	ref, err := tldw.ParseVideoRef(testVideoID)
+	if err != nil {
+		t.Fatalf("ParseVideoRef() error = %v", err)
+	}
+
+	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsThenWhisper,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Transcript() error = %v, want context.Canceled", err)
+	}
+	if video.audioCalls != 0 {
+		t.Fatalf("Whisper fallback downloaded audio %d times after cancellation", video.audioCalls)
+	}
+}
+
 func TestEngineSummarizeVideoReturnsTransportNeutralMarkdown(t *testing.T) {
 	video := &videoStub{
 		metadata: &tldw.VideoMetadata{Title: "Example", HasCaptions: true, CaptionLanguages: []string{"en"}},

@@ -135,10 +135,16 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		}
 		transcript, err = app.video.FetchCaptions(ctx, ref, metadata.CaptionLanguages, metadata.Language)
 	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
 	if (err != nil || transcript == nil) && request.Policy == TranscriptPolicyCaptionsThenWhisper && !request.RequireTimestamps {
 		return app.transcribeVideo(ctx, ref)
 	}
-	if err != nil || transcript == nil {
+	if err != nil {
+		return nil, fmt.Errorf("fetching captions: %w", err)
+	}
+	if transcript == nil {
 		return nil, fmt.Errorf("no transcript available for %s", ref.ID())
 	}
 	if request.RequireTimestamps && !transcript.HasTimestamps() {
