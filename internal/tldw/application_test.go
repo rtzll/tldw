@@ -34,6 +34,8 @@ func TestNewEngineRejectsInvalidDependenciesAndConfig(t *testing.T) {
 
 func TestEngineAppliesWhisperTimeout(t *testing.T) {
 	fixture := newEngineFixture(t, tldw.Config{WhisperTimeout: time.Minute})
+	fixture.video.audioPath = "audio.mp3"
+	fixture.ai.transcription = "transcript"
 
 	if _, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
 		Policy: tldw.TranscriptPolicyWhisperOnly,

@@ -38,15 +38,8 @@ func (stub *applicationStub) Transcript(_ context.Context, _ YouTubeRef, request
 	return stub.transcript, stub.transcriptErr
 }
 
-func newTestApplication() *applicationStub {
-	return &applicationStub{
-		metadata:   &VideoMetadata{Title: "Test Video", Channel: "Test Channel", HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{VideoID: "dQw4w9WgXcQ", Source: TranscriptSourceCaptions, Text: "transcript"},
-	}
-}
-
 func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
-	server := NewMCPServer(newTestApplication())
+	server := NewMCPServer(&applicationStub{})
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	res, err := clientSession.ListTools(ctx, nil)
@@ -173,7 +166,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 }
 
 func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
-	server := NewMCPServer(newTestApplication())
+	server := NewMCPServer(&applicationStub{})
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	res, err := clientSession.ListTools(ctx, nil)
@@ -188,7 +181,7 @@ func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
 }
 
 func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
-	app := newTestApplication()
+	app := &applicationStub{}
 	app.metadata = &VideoMetadata{
 		Title: "Test Video", Description: "Test Description", Channel: "Test Channel",
 		Creators: []string{"Test Channel", "Guest Creator"}, Duration: 42, Language: "en",
@@ -249,7 +242,7 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 }
 
 func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
-	app := newTestApplication()
+	app := &applicationStub{}
 	app.transcript = &Transcript{
 		VideoID:  "dQw4w9WgXcQ",
 		Language: "en",
@@ -300,7 +293,7 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 }
 
 func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
-	app := newTestApplication()
+	app := &applicationStub{}
 	app.transcript = &Transcript{VideoID: "dQw4w9WgXcQ", Source: TranscriptSourceWhisper, Text: "whisper transcript"}
 
 	server := NewMCPServer(app)
@@ -341,7 +334,7 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 }
 
 func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
-	app := newTestApplication()
+	app := &applicationStub{}
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -368,7 +361,7 @@ func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
 }
 
 func TestMCPHTTPTransportServesTools(t *testing.T) {
-	server := NewMCPServer(newTestApplication())
+	server := NewMCPServer(&applicationStub{})
 	port := unusedTCPPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -413,7 +406,7 @@ func TestMCPHTTPTransportServesTools(t *testing.T) {
 }
 
 func TestMCPServerRejectsInvalidTransport(t *testing.T) {
-	server := NewMCPServer(newTestApplication())
+	server := NewMCPServer(&applicationStub{})
 	err := server.Start(context.Background(), "htp", "127.0.0.1", 8765)
 	if err == nil {
 		t.Fatal("expected invalid transport error")

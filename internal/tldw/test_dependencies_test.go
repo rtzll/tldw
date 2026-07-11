@@ -134,14 +134,10 @@ type engineFixture struct {
 func newEngineFixture(t *testing.T, config tldw.Config) *engineFixture {
 	t.Helper()
 	fixture := &engineFixture{
-		video: &videoStub{
-			metadata:  &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-			captions:  &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "caption transcript"},
-			audioPath: "audio.mp3",
-		},
+		video:   &videoStub{},
 		store:   &memoryStore{},
-		ai:      &aiStub{transcription: "whisper transcript", summary: "summary"},
-		prompts: &promptStub{prompt: "prompt"},
+		ai:      &aiStub{},
+		prompts: &promptStub{},
 	}
 	engine, err := tldw.NewEngine(config, tldw.Dependencies{
 		Video: fixture.video, Store: fixture.store, AI: fixture.ai, Prompts: fixture.prompts,

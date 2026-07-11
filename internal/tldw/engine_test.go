@@ -13,6 +13,8 @@ func TestEngineWhisperOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
 	fixture.store.transcript = &tldw.Transcript{
 		VideoID: testVideoID, Source: tldw.TranscriptSourceCaptions, Text: "cached captions",
 	}
+	fixture.video.audioPath = "audio.mp3"
+	fixture.ai.transcription = "whisper transcript"
 
 	got, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
 		Policy: tldw.TranscriptPolicyWhisperOnly,
@@ -74,6 +76,7 @@ func TestEngineCaptionsOnlyRejectsCachedWhisper(t *testing.T) {
 func TestEngineCaptionsOnlyDoesNotInventUnknownCacheSource(t *testing.T) {
 	fixture := newEngineFixture(t, tldw.Config{})
 	fixture.store.transcript = &tldw.Transcript{VideoID: testVideoID, Text: "legacy transcript"}
+	fixture.video.metadata = &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}}
 	fixture.video.captions = &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "verified captions"}
 
 	got, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
@@ -89,6 +92,7 @@ func TestEngineCaptionsOnlyDoesNotInventUnknownCacheSource(t *testing.T) {
 
 func TestEngineCachesCaptionTranscript(t *testing.T) {
 	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.video.metadata = &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}}
 	fixture.video.captions = &tldw.Transcript{
 		Source:   tldw.TranscriptSourceCaptions,
 		Segments: []tldw.TranscriptSegment{{Start: 0, End: 2, Text: "hello world"}},
@@ -130,6 +134,8 @@ func TestEngineReturnsUnexpectedStoreFailure(t *testing.T) {
 func TestEngineFallsBackToWhisperWhenCaptionsAreUnavailable(t *testing.T) {
 	fixture := newEngineFixture(t, tldw.Config{})
 	fixture.video.metadata = &tldw.VideoMetadata{HasCaptions: false}
+	fixture.video.audioPath = "audio.mp3"
+	fixture.ai.transcription = "whisper transcript"
 
 	got, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
 		Policy: tldw.TranscriptPolicyCaptionsThenWhisper,
@@ -147,6 +153,7 @@ func TestEngineSummarizeVideoReturnsTransportNeutralMarkdown(t *testing.T) {
 	fixture.video.metadata = &tldw.VideoMetadata{Title: "Example", HasCaptions: true, CaptionLanguages: []string{"en"}}
 	fixture.video.captions = &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "source transcript"}
 	fixture.ai.summary = "## Raw summary"
+	fixture.prompts.prompt = "prompt"
 
 	summary, err := fixture.engine.SummarizeVideo(context.Background(), videoRef(t), tldw.TranscriptRequest{
 		Policy: tldw.TranscriptPolicyCaptionsOnly,
@@ -165,6 +172,7 @@ func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
 	fixture.video.captions = &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "playlist transcript"}
 	fixture.video.playlist = &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.YouTubeRef{videoRef(t)}}
 	fixture.ai.summary = "## Playlist summary"
+	fixture.prompts.prompt = "prompt"
 
 	result, err := fixture.engine.CreatePlaylistSummary(context.Background(), playlistRef(t), tldw.PlaylistSummaryRequest{
 		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
