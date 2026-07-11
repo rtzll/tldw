@@ -184,3 +184,29 @@ func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
 		t.Fatalf("CreatePlaylistSummary() = %+v", result)
 	}
 }
+
+func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	video := videoRef(t)
+	fixture.video.playlist = &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.YouTubeRef{video}}
+	fixture.video.metadata = &tldw.VideoMetadata{Title: "No captions", Channel: "Channel", HasCaptions: false}
+	fixture.video.audioPath = "audio.mp3"
+	fixture.ai.transcription = "whisper transcript"
+	fixture.ai.summary = "playlist summary"
+	fixture.prompts.prompt = "prompt"
+	confirmed := false
+
+	result, err := fixture.engine.CreatePlaylistSummary(context.Background(), playlistRef(t), tldw.PlaylistSummaryRequest{
+		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
+		ConfirmWhisper: func(ref tldw.YouTubeRef, metadata *tldw.VideoMetadata) bool {
+			confirmed = ref.ID() == testVideoID && metadata.Title == "No captions"
+			return true
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreatePlaylistSummary() error = %v", err)
+	}
+	if !confirmed || result.Processed != 1 || fixture.video.audioCalls != 1 || fixture.ai.transcribeCalls != 1 {
+		t.Fatalf("confirmed=%v result=%+v audio=%d transcribe=%d", confirmed, result, fixture.video.audioCalls, fixture.ai.transcribeCalls)
+	}
+}
