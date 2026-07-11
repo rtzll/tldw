@@ -1,0 +1,286 @@
+package ytdlp
+
+import (
+	"testing"
+
+	"github.com/rtzll/tldw/internal/tldw"
+)
+
+func TestParseSRT(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []tldw.TranscriptSegment
+	}{
+		{
+			name: "basic SRT",
+			content: `1
+00:00:01,000 --> 00:00:04,000
+Hello world
+
+2
+00:00:05,000 --> 00:00:07,000
+Second line
+`,
+			want: []tldw.TranscriptSegment{
+				{Start: 1, End: 4, Text: "Hello world"},
+				{Start: 5, End: 7, Text: "Second line"},
+			},
+		},
+		{
+			name: "multiline text",
+			content: `1
+00:00:01,000 --> 00:00:04,000
+First line
+Second line
+
+2
+00:00:05,000 --> 00:00:07,000
+Third line
+`,
+			want: []tldw.TranscriptSegment{
+				{Start: 1, End: 4, Text: "First line Second line"},
+				{Start: 5, End: 7, Text: "Third line"},
+			},
+		},
+		{
+			name:    "empty content",
+			content: "",
+			want:    nil,
+		},
+		{
+			name: "ASS tags stripped",
+			content: `1
+00:00:01,000 --> 00:00:04,000
+{\an8}Hello world
+`,
+			want: []tldw.TranscriptSegment{
+				{Start: 1, End: 4, Text: "Hello world"},
+			},
+		},
+		{
+			name: "HTML tags stripped",
+			content: `1
+00:00:01,000 --> 00:00:04,000
+<b>Hello</b> world
+`,
+			want: []tldw.TranscriptSegment{
+				{Start: 1, End: 4, Text: "Hello world"},
+			},
+		},
+		{
+			name: "invalid timing skipped",
+			content: `1
+00:00:01,000 --> 00:00:04,000
+Valid line
+2
+invalid timing --> 00:00:06,000
+Skipped line
+`,
+			want: []tldw.TranscriptSegment{
+				{Start: 1, End: 4, Text: "Valid line"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSRT(tt.content)
+			if len(got) != len(tt.want) {
+				t.Errorf("parseSRT() returned %d segments, want %d", len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i].Start != tt.want[i].Start || got[i].End != tt.want[i].End || got[i].Text != tt.want[i].Text {
+					t.Errorf("parseSRT() segment %d = %+v, want %+v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeSubtitleLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"plain text", "Hello world", "Hello world"},
+		{"ASS tag", `{\an8}Hello`, "Hello"},
+		{"HTML tag", "<b>Hello</b>", "Hello"},
+		{"escaped spaces", `Hello\hworld`, "Hello world"},
+		{"newline escape", `Hello\Nworld`, "Hello world"},
+		{"multiple spaces", "Hello    world", "Hello world"},
+		{"empty", "", ""},
+		{"whitespace only", "   ", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeSubtitleLine(tt.line); got != tt.want {
+				t.Errorf("normalizeSubtitleLine(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSRTTimestamp(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    float64
+		wantErr bool
+	}{
+		{"zero", "00:00:00,000", 0, false},
+		{"seconds", "00:00:45,500", 45.5, false},
+		{"minutes", "00:05:00,000", 300, false},
+		{"hours", "02:30:15,000", 9015, false},
+		{"with spaces", " 00:00:01,000 ", 1, false},
+		{"invalid format", "00:00", 0, true},
+		{"invalid hours", "ab:00:00,000", 0, true},
+		{"invalid minutes", "00:ab:00,000", 0, true},
+		{"invalid seconds", "00:00:ab,000", 0, true},
+		{"invalid ms", "00:00:00,abc", 0, true},
+		{"negative hours", "-1:00:00,000", 0, true},
+		{"minutes out of range", "00:60:00,000", 0, true},
+		{"seconds out of range", "00:00:60,000", 0, true},
+		{"milliseconds out of range", "00:00:00,1000", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSRTTimestamp(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseSRTTimestamp(%q) error = %v, wantErr %v", tt.value, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("parseSRTTimestamp(%q) = %v, want %v", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSRTSequenceNumber(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{"number", "123", true},
+		{"zero", "0", true},
+		{"empty", "", false},
+		{"text", "Hello", false},
+		{"mixed", "12a", false},
+		{"timing", "00:00:01,000 --> 00:00:04,000", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSRTSequenceNumber(tt.line); got != tt.want {
+				t.Errorf("isSRTSequenceNumber(%q) = %v, want %v", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCondenseSubtitleSegments(t *testing.T) {
+	tests := []struct {
+		name     string
+		segments []tldw.TranscriptSegment
+		want     []tldw.TranscriptSegment
+	}{
+		{
+			name: "no overlap",
+			segments: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 1, End: 2, Text: "world"},
+			},
+			want: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 1, End: 2, Text: "world"},
+			},
+		},
+		{
+			name: "prefix overlap",
+			segments: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 1, End: 2, Text: "Hello world today"},
+			},
+			want: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 1, End: 2, Text: "today"},
+			},
+		},
+		{
+			name: "exact duplicate",
+			segments: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 1, End: 2, Text: "Hello"},
+			},
+			want: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello"},
+			},
+		},
+		{
+			name: "suffix overlap skipped",
+			segments: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 1, End: 2, Text: "world"},
+			},
+			want: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello world"},
+			},
+		},
+		{
+			name: "empty text skipped",
+			segments: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 1, End: 2, Text: ""},
+				{Start: 2, End: 3, Text: "world"},
+			},
+			want: []tldw.TranscriptSegment{
+				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 2, End: 3, Text: "world"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := condenseSubtitleSegments(tt.segments)
+			if len(got) != len(tt.want) {
+				t.Errorf("condenseSubtitleSegments() returned %d segments, want %d", len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i].Start != tt.want[i].Start || got[i].End != tt.want[i].End || got[i].Text != tt.want[i].Text {
+					t.Errorf("condenseSubtitleSegments() segment %d = %+v, want %+v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestLongestSubtitleOverlap(t *testing.T) {
+	tests := []struct {
+		name     string
+		previous string
+		current  string
+		want     string
+	}{
+		{"no overlap", "Hello world", "Goodbye", ""},
+		{"single word overlap", "Hello world", "world today", "world"},
+		{"multi word overlap", "The quick brown", "quick brown fox", "quick brown"},
+		{"empty previous", "", "Hello", ""},
+		{"empty current", "Hello", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := longestSubtitleOverlap(tt.previous, tt.current); got != tt.want {
+				t.Errorf("longestSubtitleOverlap(%q, %q) = %q, want %q", tt.previous, tt.current, got, tt.want)
+			}
+		})
+	}
+}
