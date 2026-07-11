@@ -24,11 +24,11 @@ func NewFile(dir string) *File {
 }
 
 func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
-	transcript, err := LoadTranscript(videoID, s.dir)
+	transcript, err := s.loadStructuredTranscript(videoID)
 	if err == nil || !errors.Is(err, tldw.ErrStoreNotFound) {
 		return transcript, err
 	}
-	text, err := loadPlainTranscript(videoID, s.dir)
+	text, err := s.loadPlainTranscript(videoID)
 	if err != nil {
 		return nil, err
 	}
@@ -39,36 +39,81 @@ func (s *File) SaveTranscript(transcript *tldw.Transcript) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("creating transcript store: %w", err)
 	}
-	if err := SaveTranscript(transcript, s.dir); err != nil {
+	if err := s.saveStructuredTranscript(transcript); err != nil {
 		return err
 	}
 	plain, err := transcript.Render(tldw.TranscriptRenderFormatPlain)
 	if err != nil {
 		return err
 	}
-	return SavePlainTranscript(transcript.VideoID, plain, s.dir)
+	return s.savePlainTranscript(transcript.VideoID, plain)
 }
 
 func (s *File) LoadMetadata(videoID string) (*tldw.VideoMetadata, error) {
-	return LoadMetadata(videoID, s.dir)
+	path, err := s.cachePath(videoID, ".meta.json")
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Clean(path))
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("%w: metadata %s", tldw.ErrStoreNotFound, videoID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading metadata cache: %w", err)
+	}
+	var cached cachedMetadata
+	if err := json.Unmarshal(data, &cached); err != nil {
+		return nil, fmt.Errorf("parsing metadata cache: %w", err)
+	}
+	if cached.CacheVersion < MetadataCacheVersion {
+		return nil, fmt.Errorf("%w: metadata version %d", tldw.ErrStoreStale, cached.CacheVersion)
+	}
+	return &tldw.VideoMetadata{
+		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,
+		ChannelURL: cached.ChannelURL, Creators: cached.Creators, PublishedAt: cached.PublishedAt,
+		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
+		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,
+		CaptionLanguages: cached.CaptionLanguages,
+	}, nil
 }
 
 func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("creating metadata store: %w", err)
 	}
-	return SaveMetadata(videoID, metadata, s.dir)
+	path, err := s.cachePath(videoID, ".meta.json")
+	if err != nil {
+		return err
+	}
+	if metadata == nil {
+		return fmt.Errorf("saving metadata: metadata is nil")
+	}
+	cached := cachedMetadata{
+		CacheVersion: MetadataCacheVersion, Title: metadata.Title, Description: metadata.Description,
+		Channel: metadata.Channel, ChannelURL: metadata.ChannelURL, Creators: metadata.Creators,
+		PublishedAt: metadata.PublishedAt, Duration: metadata.Duration, Language: metadata.Language,
+		Categories: metadata.Categories, Tags: metadata.Tags, Chapters: metadata.Chapters,
+		HasCaptions: metadata.HasCaptions, CaptionLanguages: metadata.CaptionLanguages, CachedAt: time.Now(),
+	}
+	data, err := json.MarshalIndent(cached, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling metadata: %w", err)
+	}
+	if err := atomicWriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("saving metadata: %w", err)
+	}
+	return nil
 }
 
-func cachePath(videoID, dir, suffix string) (string, error) {
+func (s *File) cachePath(videoID, suffix string) (string, error) {
 	if !tldw.IsValidVideoID(videoID) {
 		return "", fmt.Errorf("invalid YouTube video ID: %q", videoID)
 	}
-	return filepath.Join(dir, videoID+suffix), nil
+	return filepath.Join(s.dir, videoID+suffix), nil
 }
 
-func SavePlainTranscript(videoID, transcript, dir string) error {
-	path, err := cachePath(videoID, dir, ".txt")
+func (s *File) savePlainTranscript(videoID, transcript string) error {
+	path, err := s.cachePath(videoID, ".txt")
 	if err != nil {
 		return err
 	}
@@ -78,8 +123,8 @@ func SavePlainTranscript(videoID, transcript, dir string) error {
 	return nil
 }
 
-func loadPlainTranscript(videoID, dir string) (string, error) {
-	path, err := cachePath(videoID, dir, ".txt")
+func (s *File) loadPlainTranscript(videoID string) (string, error) {
+	path, err := s.cachePath(videoID, ".txt")
 	if err != nil {
 		return "", err
 	}
@@ -93,11 +138,11 @@ func loadPlainTranscript(videoID, dir string) (string, error) {
 	return string(data), nil
 }
 
-func SaveTranscript(transcript *tldw.Transcript, dir string) error {
+func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
 	if transcript == nil {
 		return fmt.Errorf("saving transcript: transcript is nil")
 	}
-	path, err := cachePath(transcript.VideoID, dir, ".transcript.json")
+	path, err := s.cachePath(transcript.VideoID, ".transcript.json")
 	if err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
@@ -111,8 +156,8 @@ func SaveTranscript(transcript *tldw.Transcript, dir string) error {
 	return nil
 }
 
-func LoadTranscript(videoID, dir string) (*tldw.Transcript, error) {
-	path, err := cachePath(videoID, dir, ".transcript.json")
+func (s *File) loadStructuredTranscript(videoID string) (*tldw.Transcript, error) {
+	path, err := s.cachePath(videoID, ".transcript.json")
 	if err != nil {
 		return nil, err
 	}
@@ -151,31 +196,6 @@ type cachedMetadata struct {
 	CachedAt         time.Time           `json:"cached_at"`
 }
 
-func SaveMetadata(videoID string, metadata *tldw.VideoMetadata, dir string) error {
-	path, err := cachePath(videoID, dir, ".meta.json")
-	if err != nil {
-		return err
-	}
-	if metadata == nil {
-		return fmt.Errorf("saving metadata: metadata is nil")
-	}
-	cached := cachedMetadata{
-		CacheVersion: MetadataCacheVersion, Title: metadata.Title, Description: metadata.Description,
-		Channel: metadata.Channel, ChannelURL: metadata.ChannelURL, Creators: metadata.Creators,
-		PublishedAt: metadata.PublishedAt, Duration: metadata.Duration, Language: metadata.Language,
-		Categories: metadata.Categories, Tags: metadata.Tags, Chapters: metadata.Chapters,
-		HasCaptions: metadata.HasCaptions, CaptionLanguages: metadata.CaptionLanguages, CachedAt: time.Now(),
-	}
-	data, err := json.MarshalIndent(cached, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling metadata: %w", err)
-	}
-	if err := atomicWriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("saving metadata: %w", err)
-	}
-	return nil
-}
-
 func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, ".tldw-*")
@@ -212,32 +232,4 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
 		return fmt.Errorf("replacing cache file: %w", err)
 	}
 	return nil
-}
-
-func LoadMetadata(videoID, dir string) (*tldw.VideoMetadata, error) {
-	path, err := cachePath(videoID, dir, ".meta.json")
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(filepath.Clean(path))
-	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("%w: metadata %s", tldw.ErrStoreNotFound, videoID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("reading metadata cache: %w", err)
-	}
-	var cached cachedMetadata
-	if err := json.Unmarshal(data, &cached); err != nil {
-		return nil, fmt.Errorf("parsing metadata cache: %w", err)
-	}
-	if cached.CacheVersion < MetadataCacheVersion {
-		return nil, fmt.Errorf("%w: metadata version %d", tldw.ErrStoreStale, cached.CacheVersion)
-	}
-	return &tldw.VideoMetadata{
-		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,
-		ChannelURL: cached.ChannelURL, Creators: cached.Creators, PublishedAt: cached.PublishedAt,
-		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
-		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,
-		CaptionLanguages: cached.CaptionLanguages,
-	}, nil
 }

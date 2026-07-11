@@ -44,8 +44,9 @@ func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 
 func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
 	dir := t.TempDir()
-	if err := store.SavePlainTranscript("dQw4w9WgXcQ", "legacy transcript", dir); err != nil {
-		t.Fatalf("SavePlainTranscript() error = %v", err)
+	path := filepath.Join(dir, "dQw4w9WgXcQ.txt")
+	if err := os.WriteFile(path, []byte("legacy transcript"), 0o644); err != nil {
+		t.Fatalf("writing legacy transcript: %v", err)
 	}
 
 	transcript, err := store.NewFile(dir).LoadTranscript("dQw4w9WgXcQ")
