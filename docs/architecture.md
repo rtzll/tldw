@@ -44,7 +44,7 @@ openai ─► process
 
 `internal/tldw` does not import transports or concrete adapters. It defines the
 interfaces for video access, persistence, AI work, prompt construction, and
-logging. [cmd/build.go](cmd/build.go) supplies the concrete implementations.
+logging. [cmd/build.go](../cmd/build.go) supplies the concrete implementations.
 
 ## Primary workflow
 

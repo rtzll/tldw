@@ -4,6 +4,9 @@ Transform YouTube videos and playlists into concise summaries using AI. Works
 with existing captions (free) or Whisper transcription (paid). Includes MCP
 server for Claude and other AI assistants and CLI.
 
+See [docs/architecture.md](docs/architecture.md) for the project structure and
+dependency direction.
+
 ## Installation
 
 ```bash
