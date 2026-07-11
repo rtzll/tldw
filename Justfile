@@ -21,6 +21,13 @@ build:
 test:
     go test ./...
 
+test-race:
+    go test -race ./...
+
+fuzz:
+    go test ./internal/tldw -run '^$' -fuzz '^FuzzParseReference$' -fuzztime=5s
+    go test ./internal/ytdlp -run '^$' -fuzz '^FuzzParseSRT$' -fuzztime=5s
+
 # Run the opt-in end-to-end transcription check (requires network access and yt-dlp).
 smoke-transcription:
     go test -tags=smoke ./smoke -run TestTranscriptionThroughCLIAndMCP -v -count=1
@@ -42,7 +49,7 @@ update:
 fmt:
     go fmt ./...
 
-check: fmt lint test
+check: fmt lint test test-race
 
 tunnel-init:
     #!/usr/bin/env bash
