@@ -5,8 +5,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
@@ -21,16 +24,32 @@ type Executor interface {
 
 type CommandRunner struct{}
 
+// CommandError preserves the command context needed to diagnose a failed
+// external process while still supporting errors.Is and errors.As.
+type CommandError struct {
+	Name   string
+	Args   []string
+	Stderr string
+	Err    error
+}
+
+func (err *CommandError) Error() string {
+	message := fmt.Sprintf("%s failed: %v", err.Name, err.Err)
+	if stderr := strings.TrimSpace(err.Stderr); stderr != "" {
+		message += ": " + stderr
+	}
+	return message
+}
+
+func (err *CommandError) Unwrap() error { return err.Err }
+
 func (*CommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
-			return stdout.Bytes(), fmt.Errorf("command failed: %w, stderr: %s", err, stderr.String())
-		}
-		return stdout.Bytes(), fmt.Errorf("command failed: %w", err)
+		return stdout.Bytes(), commandError(ctx, name, args, stderr.String(), err)
 	}
 	return stdout.Bytes(), nil
 }
@@ -51,18 +70,53 @@ func (*CommandRunner) RunStreaming(ctx context.Context, name string, args []stri
 
 	var wg sync.WaitGroup
 	var callbackMu sync.Mutex
-	scan := func(scanner *bufio.Scanner) {
+	var stderrBuffer bytes.Buffer
+	readErrors := make(chan error, 2)
+	read := func(streamName string, reader io.Reader) {
 		defer wg.Done()
-		for scanner.Scan() {
+		if err := readLines(reader, func(line string) {
 			callbackMu.Lock()
-			onLine(scanner.Text())
+			onLine(line)
 			callbackMu.Unlock()
+		}); err != nil {
+			readErrors <- fmt.Errorf("reading %s: %w", streamName, err)
 		}
 	}
 	wg.Add(2)
-	go scan(bufio.NewScanner(stdout))
-	go scan(bufio.NewScanner(stderr))
+	go read("stdout", stdout)
+	go read("stderr", io.TeeReader(stderr, &stderrBuffer))
 	waitErr := cmd.Wait()
 	wg.Wait()
-	return waitErr
+	close(readErrors)
+	var readErr error
+	for err := range readErrors {
+		readErr = errors.Join(readErr, err)
+	}
+	if waitErr != nil {
+		return errors.Join(commandError(ctx, name, args, stderrBuffer.String(), waitErr), readErr)
+	}
+	return readErr
+}
+
+func readLines(reader io.Reader, onLine func(string)) error {
+	buffered := bufio.NewReader(reader)
+	for {
+		line, err := buffered.ReadString('\n')
+		if line != "" {
+			onLine(strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"))
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func commandError(ctx context.Context, name string, args []string, stderr string, err error) *CommandError {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		err = ctxErr
+	}
+	return &CommandError{Name: name, Args: append([]string(nil), args...), Stderr: stderr, Err: err}
 }
