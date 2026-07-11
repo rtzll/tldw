@@ -1,27 +1,36 @@
-package internal
+package tldw
 
 import (
 	"context"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 )
+
+type Config struct {
+	WhisperTimeout       time.Duration
+	MetadataCacheVersion int
+}
+
+type PromptBuilder interface {
+	CreatePrompt(transcript string, metadata *VideoMetadata) (string, error)
+}
 
 // Engine is the application's deep module and owns workflow policy.
 type Engine struct {
 	video         VideoAdapter
 	store         VideoStore
 	ai            AIAdapter
-	promptManager *PromptManager
-	config        *Config
+	promptManager PromptBuilder
+	config        Config
 	log           LogSink
 	metadataCache map[string]*VideoMetadata
 	metadataMu    sync.RWMutex
 }
 
 // NewEngine initializes the application module.
-func NewEngine(config *Config, options ...EngineOption) *Engine {
-	promptManager := NewPromptManager(config.ConfigDir, config.Prompt)
+func NewEngine(config Config, promptManager PromptBuilder, options ...EngineOption) *Engine {
 	app := &Engine{
 		promptManager: promptManager,
 		config:        config,
@@ -39,22 +48,8 @@ func NewEngine(config *Config, options ...EngineOption) *Engine {
 // EngineOption customizes Engine creation.
 type EngineOption func(*Engine)
 
-// WithYouTube sets a custom YouTube downloader
-func WithYouTube(youtube *YouTube) EngineOption {
-	return func(a *Engine) {
-		a.video = youtube
-	}
-}
-
-// WithAI sets a custom AI processor
-func WithAI(ai *AI) EngineOption {
-	return func(a *Engine) {
-		a.ai = ai
-	}
-}
-
 // SetPromptManager sets a new prompt manager
-func (app *Engine) SetPromptManager(pm *PromptManager) {
+func (app *Engine) SetPromptManager(pm PromptBuilder) {
 	app.promptManager = pm
 }
 
@@ -73,7 +68,7 @@ func (app *Engine) setCachedMetadata(id string, metadata *VideoMetadata) {
 	app.metadataCache[id] = metadata
 }
 
-func metadataRefreshReason(metadata *VideoMetadata) string {
+func (app *Engine) metadataRefreshReason(metadata *VideoMetadata) string {
 	if metadata == nil {
 		return ""
 	}
@@ -85,7 +80,7 @@ func metadataRefreshReason(metadata *VideoMetadata) string {
 	if metadata.HasCaptions && len(metadata.CaptionLanguages) == 0 {
 		reasons = append(reasons, "caption languages")
 	}
-	if metadata.CacheVersion < currentMetadataCacheVersion {
+	if metadata.CacheVersion < app.config.MetadataCacheVersion {
 		reasons = append(reasons, "metadata schema")
 	}
 
@@ -94,7 +89,7 @@ func metadataRefreshReason(metadata *VideoMetadata) string {
 
 // MetadataFor resolves metadata for an already validated video reference.
 func (app *Engine) MetadataFor(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
-	if ref.ContentType != ContentTypeVideo || !IsValidYouTubeID(ref.ID) {
+	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("metadata requires a valid video reference")
 	}
 	return app.resolveMetadata(ctx, ref)

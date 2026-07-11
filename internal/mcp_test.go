@@ -277,7 +277,10 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	audioPath := filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")
 	testYouTube(t, app).executor = &writeAudioCommandRunner{audioPath: audioPath}
 	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
-	app.ai = NewAI(&fixedOpenAIClient{text: "whisper transcript"}, audio, "whisper-1", WhisperLimit, 0, false, true)
+	app.Engine = newTestEngine(app.config,
+		WithVideoAdapter(app.youtube),
+		WithAI(NewAI(&fixedOpenAIClient{text: "whisper transcript"}, audio, "whisper-1", WhisperLimit, 0, false, true)),
+	)
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -436,7 +439,13 @@ func TestMCPServerSerializesStdioToolHandlers(t *testing.T) {
 	}
 }
 
-func newTestMCPApp(t *testing.T) *Engine {
+type mcpTestHarness struct {
+	*Engine
+	config  *Config
+	youtube *YouTube
+}
+
+func newTestMCPApp(t *testing.T) *mcpTestHarness {
 	t.Helper()
 
 	baseDir := t.TempDir()
@@ -453,16 +462,17 @@ func newTestMCPApp(t *testing.T) *Engine {
 		}
 	}
 
-	return newTestEngine(config)
+	youtube := NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, false, true)
+	return &mcpTestHarness{
+		Engine:  newTestEngine(config, WithVideoAdapter(youtube)),
+		config:  config,
+		youtube: youtube,
+	}
 }
 
-func testYouTube(t *testing.T, app *Engine) *YouTube {
+func testYouTube(t *testing.T, app *mcpTestHarness) *YouTube {
 	t.Helper()
-	adapter, ok := app.video.(*YouTube)
-	if !ok {
-		t.Fatalf("video adapter = %T, want *YouTube", app.video)
-	}
-	return adapter
+	return app.youtube
 }
 
 func unusedTCPPort(t *testing.T) int {

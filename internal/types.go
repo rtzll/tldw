@@ -3,34 +3,20 @@ package internal
 import (
 	"fmt"
 	"strings"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // ContentType represents the type of YouTube content
-type ContentType int
+type ContentType = tldw.ContentType
 
 const (
-	ContentTypeUnknown ContentType = iota
-	ContentTypeVideo
-	ContentTypePlaylist
-	ContentTypeChannel
-	ContentTypeCommand
+	ContentTypeUnknown  = tldw.ContentTypeUnknown
+	ContentTypeVideo    = tldw.ContentTypeVideo
+	ContentTypePlaylist = tldw.ContentTypePlaylist
+	ContentTypeChannel  = tldw.ContentTypeChannel
+	ContentTypeCommand  = tldw.ContentTypeCommand
 )
-
-// String returns a human-readable representation of the content type
-func (ct ContentType) String() string {
-	switch ct {
-	case ContentTypeVideo:
-		return "video"
-	case ContentTypePlaylist:
-		return "playlist"
-	case ContentTypeChannel:
-		return "channel"
-	case ContentTypeCommand:
-		return "command"
-	default:
-		return "unknown"
-	}
-}
 
 // ParsedArg represents the result of parsing a command line argument.
 // It may contain an Error; use YouTubeRef after validation in application code.
@@ -43,12 +29,7 @@ type ParsedArg struct {
 }
 
 // YouTubeRef is a validated YouTube content reference used after boundary parsing.
-type YouTubeRef struct {
-	ContentType   ContentType
-	OriginalInput string
-	NormalizedURL string
-	ID            string
-}
+type YouTubeRef = tldw.YouTubeRef
 
 func newYouTubeRef(parsed *ParsedArg) YouTubeRef {
 	return YouTubeRef{

@@ -5,6 +5,7 @@ import (
 
 	"github.com/rtzll/tldw/internal"
 	"github.com/rtzll/tldw/internal/store"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 type cliLogSink struct {
@@ -17,7 +18,7 @@ func (l cliLogSink) Printf(format string, args ...any) {
 	}
 }
 
-func newEngine(config *internal.Config) *internal.Engine {
+func newEngine(config *internal.Config) *tldw.Engine {
 	return buildEngine(config, cliLogSink{config: config})
 }
 
@@ -25,22 +26,26 @@ type silentLogSink struct{}
 
 func (silentLogSink) Printf(string, ...any) {}
 
-func newMCPEngine(config *internal.Config) *internal.Engine {
+func newMCPEngine(config *internal.Config) *tldw.Engine {
 	return buildEngine(config, silentLogSink{})
 }
 
-func buildEngine(config *internal.Config, log internal.LogSink) *internal.Engine {
+func buildEngine(config *internal.Config, log tldw.LogSink) *tldw.Engine {
 	runner := &internal.DefaultCommandRunner{}
 	audio := internal.NewAudio(runner, config.TempDir, config.Verbose)
 	youtube := internal.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
 	ai := internal.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, internal.WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)
 	youtube.SetLogSink(log)
 	ai.SetLogSink(log)
-	return internal.NewEngine(
-		config,
-		internal.WithVideoAdapter(youtube),
-		internal.WithVideoStore(store.NewFile(config.TranscriptsDir)),
-		internal.WithAIAdapter(ai),
-		internal.WithLogSink(log),
+	return tldw.NewEngine(
+		tldw.Config{
+			WhisperTimeout:       config.WhisperTimeout,
+			MetadataCacheVersion: store.MetadataCacheVersion,
+		},
+		internal.NewPromptManager(config.ConfigDir, config.Prompt),
+		tldw.WithVideoAdapter(youtube),
+		tldw.WithVideoStore(store.NewFile(config.TranscriptsDir)),
+		tldw.WithAIAdapter(ai),
+		tldw.WithLogSink(log),
 	)
 }

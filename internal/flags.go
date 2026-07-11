@@ -19,7 +19,7 @@ func AddOpenAIFlags(cmd *cobra.Command) {
 }
 
 // HandlePromptFlag processes the --prompt flag to set custom prompt
-func HandlePromptFlag(cmd *cobra.Command, app *Engine) error {
+func HandlePromptFlag(cmd *cobra.Command, app *Engine, config *Config) error {
 	// Check if prompt flag was explicitly set
 	promptFlag := cmd.Flags().Lookup("prompt")
 	if promptFlag == nil || !promptFlag.Changed {
@@ -37,15 +37,15 @@ func HandlePromptFlag(cmd *cobra.Command, app *Engine) error {
 	}
 
 	// Create a new PromptManager with the specified prompt
-	app.SetPromptManager(NewPromptManager(app.config.ConfigDir, prompt))
+	app.SetPromptManager(NewPromptManager(config.ConfigDir, prompt))
 
 	// Check if it's a file path or a prompt string for verbose output
 	if IsLikelyFilePath(prompt) && FileExists(prompt) {
-		if app.config.Verbose {
+		if config.Verbose {
 			fmt.Printf("Using custom prompt file: %s\n", prompt)
 		}
 	} else {
-		if app.config.Verbose {
+		if config.Verbose {
 			fmt.Printf("Using custom prompt string\n")
 		}
 	}

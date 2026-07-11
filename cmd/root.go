@@ -63,7 +63,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		}
 
 		app := newEngine(config)
-		if err := internal.HandlePromptFlag(cmd, app); err != nil {
+		if err := internal.HandlePromptFlag(cmd, app, config); err != nil {
 			return err
 		}
 

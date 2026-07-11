@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"github.com/rtzll/tldw/internal/store"
 )
 
 type engineVideoAdapter struct {
@@ -27,7 +29,7 @@ func newTestEngine(config *Config, options ...EngineOption) *Engine {
 	audio := NewAudio(runner, config.TempDir, config.Verbose)
 	defaults := []EngineOption{
 		WithVideoAdapter(NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)),
-		WithVideoStore(NewFileVideoStore(config.TranscriptsDir)),
+		WithVideoStore(store.NewFile(config.TranscriptsDir)),
 		WithAIAdapter(NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)),
 	}
 	return NewEngine(config, append(defaults, options...)...)

@@ -16,10 +16,15 @@ import (
 
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
-	engine             *Engine
+	engine             MCPApplication
 	mcpServer          *mcp.Server
 	stdioToolMu        sync.Mutex
 	stdioSerializeOnce sync.Once
+}
+
+type MCPApplication interface {
+	MetadataFor(context.Context, YouTubeRef) (*VideoMetadata, error)
+	Transcript(context.Context, YouTubeRef, TranscriptRequest) (*Transcript, error)
 }
 
 const (
@@ -73,8 +78,7 @@ type mcpTranscriptOutput struct {
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer(engine *Engine) *MCPServer {
-	InitMCPLogging(engine.config)
+func NewMCPServer(engine MCPApplication) *MCPServer {
 	MCPLogInfo("Initializing MCP server (tldw-server v%s)", mcpServerVersion)
 
 	mcpServer := mcp.NewServer(&mcp.Implementation{

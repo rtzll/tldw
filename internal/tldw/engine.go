@@ -1,4 +1,4 @@
-package internal
+package tldw
 
 import (
 	"context"
@@ -34,6 +34,9 @@ type TranscriptRequest struct {
 // request does not permit Whisper transcription.
 var ErrCaptionsUnavailable = errors.New("captions are unavailable")
 
+// ErrDownloadFailed marks a retryable failure from a video adapter.
+var ErrDownloadFailed = errors.New("video download failed")
+
 // VideoAdapter is the seam between application workflows and YouTube access.
 // Production uses yt-dlp; tests can provide a local adapter.
 type VideoAdapter interface {
@@ -47,6 +50,15 @@ type VideoAdapter interface {
 type AIAdapter interface {
 	Transcribe(ctx context.Context, audioFile string) (string, error)
 	Summary(ctx context.Context, prompt string) (string, error)
+}
+
+// VideoStore is the persistence seam used by application workflows.
+type VideoStore interface {
+	LoadTranscript(videoID string) (*Transcript, error)
+	LoadPlainTranscript(videoID string) (string, error)
+	SaveTranscript(transcript *Transcript) error
+	LoadMetadata(videoID string) (*VideoMetadata, error)
+	SaveMetadata(videoID string, metadata *VideoMetadata) error
 }
 
 // LogSink receives diagnostic events without coupling workflows to a terminal.
@@ -108,7 +120,7 @@ func WithLogSink(log LogSink) EngineOption {
 // Transcript acquires a canonical transcript through one workflow shared by
 // CLI, MCP, summaries, and playlists.
 func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request TranscriptRequest) (*Transcript, error) {
-	if ref.ContentType != ContentTypeVideo || !IsValidYouTubeID(ref.ID) {
+	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
 	structuredCacheFound := false
@@ -283,7 +295,7 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 }
 
 func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cached *VideoMetadata) *VideoMetadata {
-	if metadataRefreshReason(cached) == "" {
+	if app.metadataRefreshReason(cached) == "" {
 		return cached
 	}
 	refreshed, err := app.video.FetchMetadata(ctx, ref)
@@ -332,4 +344,15 @@ func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Tran
 
 func (app *Engine) persistTranscript(transcript *Transcript) error {
 	return app.store.SaveTranscript(transcript)
+}
+
+func sleepWithContext(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

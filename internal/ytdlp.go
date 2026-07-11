@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,7 +18,7 @@ import (
 )
 
 // ErrDownloadFailed indicates a retryable download failure from yt-dlp
-var ErrDownloadFailed = errors.New("yt-dlp download failed")
+var ErrDownloadFailed = tldw.ErrDownloadFailed
 
 type VideoMetadata = tldw.VideoMetadata
 type VideoChapter = tldw.VideoChapter
@@ -935,11 +934,7 @@ type PlaylistMetadata struct {
 	Entries []PlaylistEntry `json:"entries"`
 }
 
-// PlaylistInfo contains both playlist metadata and video URLs
-type PlaylistInfo struct {
-	Title  string
-	Videos []YouTubeRef
-}
+type PlaylistInfo = tldw.PlaylistInfo
 
 // PlaylistVideoURLs fetches all video URLs from a YouTube playlist
 func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {

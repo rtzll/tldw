@@ -54,6 +54,7 @@ Transport options:
 
 		app := newMCPEngine(config)
 
+		internal.InitMCPLogging(config)
 		mcpServer := internal.NewMCPServer(app)
 
 		// Start the server (this will block until context is cancelled)
