@@ -12,7 +12,7 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-const MetadataCacheVersion = 3
+const metadataCacheVersion = 3
 
 // File is the filesystem adapter for the application's persistence seam.
 type File struct {
@@ -65,7 +65,7 @@ func (s *File) LoadMetadata(videoID string) (*tldw.VideoMetadata, error) {
 	if err := json.Unmarshal(data, &cached); err != nil {
 		return nil, fmt.Errorf("parsing metadata cache: %w", err)
 	}
-	if cached.CacheVersion < MetadataCacheVersion {
+	if cached.CacheVersion < metadataCacheVersion {
 		return nil, fmt.Errorf("%w: metadata version %d", tldw.ErrStoreStale, cached.CacheVersion)
 	}
 	return &tldw.VideoMetadata{
@@ -89,7 +89,7 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error 
 		return fmt.Errorf("saving metadata: metadata is nil")
 	}
 	cached := cachedMetadata{
-		CacheVersion: MetadataCacheVersion, Title: metadata.Title, Description: metadata.Description,
+		CacheVersion: metadataCacheVersion, Title: metadata.Title, Description: metadata.Description,
 		Channel: metadata.Channel, ChannelURL: metadata.ChannelURL, Creators: metadata.Creators,
 		PublishedAt: metadata.PublishedAt, Duration: metadata.Duration, Language: metadata.Language,
 		Categories: metadata.Categories, Tags: metadata.Tags, Chapters: metadata.Chapters,
