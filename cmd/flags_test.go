@@ -1,9 +1,11 @@
-package internal
+package cmd
 
 import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/rtzll/tldw/internal"
 )
 
 func TestApplyOutputFlags(t *testing.T) {
@@ -25,13 +27,13 @@ func TestApplyOutputFlags(t *testing.T) {
 			cmd := &cobra.Command{}
 			cmd.Flags().Bool("verbose", tt.verbose, "")
 			cmd.Flags().Bool("quiet", tt.quiet, "")
-			config := &Config{}
+			config := &internal.Config{}
 
-			if err := ApplyOutputFlags(cmd, config); err != nil {
-				t.Fatalf("ApplyOutputFlags() error = %v", err)
+			if err := applyOutputFlags(cmd, config); err != nil {
+				t.Fatalf("applyOutputFlags() error = %v", err)
 			}
 			if config.Verbose != tt.wantVerbose || config.Quiet != tt.wantQuiet {
-				t.Fatalf("ApplyOutputFlags() = verbose:%v quiet:%v, want verbose:%v quiet:%v", config.Verbose, config.Quiet, tt.wantVerbose, tt.wantQuiet)
+				t.Fatalf("applyOutputFlags() = verbose:%v quiet:%v, want verbose:%v quiet:%v", config.Verbose, config.Quiet, tt.wantVerbose, tt.wantQuiet)
 			}
 		})
 	}

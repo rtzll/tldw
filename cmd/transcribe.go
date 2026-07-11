@@ -5,8 +5,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/rtzll/tldw/internal"
 )
 
 // transcribeCmd represents the transcribe command
@@ -48,7 +46,7 @@ var transcribeCmd = &cobra.Command{
 }
 
 func init() {
-	internal.AddTranscriptionFlags(transcribeCmd)
+	addTranscriptionFlags(transcribeCmd)
 	transcribeCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
 	rootCmd.AddCommand(transcribeCmd)
 }

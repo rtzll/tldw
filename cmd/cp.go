@@ -5,8 +5,6 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/spf13/cobra"
-
-	"github.com/rtzll/tldw/internal"
 )
 
 // cpCmd copies the transcript to the system clipboard instead of printing to stdout.
@@ -44,6 +42,6 @@ var cpCmd = &cobra.Command{
 }
 
 func init() {
-	internal.AddTranscriptionFlags(cpCmd)
+	addTranscriptionFlags(cpCmd)
 	rootCmd.AddCommand(cpCmd)
 }

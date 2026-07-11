@@ -52,18 +52,18 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   # Run quietly without progress bars or extra output
   tldw "https://youtu.be/tAP1eZYEuKA" --quiet`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return internal.ApplyOutputFlags(cmd, config)
+		return applyOutputFlags(cmd, config)
 	},
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if suggestion, ok := commandSuggestion(args[0], cmd.Root().Commands()); ok {
 			return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
 		}
-		if err := internal.ValidateOpenAIRequirements(cmd, config); err != nil {
+		if err := validateOpenAIRequirements(cmd, config); err != nil {
 			return err
 		}
 
-		if err := internal.HandlePromptFlag(cmd, config); err != nil {
+		if err := handlePromptFlag(cmd, config); err != nil {
 			return err
 		}
 		app, err := newEngine(config)
@@ -154,8 +154,8 @@ func Execute() error {
 
 func init() {
 	rootCmd.SilenceUsage = true
-	internal.AddTranscriptionFlags(rootCmd)
-	internal.AddOpenAIFlags(rootCmd)
+	addTranscriptionFlags(rootCmd)
+	addOpenAIFlags(rootCmd)
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output for debugging")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress progress bars and non-essential output")
 	rootCmd.PersistentFlags().StringP("config", "c", "", "Config file (default is $XDG_CONFIG_HOME/tldw/config.toml)")
