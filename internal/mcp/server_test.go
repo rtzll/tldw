@@ -360,6 +360,29 @@ func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
 	}
 }
 
+func TestMCPTranscriptDoesNotMislabelApplicationFailures(t *testing.T) {
+	app := &applicationStub{transcriptErr: context.Canceled}
+	server := NewMCPServer(app)
+	ctx, clientSession := connectTestMCPClient(t, server)
+
+	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
+		Name: "get_youtube_transcript",
+		Arguments: map[string]any{
+			"url": "https://youtu.be/dQw4w9WgXcQ",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("CallTool() succeeded after application cancellation")
+	}
+	text := textContent(t, result)
+	if !strings.Contains(text, "getting transcript") || strings.Contains(text, "no captions available") {
+		t.Fatalf("tool error text = %q, want unmodified application failure classification", text)
+	}
+}
+
 func TestMCPHTTPTransportServesTools(t *testing.T) {
 	server := NewMCPServer(&applicationStub{})
 	port := unusedTCPPort(t)

@@ -245,7 +245,10 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	})
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
-		return nil, zero, fmt.Errorf("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid): %w", err)
+		if errors.Is(err, tldw.ErrCaptionsUnavailable) || errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
+			return nil, zero, fmt.Errorf("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid): %w", err)
+		}
+		return nil, zero, fmt.Errorf("getting transcript: %w", err)
 	}
 	transcript, err := structured.Render(format)
 	if err != nil {
