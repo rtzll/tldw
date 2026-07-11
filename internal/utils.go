@@ -677,15 +677,6 @@ func EnsureDirs(dirs ...string) error {
 	return nil
 }
 
-// cleanupFiles removes temporary files
-func cleanupFiles(files ...string) {
-	for _, file := range files {
-		if err := os.Remove(file); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove file %s: %v\n", file, err)
-		}
-	}
-}
-
 // IsValidYouTubeID checks if a string looks like a valid YouTube video ID
 func IsValidYouTubeID(id string) bool {
 	// YouTube video IDs are exactly 11 characters long

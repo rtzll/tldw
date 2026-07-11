@@ -1,23 +1,26 @@
-package internal
+package openai
 
 import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/rtzll/tldw/internal/process"
 )
 
 // Audio handles audio file operations using FFmpeg
 type Audio struct {
-	cmdRunner CommandRunner
+	cmdRunner process.Runner
 	tempDir   string
 	verbose   bool
 }
 
 // NewAudio creates a new audio processor
-func NewAudio(cmdRunner CommandRunner, tempDir string, verbose bool) *Audio {
+func NewAudio(cmdRunner process.Runner, tempDir string, verbose bool) *Audio {
 	return &Audio{
 		cmdRunner: cmdRunner,
 		tempDir:   tempDir,
@@ -47,7 +50,7 @@ func (a *Audio) Duration(ctx context.Context, audioFile string) (float64, error)
 
 // Split divides an audio file into smaller chunks
 func (a *Audio) Split(ctx context.Context, audioFile string, numChunks int) ([]string, error) {
-	if err := EnsureDirs(a.tempDir); err != nil {
+	if err := os.MkdirAll(a.tempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating temp directory: %w", err)
 	}
 
@@ -71,6 +74,12 @@ func (a *Audio) Split(ctx context.Context, audioFile string, numChunks int) ([]s
 	}
 
 	return chunks, nil
+}
+
+func cleanupFiles(paths ...string) {
+	for _, path := range paths {
+		_ = os.Remove(path)
+	}
 }
 
 // Chunk extracts a segment from an audio file

@@ -1,4 +1,4 @@
-package internal
+package openai
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 )
+
+const WhisperLimit int64 = 25 << 20
 
 type mockOpenAIClient struct {
 	transcription string

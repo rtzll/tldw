@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rtzll/tldw/internal"
+	openaiadapter "github.com/rtzll/tldw/internal/openai"
 	"github.com/rtzll/tldw/internal/process"
 	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -33,9 +34,9 @@ func newMCPEngine(config *internal.Config) *tldw.Engine {
 
 func buildEngine(config *internal.Config, log tldw.LogSink) *tldw.Engine {
 	runner := &process.CommandRunner{}
-	audio := internal.NewAudio(runner, config.TempDir, config.Verbose)
+	audio := openaiadapter.NewAudio(runner, config.TempDir, config.Verbose)
 	youtube := internal.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
-	ai := internal.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, internal.WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)
+	ai := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, internal.WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)
 	youtube.SetLogSink(log)
 	ai.SetLogSink(log)
 	return tldw.NewEngine(

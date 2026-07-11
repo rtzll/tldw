@@ -27,8 +27,9 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 	root := repositoryRoot(t)
 	binary := filepath.Join(t.TempDir(), "tldw")
 	run(t, root, nil, "go", "build", "-o", binary, ".")
+	xdg := isolatedXDG(t, "run")
 
-	cliTranscript := strings.TrimSpace(run(t, root, isolatedXDG(t, "cli"), binary,
+	cliTranscript := strings.TrimSpace(run(t, root, xdg, binary,
 		"transcribe", readmeVideoURL, "--timestamps", "--quiet"))
 	if cliTranscript == "" {
 		t.Fatal("CLI returned an empty transcript")
@@ -39,7 +40,7 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 
 	port := unusedPort(t)
 	server := exec.Command(binary, "mcp", "--transport=http", "--host=127.0.0.1", fmt.Sprintf("--port=%d", port))
-	server.Env = append(os.Environ(), isolatedXDG(t, "mcp")...)
+	server.Env = append(os.Environ(), xdg...)
 	var serverLog bytes.Buffer
 	server.Stdout = &serverLog
 	server.Stderr = &serverLog
