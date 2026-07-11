@@ -3,443 +3,171 @@ package tldw_test
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 	"testing"
-	"time"
 
-	legacy "github.com/rtzll/tldw/internal"
-	openaiadapter "github.com/rtzll/tldw/internal/openai"
-	"github.com/rtzll/tldw/internal/process"
-	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
-	ytdlpadapter "github.com/rtzll/tldw/internal/ytdlp"
 )
 
-type Config = legacy.Config
-type Engine = tldw.Engine
-type EngineOption func(*tldw.Dependencies)
-type YouTubeRef = tldw.YouTubeRef
-type VideoMetadata = tldw.VideoMetadata
-type Transcript = tldw.Transcript
-type TranscriptSegment = tldw.TranscriptSegment
-type TranscriptPolicy = tldw.TranscriptPolicy
-type PlaylistInfo = tldw.PlaylistInfo
-type TranscriptRequest = tldw.TranscriptRequest
-type PlaylistSummaryRequest = tldw.PlaylistSummaryRequest
-
-const (
-	ContentTypeVideo                    = tldw.ContentTypeVideo
-	TranscriptSourceCaptions            = tldw.TranscriptSourceCaptions
-	TranscriptSourceWhisper             = tldw.TranscriptSourceWhisper
-	TranscriptPolicyCaptionsOnly        = tldw.TranscriptPolicyCaptionsOnly
-	TranscriptPolicyCaptionsThenWhisper = tldw.TranscriptPolicyCaptionsThenWhisper
-	TranscriptPolicyWhisperOnly         = tldw.TranscriptPolicyWhisperOnly
-	TranscriptRenderFormatTimestamps    = tldw.TranscriptRenderFormatTimestamps
-	WhisperLimit                        = legacy.WhisperLimit
-)
-
-var ErrCaptionsUnavailable = tldw.ErrCaptionsUnavailable
-var ErrInvalidTranscriptPolicy = tldw.ErrInvalidTranscriptPolicy
-
-func ParseVideoArg(input string) (YouTubeRef, error) { return tldw.ParseVideoRef(input) }
-func WithVideoAdapter(video tldw.VideoAdapter) EngineOption {
-	return func(dependencies *tldw.Dependencies) { dependencies.Video = video }
-}
-func WithAIAdapter(ai tldw.AIAdapter) EngineOption {
-	return func(dependencies *tldw.Dependencies) { dependencies.AI = ai }
-}
-func WithAI(ai *openaiadapter.AI) EngineOption { return WithAIAdapter(ai) }
-func WithYouTube(youtube *ytdlpadapter.YouTube) EngineOption {
-	return WithVideoAdapter(youtube)
-}
-func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose, quiet bool) *ytdlpadapter.YouTube {
-	return ytdlpadapter.NewYouTubeWithCache(transcriptsDir, cacheDir, verbose, quiet)
-}
-func ParseYouTubeArg(input string) (YouTubeRef, error) { return tldw.ParseReference(input) }
-func SaveStructuredTranscript(transcript *Transcript, dir string) error {
-	return store.SaveTranscript(transcript, dir)
-}
-func SaveTranscript(videoID, transcript, dir string) error {
-	return store.SavePlainTranscript(videoID, transcript, dir)
-}
-func SaveMetadata(videoID string, metadata *VideoMetadata, dir string) error {
-	return store.SaveMetadata(videoID, metadata, dir)
-}
-func LoadCachedMetadata(videoID, dir string) (*VideoMetadata, error) {
-	return store.LoadMetadata(videoID, dir)
-}
-func NewAudio(runner process.Runner, dir string, verbose bool) *openaiadapter.Audio {
-	return openaiadapter.NewAudio(runner, dir, verbose)
-}
-func NewAI(client openaiadapter.OpenAIClientInterface, audio *openaiadapter.Audio, model string, limit int64, timeout time.Duration, verbose, quiet bool) *openaiadapter.AI {
-	ai, err := openaiadapter.NewAI(client, audio, openaiadapter.Config{Model: model, WhisperLimit: limit, Timeout: timeout, Verbose: verbose, Quiet: quiet})
-	if err != nil {
-		panic(err)
+func TestEngineWhisperOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.store.transcript = &tldw.Transcript{
+		VideoID: testVideoID, Source: tldw.TranscriptSourceCaptions, Text: "cached captions",
 	}
-	return ai
-}
 
-type mockCommandRunner struct {
-	output []byte
-	err    error
-}
-
-func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
-	return m.output, m.err
-}
-func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
-	return m.err
-}
-
-type mockOpenAIClient struct {
-	transcription string
-	err           error
-}
-
-func (m *mockOpenAIClient) CreateTranscription(context.Context, *os.File) (string, error) {
-	return m.transcription, m.err
-}
-func (m *mockOpenAIClient) CreateChatCompletion(context.Context, string, string) (string, error) {
-	return "", m.err
-}
-
-type engineVideoAdapter struct {
-	metadata        *VideoMetadata
-	transcript      *Transcript
-	transcriptErr   error
-	transcriptCalls int
-	audioPath       string
-	audioCalls      int
-	playlist        *PlaylistInfo
-}
-
-type engineAIAdapter struct {
-	transcription string
-	summary       string
-}
-
-func newTestEngine(config *Config, options ...EngineOption) *Engine {
-	runner := &process.CommandRunner{}
-	audio := NewAudio(runner, config.TempDir, config.Verbose)
-	model := config.TLDRModel
-	if model == "" {
-		model = "gpt-5.4-mini"
-	}
-	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
-		Model: model, WhisperLimit: WhisperLimit, Timeout: config.SummaryTimeout, Verbose: config.Verbose, Quiet: config.Quiet,
+	got, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyWhisperOnly,
 	})
-	if err != nil {
-		panic(err)
-	}
-	dependencies := tldw.Dependencies{
-		Video:   ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet),
-		Store:   store.NewFile(config.TranscriptsDir),
-		AI:      ai,
-		Prompts: legacy.NewPromptManager(config.ConfigDir, config.Prompt),
-	}
-	for _, option := range options {
-		option(&dependencies)
-	}
-	engine, err := tldw.NewEngine(tldw.Config{WhisperTimeout: config.WhisperTimeout}, dependencies)
-	if err != nil {
-		panic(err)
-	}
-	return engine
-}
-
-func (f *engineAIAdapter) Transcribe(context.Context, string) (string, error) {
-	return f.transcription, nil
-}
-
-func (f *engineAIAdapter) Summary(context.Context, string) (string, error) {
-	return f.summary, nil
-}
-
-func (f *engineVideoAdapter) FetchMetadata(context.Context, YouTubeRef) (*VideoMetadata, error) {
-	return f.metadata, nil
-}
-
-func (f *engineVideoAdapter) FetchCaptions(context.Context, YouTubeRef, []string, string) (*Transcript, error) {
-	f.transcriptCalls++
-	if f.transcriptErr != nil {
-		return nil, f.transcriptErr
-	}
-	return f.transcript, nil
-}
-
-func (f *engineVideoAdapter) DownloadAudio(context.Context, YouTubeRef) (string, error) {
-	f.audioCalls++
-	if f.audioPath == "" {
-		return "", errors.New("unexpected audio download")
-	}
-	if err := os.WriteFile(f.audioPath, []byte("audio"), 0o644); err != nil {
-		return "", err
-	}
-	return f.audioPath, nil
-}
-
-func TestEngineTranscriptWhisperOnlySkipsCaptionsAndCachesResult(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-
-	tempDir := t.TempDir()
-	video := &engineVideoAdapter{
-		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "caption transcript"},
-		audioPath:  tempDir + "/audio.mp3",
-	}
-	audio := NewAudio(&mockCommandRunner{}, tempDir, false)
-	ai := NewAI(&mockOpenAIClient{transcription: "whisper transcript"}, audio, "gpt-5.4-mini", WhisperLimit, 0, false, true)
-	engine := newTestEngine(
-		&Config{TranscriptsDir: tempDir, Quiet: true},
-		WithVideoAdapter(video),
-		WithAI(ai),
-	)
-	if err := SaveStructuredTranscript(&Transcript{
-		VideoID: "dQw4w9WgXcQ",
-		Source:  TranscriptSourceCaptions,
-		Text:    "cached caption transcript",
-	}, tempDir); err != nil {
-		t.Fatalf("SaveStructuredTranscript() error = %v", err)
-	}
-	got, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly})
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got.Source != TranscriptSourceWhisper || got.PlainText() != "whisper transcript" {
-		t.Fatalf("Transcript() = %+v, want cached Whisper transcript", got)
+	if got.Source != tldw.TranscriptSourceWhisper || got.PlainText() != "whisper transcript" {
+		t.Fatalf("Transcript() = %+v", got)
 	}
-	if video.transcriptCalls != 0 {
-		t.Fatalf("caption transcript calls = %d, want 0", video.transcriptCalls)
+	if fixture.video.captionCalls != 0 || fixture.video.audioCalls != 1 || fixture.ai.transcribeCalls != 1 {
+		t.Fatalf("calls: captions=%d audio=%d transcribe=%d", fixture.video.captionCalls, fixture.video.audioCalls, fixture.ai.transcribeCalls)
 	}
-	if video.audioCalls != 1 {
-		t.Fatalf("audio calls = %d, want 1", video.audioCalls)
+	if fixture.store.transcriptSaves != 1 || fixture.store.transcript.Source != tldw.TranscriptSourceWhisper {
+		t.Fatalf("saved transcript = %+v, saves = %d", fixture.store.transcript, fixture.store.transcriptSaves)
 	}
 }
 
-func TestEngineTranscriptRejectsUnknownPolicy(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-	video := &engineVideoAdapter{
-		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "captions"},
-	}
-	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true}, WithVideoAdapter(video))
+func TestEngineRejectsUnknownTranscriptPolicyBeforeUsingDependencies(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
 
-	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicy(99)})
-	if !errors.Is(err, ErrInvalidTranscriptPolicy) {
+	_, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{Policy: tldw.TranscriptPolicy(99)})
+	if !errors.Is(err, tldw.ErrInvalidTranscriptPolicy) {
 		t.Fatalf("Transcript() error = %v, want ErrInvalidTranscriptPolicy", err)
 	}
-	if video.transcriptCalls != 0 {
-		t.Fatalf("caption transcript calls = %d, want 0", video.transcriptCalls)
+	if fixture.video.metadataCalls != 0 || fixture.video.captionCalls != 0 || fixture.video.audioCalls != 0 {
+		t.Fatalf("video dependency was used: %+v", fixture.video)
 	}
 }
 
-func TestEngineTranscriptDoesNotUseWhisperForTimestampRequest(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-	video := &engineVideoAdapter{
-		metadata:  &VideoMetadata{HasCaptions: false},
-		audioPath: t.TempDir() + "/audio.mp3",
-	}
-	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true}, WithVideoAdapter(video))
+func TestEngineDoesNotUseWhisperForTimestampRequest(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.video.metadata = &tldw.VideoMetadata{HasCaptions: false}
 
-	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{
-		Policy: TranscriptPolicyCaptionsThenWhisper, RequireTimestamps: true,
+	_, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsThenWhisper, RequireTimestamps: true,
 	})
 	if !errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
 		t.Fatalf("Transcript() error = %v, want ErrTranscriptTimestampsUnavailable", err)
 	}
-	if video.audioCalls != 0 {
-		t.Fatalf("audio calls = %d, want 0", video.audioCalls)
+	if fixture.video.audioCalls != 0 || fixture.ai.transcribeCalls != 0 {
+		t.Fatalf("Whisper path used: audio=%d transcribe=%d", fixture.video.audioCalls, fixture.ai.transcribeCalls)
 	}
 }
 
-func TestEngineTranscriptCaptionsOnlyDoesNotUseCachedWhisper(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
+func TestEngineCaptionsOnlyRejectsCachedWhisper(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.store.transcript = &tldw.Transcript{VideoID: testVideoID, Source: tldw.TranscriptSourceWhisper, Text: "paid transcript"}
+	fixture.video.metadata = &tldw.VideoMetadata{HasCaptions: false}
 
-	tempDir := t.TempDir()
-	if err := SaveStructuredTranscript(&Transcript{
-		VideoID: "dQw4w9WgXcQ",
-		Source:  TranscriptSourceWhisper,
-		Text:    "paid transcript",
-	}, tempDir); err != nil {
-		t.Fatalf("SaveStructuredTranscript() error = %v", err)
-	}
-	if err := SaveTranscript("dQw4w9WgXcQ", "paid transcript", tempDir); err != nil {
-		t.Fatalf("SaveTranscript() error = %v", err)
-	}
-	engine := newTestEngine(
-		&Config{TranscriptsDir: tempDir, Quiet: true},
-		WithVideoAdapter(&engineVideoAdapter{metadata: &VideoMetadata{HasCaptions: false}}),
-	)
-
-	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
-	if !errors.Is(err, ErrCaptionsUnavailable) {
+	_, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsOnly,
+	})
+	if !errors.Is(err, tldw.ErrCaptionsUnavailable) {
 		t.Fatalf("Transcript() error = %v, want ErrCaptionsUnavailable", err)
 	}
 }
 
-func TestEngineTranscriptCaptionsOnlyDoesNotInventLegacyCacheSource(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
+func TestEngineCaptionsOnlyDoesNotInventUnknownCacheSource(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.store.transcript = &tldw.Transcript{VideoID: testVideoID, Text: "legacy transcript"}
+	fixture.video.captions = &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "verified captions"}
 
-	dir := t.TempDir()
-	if err := SaveTranscript("dQw4w9WgXcQ", "unknown legacy transcript", dir); err != nil {
-		t.Fatalf("SaveTranscript() error = %v", err)
-	}
-	video := &engineVideoAdapter{
-		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "verified captions"},
-	}
-	engine := newTestEngine(&Config{TranscriptsDir: dir, Quiet: true}, WithVideoAdapter(video))
-
-	got, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+	got, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsOnly,
+	})
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got.PlainText() != "verified captions" {
-		t.Fatalf("Transcript().PlainText() = %q, want verified captions", got.PlainText())
-	}
-	if video.transcriptCalls != 1 {
-		t.Fatalf("caption transcript calls = %d, want 1", video.transcriptCalls)
+	if got.PlainText() != "verified captions" || fixture.video.captionCalls != 1 {
+		t.Fatalf("Transcript() = %q, caption calls = %d", got.PlainText(), fixture.video.captionCalls)
 	}
 }
 
-func (f *engineVideoAdapter) FetchPlaylist(context.Context, YouTubeRef) (*PlaylistInfo, error) {
-	if f.playlist == nil {
-		return nil, errors.New("unexpected playlist lookup")
+func TestEngineCachesCaptionTranscript(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.video.captions = &tldw.Transcript{
+		Source:   tldw.TranscriptSourceCaptions,
+		Segments: []tldw.TranscriptSegment{{Start: 0, End: 2, Text: "hello world"}},
 	}
-	return f.playlist, nil
-}
+	request := tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly}
 
-func TestEngineTranscriptCachesCaptionResult(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-
-	video := &engineVideoAdapter{
-		metadata: &VideoMetadata{
-			HasCaptions:      true,
-			CaptionLanguages: []string{"en"},
-		},
-		transcript: &Transcript{
-			Source:   TranscriptSourceCaptions,
-			Segments: []TranscriptSegment{{Start: 0, End: 2, Text: "hello world"}},
-		},
-	}
-	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true}, WithVideoAdapter(video))
-
-	first, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+	first, err := fixture.engine.Transcript(context.Background(), videoRef(t), request)
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got := first.PlainText(); got != "hello world" {
-		t.Fatalf("Transcript().PlainText() = %q, want %q", got, "hello world")
-	}
-
-	video.transcriptErr = errors.New("source should not be called after caching")
-	second, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+	fixture.video.captionsErr = errors.New("caption source called after caching")
+	second, err := fixture.engine.Transcript(context.Background(), videoRef(t), request)
 	if err != nil {
 		t.Fatalf("cached Transcript() error = %v", err)
 	}
-	if got := second.PlainText(); got != "hello world" {
-		t.Fatalf("cached Transcript().PlainText() = %q, want %q", got, "hello world")
+	if first.PlainText() != "hello world" || second.PlainText() != "hello world" {
+		t.Fatalf("transcripts = %q, %q", first.PlainText(), second.PlainText())
 	}
-	if video.transcriptCalls != 1 {
-		t.Fatalf("video transcript calls = %d, want 1", video.transcriptCalls)
-	}
-}
-
-func TestEngineTranscriptDoesNotIgnoreCorruptCache(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-
-	dir := t.TempDir()
-	if err := os.WriteFile(dir+"/dQw4w9WgXcQ.transcript.json", []byte("not json"), 0o644); err != nil {
-		t.Fatalf("write corrupt transcript: %v", err)
-	}
-	video := &engineVideoAdapter{
-		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "network transcript"},
-	}
-	engine := newTestEngine(&Config{TranscriptsDir: dir, Quiet: true}, WithVideoAdapter(video))
-
-	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
-	if err == nil || !strings.Contains(err.Error(), "parsing structured transcript") {
-		t.Fatalf("Transcript() error = %v, want corrupt-cache error", err)
-	}
-	if video.transcriptCalls != 0 {
-		t.Fatalf("caption transcript calls = %d, want 0", video.transcriptCalls)
+	if fixture.video.captionCalls != 1 || fixture.store.transcriptSaves != 1 {
+		t.Fatalf("caption calls = %d, saves = %d", fixture.video.captionCalls, fixture.store.transcriptSaves)
 	}
 }
 
-func TestEngineSummarizeVideoReturnsUnrenderedMarkdown(t *testing.T) {
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
+func TestEngineReturnsUnexpectedStoreFailure(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.store.transcriptErr = errors.New("cache is corrupt")
+
+	_, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsOnly,
+	})
+	if err == nil || !errors.Is(err, fixture.store.transcriptErr) {
+		t.Fatalf("Transcript() error = %v, want cache failure", err)
+	}
+	if fixture.video.captionCalls != 0 {
+		t.Fatalf("caption calls = %d, want 0", fixture.video.captionCalls)
+	}
+}
+
+func TestEngineFallsBackToWhisperWhenCaptionsAreUnavailable(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.video.metadata = &tldw.VideoMetadata{HasCaptions: false}
+
+	got, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsThenWhisper,
+	})
 	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
+		t.Fatalf("Transcript() error = %v", err)
 	}
-
-	video := &engineVideoAdapter{
-		metadata:   &VideoMetadata{Title: "Example", HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "source transcript"},
+	if got.Source != tldw.TranscriptSourceWhisper || fixture.video.audioCalls != 1 || fixture.ai.transcribeCalls != 1 {
+		t.Fatalf("Transcript() = %+v, audio=%d transcribe=%d", got, fixture.video.audioCalls, fixture.ai.transcribeCalls)
 	}
-	engine := newTestEngine(
-		&Config{TranscriptsDir: t.TempDir(), Prompt: "Summarize: {{.Transcript}}", Quiet: true},
-		WithVideoAdapter(video),
-		WithAIAdapter(&engineAIAdapter{summary: "## Raw summary"}),
-	)
+}
 
-	summary, err := engine.SummarizeVideo(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+func TestEngineSummarizeVideoReturnsTransportNeutralMarkdown(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.video.metadata = &tldw.VideoMetadata{Title: "Example", HasCaptions: true, CaptionLanguages: []string{"en"}}
+	fixture.video.captions = &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "source transcript"}
+	fixture.ai.summary = "## Raw summary"
+
+	summary, err := fixture.engine.SummarizeVideo(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyCaptionsOnly,
+	})
 	if err != nil {
 		t.Fatalf("SummarizeVideo() error = %v", err)
 	}
-	if summary.Markdown != "## Raw summary" {
-		t.Fatalf("SummarizeVideo().Markdown = %q, want unrendered Markdown", summary.Markdown)
+	if summary.Markdown != "## Raw summary" || fixture.prompts.transcript != "source transcript" {
+		t.Fatalf("summary = %q, prompt transcript = %q", summary.Markdown, fixture.prompts.transcript)
 	}
 }
 
-func TestEngineSummarizePlaylistReturnsResultWithoutPrinting(t *testing.T) {
-	ref, err := ParseYouTubeArg("PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
-	if err != nil {
-		t.Fatalf("ParseYouTubeArg() error = %v", err)
-	}
+func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.video.metadata = &tldw.VideoMetadata{Title: "First", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}
+	fixture.video.captions = &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "playlist transcript"}
+	fixture.video.playlist = &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.YouTubeRef{videoRef(t)}}
+	fixture.ai.summary = "## Playlist summary"
 
-	videoRef, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-	video := &engineVideoAdapter{
-		metadata:   &VideoMetadata{Title: "First", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}},
-		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "playlist transcript"},
-		playlist: &PlaylistInfo{
-			Title:  "Examples",
-			Videos: []YouTubeRef{videoRef},
-		},
-	}
-	engine := newTestEngine(
-		&Config{TranscriptsDir: t.TempDir(), Prompt: "Summarize: {{.Transcript}}", Quiet: true},
-		WithVideoAdapter(video),
-		WithAIAdapter(&engineAIAdapter{summary: "## Playlist summary"}),
-	)
-
-	result, err := engine.CreatePlaylistSummary(context.Background(), ref, PlaylistSummaryRequest{
-		Transcript: TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly},
+	result, err := fixture.engine.CreatePlaylistSummary(context.Background(), playlistRef(t), tldw.PlaylistSummaryRequest{
+		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
 	})
 	if err != nil {
 		t.Fatalf("CreatePlaylistSummary() error = %v", err)

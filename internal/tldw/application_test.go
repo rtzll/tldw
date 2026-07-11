@@ -2,28 +2,15 @@ package tldw_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-type fixedPromptBuilder struct{}
-
-func (fixedPromptBuilder) CreatePrompt(string, *tldw.VideoMetadata) (string, error) {
-	return "prompt", nil
-}
-
-func TestNewEngineRejectsMissingRequiredDependencies(t *testing.T) {
+func TestNewEngineRejectsInvalidDependenciesAndConfig(t *testing.T) {
 	valid := tldw.Dependencies{
-		Video:   &engineVideoAdapter{},
-		Store:   store.NewFile(t.TempDir()),
-		AI:      &engineAIAdapter{},
-		Prompts: fixedPromptBuilder{},
+		Video: &videoStub{}, Store: &memoryStore{}, AI: &aiStub{}, Prompts: &promptStub{},
 	}
 	tests := map[string]func(*tldw.Dependencies){
 		"video":   func(dependencies *tldw.Dependencies) { dependencies.Video = nil },
@@ -36,122 +23,53 @@ func TestNewEngineRejectsMissingRequiredDependencies(t *testing.T) {
 			dependencies := valid
 			remove(&dependencies)
 			if _, err := tldw.NewEngine(tldw.Config{}, dependencies); err == nil {
-				t.Fatalf("NewEngine() accepted a missing %s dependency", name)
+				t.Fatalf("NewEngine() accepted missing %s dependency", name)
 			}
 		})
 	}
-
 	if _, err := tldw.NewEngine(tldw.Config{WhisperTimeout: -time.Second}, valid); err == nil {
 		t.Fatal("NewEngine() accepted a negative Whisper timeout")
 	}
 }
 
-type deadlineOpenAIClient struct {
-	sawDeadline bool
-}
+func TestEngineAppliesWhisperTimeout(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{WhisperTimeout: time.Minute})
 
-func (c *deadlineOpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
-	_, c.sawDeadline = ctx.Deadline()
-	return "hello", nil
-}
-
-func (c *deadlineOpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
-	return "", nil
-}
-
-func TestTranscribeAudioAppliesWhisperTimeout(t *testing.T) {
-	client := &deadlineOpenAIClient{}
-	tempDir := t.TempDir()
-	audio := NewAudio(&mockCommandRunner{}, tempDir, false)
-	ai := NewAI(client, audio, "gpt-5.4-mini", WhisperLimit, time.Hour, false, true)
-	ref, err := ParseVideoArg("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
-	}
-	engine := newTestEngine(
-		&Config{WhisperTimeout: time.Minute, TranscriptsDir: tempDir, Quiet: true},
-		WithAI(ai),
-		WithVideoAdapter(&engineVideoAdapter{audioPath: filepath.Join(tempDir, "audio.mp3")}),
-	)
-
-	if _, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly}); err != nil {
+	if _, err := fixture.engine.Transcript(context.Background(), videoRef(t), tldw.TranscriptRequest{
+		Policy: tldw.TranscriptPolicyWhisperOnly,
+	}); err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if !client.sawDeadline {
-		t.Fatal("expected Whisper transcription context to have a deadline")
+	if !fixture.ai.sawDeadline {
+		t.Fatal("AI Transcribe context had no deadline")
 	}
 }
 
-func TestParseVideoRefRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
-	baseDir := t.TempDir()
-	transcriptsDir := filepath.Join(baseDir, "transcripts")
-	if err := os.Mkdir(transcriptsDir, 0755); err != nil {
-		t.Fatalf("failed to create transcripts dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(baseDir, "outside.txt"), []byte("secret"), 0644); err != nil {
-		t.Fatalf("failed to create outside transcript: %v", err)
-	}
+func TestEngineVideoOnlyMethodsRejectPlaylist(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	playlist := playlistRef(t)
 
-	_, err := ParseVideoArg("../outside")
-	if err == nil {
-		t.Fatal("expected invalid input error")
+	if _, err := fixture.engine.Transcript(context.Background(), playlist, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly}); err == nil {
+		t.Fatal("Transcript() accepted a playlist")
 	}
-	if data, readErr := os.ReadFile(filepath.Join(baseDir, "outside.txt")); readErr != nil || string(data) != "secret" {
-		t.Fatal("invalid input affected the file outside the transcript directory")
+	if _, err := fixture.engine.MetadataFor(context.Background(), playlist); err == nil {
+		t.Fatal("MetadataFor() accepted a playlist")
 	}
 }
 
-func TestVideoOnlyPathsRejectPlaylists(t *testing.T) {
-	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true})
-	playlist, err := ParseYouTubeArg("https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
-	if err != nil {
-		t.Fatalf("ParseYouTubeArg() error = %v", err)
-	}
-	if _, err := engine.Transcript(context.Background(), playlist, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly}); err == nil {
-		t.Fatal("expected playlist transcript request to fail")
-	}
-	if _, err := engine.MetadataFor(context.Background(), playlist); err == nil {
-		t.Fatal("expected playlist metadata request to fail")
-	}
-}
+func TestEngineRefreshesIncompleteCachedMetadata(t *testing.T) {
+	fixture := newEngineFixture(t, tldw.Config{})
+	fixture.store.metadata = &tldw.VideoMetadata{Title: "Cached", HasCaptions: true, CaptionLanguages: []string{"en"}}
+	fixture.video.metadata = &tldw.VideoMetadata{Title: "Fresh", Channel: "AI Engineer", Creators: []string{"AI Engineer", "Matt Pocock"}}
 
-func TestMetadataRefreshesCachedMetadataWithMissingChannel(t *testing.T) {
-	transcriptsDir := t.TempDir()
-	youtube := NewYouTubeWithCache(transcriptsDir, t.TempDir(), false, true)
-	youtube.SetExecutor(&mockCommandRunner{output: []byte(`{"title":"Fresh Video","channel":"","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`)})
-	app := newTestEngine(&Config{TranscriptsDir: transcriptsDir, Quiet: true}, WithYouTube(youtube))
-
-	videoID := "dQw4w9WgXcQ"
-	if err := SaveMetadata(videoID, &VideoMetadata{Title: "Cached Video", HasCaptions: true, CaptionLanguages: []string{"en"}}, transcriptsDir); err != nil {
-		t.Fatalf("SaveMetadata() error = %v", err)
-	}
-
-	ref, err := ParseVideoArg("https://www.youtube.com/watch?v=" + videoID)
+	metadata, err := fixture.engine.MetadataFor(context.Background(), videoRef(t))
 	if err != nil {
-		t.Fatalf("ParseVideoArg() error = %v", err)
+		t.Fatalf("MetadataFor() error = %v", err)
 	}
-	metadata, err := app.MetadataFor(context.Background(), ref)
-	if err != nil {
-		t.Fatalf("Metadata() error = %v", err)
+	if metadata.Title != "Fresh" || metadata.Channel != "AI Engineer" || len(metadata.Creators) != 2 {
+		t.Fatalf("MetadataFor() = %+v", metadata)
 	}
-	if metadata.Title != "Fresh Video" {
-		t.Fatalf("Title = %q, want refreshed metadata", metadata.Title)
-	}
-	if metadata.Channel != "AI Engineer" {
-		t.Fatalf("Channel = %q, want fallback uploader", metadata.Channel)
-	}
-	if strings.Join(metadata.Creators, "|") != "AI Engineer|Matt Pocock" {
-		t.Fatalf("Creators = %#v, want both associated creators", metadata.Creators)
-	}
-
-	cached, err := LoadCachedMetadata(videoID, transcriptsDir)
-	if err != nil {
-		t.Fatalf("LoadCachedMetadata() error = %v", err)
-	}
-	if cached.Channel != "AI Engineer" {
-		t.Fatalf("cached Channel = %q, want refreshed channel", cached.Channel)
-	}
-	if strings.Join(cached.Creators, "|") != "AI Engineer|Matt Pocock" {
-		t.Fatalf("cached Creators = %#v, want both associated creators", cached.Creators)
+	if fixture.video.metadataCalls != 1 || fixture.store.metadataSaves != 1 || fixture.store.metadata != metadata {
+		t.Fatalf("metadata calls = %d, saves = %d, cached = %+v", fixture.video.metadataCalls, fixture.store.metadataSaves, fixture.store.metadata)
 	}
 }
