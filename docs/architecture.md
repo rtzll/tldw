@@ -15,7 +15,13 @@ main.go
 internal/
 ├── tldw/                   Domain model and application workflows
 ├── store/                  Filesystem transcript/metadata adapter
-├── ytdlp/                  YouTube metadata, captions, playlists, and audio
+├── ytdlp/                  YouTube adapter
+│   ├── client.go           Construction and application-facing interface
+│   ├── metadata.go         Video metadata and caption-language discovery
+│   ├── captions.go         Caption selection, download, and cache lookup
+│   ├── srt.go              Deterministic subtitle parsing and normalization
+│   ├── audio.go            Audio download and cache placement
+│   └── playlist.go         Playlist decoding and video-reference validation
 ├── openai/                 OpenAI/Whisper and ffmpeg audio preparation
 ├── mcp/                    MCP tools and HTTP/stdio transports
 ├── process/                External command execution and error reporting
@@ -57,6 +63,9 @@ logging. [cmd/build.go](../cmd/build.go) supplies the concrete implementations.
 
 The same `Engine.Transcript` workflow serves CLI transcription, summaries,
 playlists, and MCP tools. This is the central behavior seam.
+
+The yt-dlp adapter keeps validated `YouTubeRef` values through its internal
+capability paths; raw URLs are produced only when constructing yt-dlp commands.
 
 ## Persistence
 
