@@ -218,6 +218,34 @@ func TestEngineTranscriptCaptionsOnlyDoesNotUseCachedWhisper(t *testing.T) {
 	}
 }
 
+func TestEngineTranscriptCaptionsOnlyDoesNotInventLegacyCacheSource(t *testing.T) {
+	ref, err := ParseVideoArg("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := SaveTranscript("dQw4w9WgXcQ", "unknown legacy transcript", dir); err != nil {
+		t.Fatalf("SaveTranscript() error = %v", err)
+	}
+	video := &engineVideoAdapter{
+		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
+		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "verified captions"},
+	}
+	engine := newTestEngine(&Config{TranscriptsDir: dir, Quiet: true}, WithVideoAdapter(video))
+
+	got, err := engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+	if err != nil {
+		t.Fatalf("Transcript() error = %v", err)
+	}
+	if got.PlainText() != "verified captions" {
+		t.Fatalf("Transcript().PlainText() = %q, want verified captions", got.PlainText())
+	}
+	if video.transcriptCalls != 1 {
+		t.Fatalf("caption transcript calls = %d, want 1", video.transcriptCalls)
+	}
+}
+
 func (f *engineVideoAdapter) FetchPlaylist(context.Context, YouTubeRef) (*PlaylistInfo, error) {
 	if f.playlist == nil {
 		return nil, errors.New("unexpected playlist lookup")

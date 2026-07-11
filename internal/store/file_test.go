@@ -29,14 +29,6 @@ func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	if got := loaded.PlainText(); got != "Hello world" {
 		t.Fatalf("LoadTranscript().PlainText() = %q, want Hello world", got)
 	}
-	plain, err := adapter.LoadPlainTranscript(transcript.VideoID)
-	if err != nil {
-		t.Fatalf("LoadPlainTranscript() error = %v", err)
-	}
-	if plain != "Hello world" {
-		t.Fatalf("LoadPlainTranscript() = %q, want Hello world", plain)
-	}
-
 	metadata := &tldw.VideoMetadata{Title: "Example", Channel: "Channel"}
 	if err := adapter.SaveMetadata(transcript.VideoID, metadata); err != nil {
 		t.Fatalf("SaveMetadata() error = %v", err)
@@ -47,6 +39,24 @@ func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	}
 	if loadedMetadata.Title != metadata.Title {
 		t.Fatalf("LoadMetadata() = %+v, want title", loadedMetadata)
+	}
+}
+
+func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.SavePlainTranscript("dQw4w9WgXcQ", "legacy transcript", dir); err != nil {
+		t.Fatalf("SavePlainTranscript() error = %v", err)
+	}
+
+	transcript, err := store.NewFile(dir).LoadTranscript("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("LoadTranscript() error = %v", err)
+	}
+	if transcript.PlainText() != "legacy transcript" {
+		t.Fatalf("LoadTranscript().PlainText() = %q, want legacy transcript", transcript.PlainText())
+	}
+	if transcript.Source != "" {
+		t.Fatalf("LoadTranscript().Source = %q, want unknown source", transcript.Source)
 	}
 }
 
@@ -75,8 +85,8 @@ func TestFileIdentifiesMissingEntries(t *testing.T) {
 
 func TestFileRejectsVideoIDPathTraversal(t *testing.T) {
 	adapter := store.NewFile(t.TempDir())
-	if _, err := adapter.LoadPlainTranscript("../outside"); err == nil {
-		t.Fatal("LoadPlainTranscript() accepted an invalid video ID")
+	if _, err := adapter.LoadTranscript("../outside"); err == nil {
+		t.Fatal("LoadTranscript() accepted an invalid video ID")
 	}
 	if err := adapter.SaveTranscript(&tldw.Transcript{VideoID: "../outside", Text: "secret"}); err == nil {
 		t.Fatal("SaveTranscript() accepted an invalid video ID")

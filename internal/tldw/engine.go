@@ -61,7 +61,6 @@ type AIAdapter interface {
 // VideoStore is the persistence seam used by application workflows.
 type VideoStore interface {
 	LoadTranscript(videoID string) (*Transcript, error)
-	LoadPlainTranscript(videoID string) (string, error)
 	SaveTranscript(transcript *Transcript) error
 	LoadMetadata(videoID string) (*VideoMetadata, error)
 	SaveMetadata(videoID string, metadata *VideoMetadata) error
@@ -129,20 +128,12 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
-	structuredCacheFound := false
 	if transcript, err := app.store.LoadTranscript(ref.ID); err == nil {
-		structuredCacheFound = true
-		if cachedTranscriptAllowed(transcript.Source, request.Policy) {
+		if cachedTranscriptAllowed(transcript, request) {
 			return transcript, nil
 		}
 	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
 		return nil, fmt.Errorf("loading cached transcript: %w", err)
-	}
-
-	if !structuredCacheFound && request.Policy != TranscriptPolicyWhisperOnly && !request.RequireTimestamps {
-		if text, err := app.store.LoadPlainTranscript(ref.ID); err == nil {
-			return &Transcript{VideoID: ref.ID, Source: TranscriptSourceCaptions, Text: string(text)}, nil
-		}
 	}
 	if request.Policy == TranscriptPolicyWhisperOnly {
 		return app.transcribeVideo(ctx, ref)
@@ -180,12 +171,15 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	return transcript, nil
 }
 
-func cachedTranscriptAllowed(source TranscriptSource, policy TranscriptPolicy) bool {
-	switch policy {
+func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) bool {
+	if transcript == nil || (request.RequireTimestamps && !transcript.HasTimestamps()) {
+		return false
+	}
+	switch request.Policy {
 	case TranscriptPolicyCaptionsOnly:
-		return source == TranscriptSourceCaptions
+		return transcript.Source == TranscriptSourceCaptions
 	case TranscriptPolicyWhisperOnly:
-		return source == TranscriptSourceWhisper
+		return transcript.Source == TranscriptSourceWhisper
 	default:
 		return true
 	}

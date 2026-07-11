@@ -3,6 +3,7 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,22 +30,15 @@ func NewFile(dir string) *File {
 }
 
 func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
-	return LoadTranscript(videoID, s.dir)
-}
-
-func (s *File) LoadPlainTranscript(videoID string) (string, error) {
-	path, err := cachePath(videoID, s.dir, ".txt")
+	transcript, err := LoadTranscript(videoID, s.dir)
+	if err == nil || !errors.Is(err, tldw.ErrStoreNotFound) {
+		return transcript, err
+	}
+	text, err := loadPlainTranscript(videoID, s.dir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Clean(path))
-	if os.IsNotExist(err) {
-		return "", fmt.Errorf("%w: transcript %s", tldw.ErrStoreNotFound, videoID)
-	}
-	if err != nil {
-		return "", fmt.Errorf("reading transcript: %w", err)
-	}
-	return string(data), nil
+	return &tldw.Transcript{VideoID: videoID, Text: text}, nil
 }
 
 func (s *File) SaveTranscript(transcript *tldw.Transcript) error {
@@ -88,6 +82,21 @@ func SavePlainTranscript(videoID, transcript, dir string) error {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
 	return nil
+}
+
+func loadPlainTranscript(videoID, dir string) (string, error) {
+	path, err := cachePath(videoID, dir, ".txt")
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Clean(path))
+	if os.IsNotExist(err) {
+		return "", fmt.Errorf("%w: transcript %s", tldw.ErrStoreNotFound, videoID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading legacy transcript: %w", err)
+	}
+	return string(data), nil
 }
 
 func SaveTranscript(transcript *tldw.Transcript, dir string) error {
