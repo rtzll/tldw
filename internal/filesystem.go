@@ -26,17 +26,10 @@ func CleanupTempDir(tempDir string) error {
 	return nil
 }
 
-func FileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
-}
-
 func EnsureDirs(dirs ...string) error {
 	for _, dir := range dirs {
-		if !FileExists(dir) {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("creating directory %q: %w", dir, err)
 		}
 	}
 	return nil

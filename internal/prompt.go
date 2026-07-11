@@ -34,9 +34,12 @@ func NewPromptManager(configDir, promptSetting string) *PromptManager {
 
 	// Configure prompt based on config setting.
 	if promptSetting != "" {
-		if IsLikelyFilePath(promptSetting) && FileExists(promptSetting) {
-			pm.promptFile = promptSetting
-		} else {
+		if IsLikelyFilePath(promptSetting) {
+			if _, err := os.Stat(promptSetting); err == nil {
+				pm.promptFile = promptSetting
+			}
+		}
+		if pm.promptFile == "" {
 			pm.promptString = promptSetting
 		}
 	}

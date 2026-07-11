@@ -28,26 +28,6 @@ func TestEnsureDirs(t *testing.T) {
 	}
 }
 
-func TestFileExists(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Existing file
-	existing := filepath.Join(tmpDir, "exists.txt")
-	if err := os.WriteFile(existing, []byte("hello"), 0644); err != nil {
-		t.Fatalf("failed to create test file: %v", err)
-	}
-
-	if !FileExists(existing) {
-		t.Errorf("FileExists(%q) = false, want true", existing)
-	}
-
-	// Non-existing file
-	nonExisting := filepath.Join(tmpDir, "does-not-exist.txt")
-	if FileExists(nonExisting) {
-		t.Errorf("FileExists(%q) = true, want false", nonExisting)
-	}
-}
-
 func TestCleanupTempDir(t *testing.T) {
 	t.Run("cleans up files", func(t *testing.T) {
 		tmpDir := t.TempDir()

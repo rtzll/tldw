@@ -44,9 +44,10 @@ const WhisperLimit int64 = 25 << 20
 func ensureDefaultFile(configDir, embedFilename, description string) error {
 	filePath := filepath.Join(configDir, embedFilename)
 
-	// Check if file already exists
-	if FileExists(filePath) {
+	if _, err := os.Stat(filePath); err == nil {
 		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("checking default %s: %w", description, err)
 	}
 
 	// Make sure the config directory exists
