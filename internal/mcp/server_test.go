@@ -32,8 +32,15 @@ const WhisperLimit = legacy.WhisperLimit
 
 var SaveStructuredTranscript = store.SaveTranscript
 var NewAudio = openaiadapter.NewAudio
-var NewAI = openaiadapter.NewAI
 var NewYouTubeWithCache = ytdlpadapter.NewYouTubeWithCache
+
+func NewAI(client openaiadapter.OpenAIClientInterface, audio *openaiadapter.Audio, model string, limit int64, timeout time.Duration, verbose, quiet bool) *openaiadapter.AI {
+	ai, err := openaiadapter.NewAI(client, audio, openaiadapter.Config{Model: model, WhisperLimit: limit, Timeout: timeout, Verbose: verbose, Quiet: quiet})
+	if err != nil {
+		panic(err)
+	}
+	return ai
+}
 
 type engineOption func(*tldw.Dependencies)
 
@@ -48,10 +55,20 @@ func WithAI(ai *openaiadapter.AI) engineOption {
 func newTestEngine(config *Config, options ...engineOption) *Engine {
 	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, false, true)
 	audio := openaiadapter.NewAudio(&mockCommandRunner{}, config.TempDir, false)
+	model := config.TLDRModel
+	if model == "" {
+		model = "gpt-5.4-mini"
+	}
+	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
+		Model: model, WhisperLimit: WhisperLimit, Timeout: config.SummaryTimeout, Quiet: true,
+	})
+	if err != nil {
+		panic(err)
+	}
 	dependencies := tldw.Dependencies{
 		Video:   youtube,
 		Store:   store.NewFile(config.TranscriptsDir),
-		AI:      openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, false, true),
+		AI:      ai,
 		Prompts: legacy.NewPromptManager(config.ConfigDir, config.Prompt),
 	}
 	for _, option := range options {

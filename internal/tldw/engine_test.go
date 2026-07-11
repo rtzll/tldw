@@ -70,7 +70,11 @@ func NewAudio(runner process.Runner, dir string, verbose bool) *openaiadapter.Au
 	return openaiadapter.NewAudio(runner, dir, verbose)
 }
 func NewAI(client openaiadapter.OpenAIClientInterface, audio *openaiadapter.Audio, model string, limit int64, timeout time.Duration, verbose, quiet bool) *openaiadapter.AI {
-	return openaiadapter.NewAI(client, audio, model, limit, timeout, verbose, quiet)
+	ai, err := openaiadapter.NewAI(client, audio, openaiadapter.Config{Model: model, WhisperLimit: limit, Timeout: timeout, Verbose: verbose, Quiet: quiet})
+	if err != nil {
+		panic(err)
+	}
+	return ai
 }
 
 type mockCommandRunner struct {
@@ -115,10 +119,20 @@ type engineAIAdapter struct {
 func newTestEngine(config *Config, options ...EngineOption) *Engine {
 	runner := &process.CommandRunner{}
 	audio := NewAudio(runner, config.TempDir, config.Verbose)
+	model := config.TLDRModel
+	if model == "" {
+		model = "gpt-5.4-mini"
+	}
+	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
+		Model: model, WhisperLimit: WhisperLimit, Timeout: config.SummaryTimeout, Verbose: config.Verbose, Quiet: config.Quiet,
+	})
+	if err != nil {
+		panic(err)
+	}
 	dependencies := tldw.Dependencies{
 		Video:   ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet),
 		Store:   store.NewFile(config.TranscriptsDir),
-		AI:      openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet),
+		AI:      ai,
 		Prompts: legacy.NewPromptManager(config.ConfigDir, config.Prompt),
 	}
 	for _, option := range options {

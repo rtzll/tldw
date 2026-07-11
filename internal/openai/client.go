@@ -3,7 +3,6 @@ package openai
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"sync"
@@ -13,11 +12,6 @@ import (
 	"github.com/openai/openai-go/v3/option"
 	"github.com/rtzll/tldw/internal/tldw"
 )
-
-type ProgressBar interface {
-	Set(current int)
-	Finish()
-}
 
 type discardLogSink struct{}
 
@@ -86,33 +80,52 @@ type AI struct {
 	log          tldw.LogSink
 }
 
+// Config contains the validated operational settings for AI requests.
+type Config struct {
+	Model        string
+	WhisperLimit int64
+	Timeout      time.Duration
+	Verbose      bool
+	Quiet        bool
+}
+
 // NewAI creates a new AI processor
-func NewAI(client OpenAIClientInterface, audio *Audio, model string, whisperLimit int64, timeout time.Duration, verbose bool, quiet bool) *AI {
+func NewAI(client OpenAIClientInterface, audio *Audio, config Config) (*AI, error) {
+	if client == nil {
+		return nil, fmt.Errorf("OpenAI client is required")
+	}
+	return newAI(client, "", audio, config)
+}
+
+// NewAIWithKey creates a new AI processor with lazy client initialization.
+func NewAIWithKey(apiKey string, audio *Audio, config Config) (*AI, error) {
+	return newAI(nil, apiKey, audio, config)
+}
+
+func newAI(client OpenAIClientInterface, apiKey string, audio *Audio, config Config) (*AI, error) {
+	if audio == nil {
+		return nil, fmt.Errorf("audio processor is required")
+	}
+	if strings.TrimSpace(config.Model) == "" {
+		return nil, fmt.Errorf("model is required")
+	}
+	if config.WhisperLimit <= 0 {
+		return nil, fmt.Errorf("whisper limit must be positive")
+	}
+	if config.Timeout < 0 {
+		return nil, fmt.Errorf("timeout must not be negative")
+	}
 	return &AI{
 		client:       client,
 		audio:        audio,
-		model:        model,
-		whisperLimit: whisperLimit,
-		timeout:      timeout,
-		verbose:      verbose,
-		quiet:        quiet,
-		log:          discardLogSink{},
-	}
-}
-
-// NewAIWithKey creates a new AI processor with lazy client initialization
-func NewAIWithKey(apiKey string, audio *Audio, model string, whisperLimit int64, timeout time.Duration, verbose bool, quiet bool) *AI {
-	return &AI{
-		client:       nil,
-		audio:        audio,
-		model:        model,
-		whisperLimit: whisperLimit,
-		timeout:      timeout,
-		verbose:      verbose,
-		quiet:        quiet,
+		model:        config.Model,
+		whisperLimit: config.WhisperLimit,
+		timeout:      config.Timeout,
+		verbose:      config.Verbose,
+		quiet:        config.Quiet,
 		apiKey:       apiKey,
 		log:          discardLogSink{},
-	}
+	}, nil
 }
 
 func (ai *AI) SetLogSink(log tldw.LogSink) {
@@ -144,12 +157,6 @@ func validateAPIKey(apiKey string) error {
 
 // Transcribe transcribes audio using OpenAI's Whisper API
 func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) {
-	return ai.TranscribeWithProgress(ctx, audioFile, nil)
-}
-
-// TranscribeWithProgress transcribes audio with optional progress bar
-// The progress bar should be created by the caller and passed in
-func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, progressBar ProgressBar) (string, error) {
 	if err := ai.ensureClient(); err != nil {
 		return "", err
 	}
@@ -163,8 +170,10 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, prog
 		return "", fmt.Errorf("getting audio file info: %w", err)
 	}
 
-	fileSize := info.Size()
-	numChunks := int(math.Ceil(float64(fileSize) / float64(ai.whisperLimit)))
+	numChunks := int(info.Size() / ai.whisperLimit)
+	if info.Size()%ai.whisperLimit != 0 {
+		numChunks++
+	}
 
 	var chunks []string
 	if numChunks > 1 {
@@ -176,40 +185,26 @@ func (ai *AI) TranscribeWithProgress(ctx context.Context, audioFile string, prog
 		chunks = []string{audioFile}
 	}
 
-	defer func() {
-		cleanupFiles(chunks...)
-		if len(chunks) > 1 {
-			cleanupFiles(audioFile)
-		}
-	}()
+	if len(chunks) > 1 {
+		defer cleanupFiles(chunks...)
+	}
 
-	transcript, err := ai.processAudioChunksWithProgress(ctx, chunks, progressBar)
+	transcript, err := ai.processAudioChunks(ctx, chunks)
 	if err != nil {
 		return "", fmt.Errorf("transcribing audio: %w", err)
 	}
 	return transcript, nil
 }
 
-// processAudioChunks transcribes audio chunks sequentially
-// processAudioChunksWithProgress transcribes audio chunks with optional progress bar
-// NOTE: tried to do it concurrently but one chunk returned broken transcript
-// not use if issue with the invocation of the API or just a glitch
-// trying it sequentially worked
-func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []string, progressBar ProgressBar) (string, error) {
+func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
 	numChunks := len(chunks)
 
 	if ai.verbose && !ai.quiet {
 		ai.log.Printf("Transcribing chunks (%d)\n", numChunks)
 	}
 
-	// Progress bar should be created by UIManager and passed in
-	// This method should not create UI elements directly
-
 	var sb strings.Builder
 	for i, chunkPath := range chunks {
-		if progressBar != nil {
-			progressBar.Set(i)
-		}
 		file, err := os.Open(chunkPath)
 		if err != nil {
 			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)
@@ -233,11 +228,6 @@ func (ai *AI) processAudioChunksWithProgress(ctx context.Context, chunks []strin
 		}
 	}
 
-	// Complete progress bar
-	if progressBar != nil {
-		progressBar.Finish()
-	}
-
 	return sb.String(), nil
 }
 
@@ -247,8 +237,11 @@ func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
 		return "", err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, ai.timeout)
-	defer cancel()
+	if ai.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ai.timeout)
+		defer cancel()
+	}
 
 	content, err := ai.client.CreateChatCompletion(ctx, ai.model, prompt)
 	if err != nil {
@@ -256,77 +249,4 @@ func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
 	}
 
 	return content, nil
-}
-
-// TranscribeWithSharedProgress transcribes audio with shared progress bar within specified range
-func (ai *AI) TranscribeWithSharedProgress(ctx context.Context, audioFile string, bar ProgressBar, startPercent, endPercent int) (string, error) {
-	if err := ai.ensureClient(); err != nil {
-		return "", err
-	}
-
-	info, err := os.Stat(audioFile)
-	if err != nil {
-		return "", fmt.Errorf("getting audio file info: %w", err)
-	}
-
-	fileSize := info.Size()
-	numChunks := int(math.Ceil(float64(fileSize) / float64(ai.whisperLimit)))
-
-	var chunks []string
-	if numChunks > 1 {
-		chunks, err = ai.audio.Split(ctx, audioFile, numChunks)
-		if err != nil {
-			return "", fmt.Errorf("splitting audio: %w", err)
-		}
-	} else {
-		chunks = []string{audioFile}
-	}
-
-	defer func() {
-		cleanupFiles(chunks...)
-		if len(chunks) > 1 {
-			cleanupFiles(audioFile)
-		}
-	}()
-
-	transcript, err := ai.processAudioChunksWithSharedProgress(ctx, chunks, bar, startPercent, endPercent)
-	if err != nil {
-		return "", fmt.Errorf("transcribing audio: %w", err)
-	}
-	return transcript, nil
-}
-
-// processAudioChunksWithSharedProgress transcribes audio chunks with shared progress bar within range
-func (ai *AI) processAudioChunksWithSharedProgress(ctx context.Context, chunks []string, bar ProgressBar, startPercent, endPercent int) (string, error) {
-	numChunks := len(chunks)
-	progressRange := endPercent - startPercent
-
-	var sb strings.Builder
-	for i, chunkPath := range chunks {
-		// Calculate progress within our allocated range
-		chunkProgress := startPercent + (i * progressRange / numChunks)
-		bar.Set(chunkProgress)
-
-		file, err := os.Open(chunkPath)
-		if err != nil {
-			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)
-		}
-
-		text, err := ai.client.CreateTranscription(ctx, file)
-		if closeErr := file.Close(); closeErr != nil {
-			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
-		}
-		if err != nil {
-			return "", fmt.Errorf("transcribing chunk %d: %w", i+1, err)
-		}
-
-		sb.WriteString(text)
-		if i < numChunks-1 {
-			sb.WriteString("\n")
-		}
-	}
-
-	// Set final progress to end percent
-	bar.Set(endPercent)
-	return sb.String(), nil
 }

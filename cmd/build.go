@@ -37,7 +37,13 @@ func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error
 	runner := &process.CommandRunner{}
 	audio := openaiadapter.NewAudio(runner, config.TempDir, config.Verbose)
 	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
-	ai := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, internal.WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)
+	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
+		Model: config.TLDRModel, WhisperLimit: internal.WhisperLimit, Timeout: config.SummaryTimeout,
+		Verbose: config.Verbose, Quiet: config.Quiet,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configuring OpenAI adapter: %w", err)
+	}
 	youtube.SetLogSink(log)
 	ai.SetLogSink(log)
 	return tldw.NewEngine(
