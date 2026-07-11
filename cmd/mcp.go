@@ -81,13 +81,11 @@ This command will:
 	},
 }
 
-// ClaudeDesktopConfig represents the claude_desktop_config.json structure
-type ClaudeDesktopConfig struct {
-	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
+type claudeDesktopConfig struct {
+	MCPServers map[string]mcpServerConfig `json:"mcpServers"`
 }
 
-// MCPServerConfig represents an individual MCP server configuration
-type MCPServerConfig struct {
+type mcpServerConfig struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
@@ -122,7 +120,7 @@ func setupClaudeDesktop() error {
 	}
 
 	// Read existing config
-	var config ClaudeDesktopConfig
+	var config claudeDesktopConfig
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("reading existing config: %w", err)
@@ -134,7 +132,7 @@ func setupClaudeDesktop() error {
 
 	// Initialize mcpServers map if it doesn't exist
 	if config.MCPServers == nil {
-		config.MCPServers = make(map[string]MCPServerConfig)
+		config.MCPServers = make(map[string]mcpServerConfig)
 	}
 
 	// Get XDG base paths so internal config can add tldw
@@ -146,7 +144,7 @@ func setupClaudeDesktop() error {
 	}
 
 	// Add/update TL;DW MCP server configuration
-	config.MCPServers["tldw"] = MCPServerConfig{
+	config.MCPServers["tldw"] = mcpServerConfig{
 		Command: execPath,
 		Args:    []string{"mcp"},
 		Env:     paths,
