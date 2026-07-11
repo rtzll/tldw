@@ -366,8 +366,3 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		return fmt.Errorf("invalid MCP transport %q; expected stdio or http", transport)
 	}
 }
-
-// GetServer returns the underlying MCP server for advanced configuration
-func (s *MCPServer) GetServer() *mcp.Server {
-	return s.mcpServer
-}

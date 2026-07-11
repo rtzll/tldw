@@ -476,7 +476,7 @@ func connectTestMCPClient(t *testing.T, server *MCPServer) (context.Context, *mc
 	t.Cleanup(cancel)
 
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.GetServer().Connect(ctx, serverTransport, nil)
+	serverSession, err := server.mcpServer.Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("server Connect() error = %v", err)
 	}
