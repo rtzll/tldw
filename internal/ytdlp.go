@@ -148,13 +148,13 @@ func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetad
 	}
 
 	languages := extractCaptionLanguages(raw.Subtitles, raw.AutomaticCaptions)
-	raw.VideoMetadata.HasCaptions = len(languages) > 0
-	raw.VideoMetadata.CaptionLanguages = languages
-	raw.VideoMetadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
-	raw.VideoMetadata.Channel = bestMetadataChannel(raw.VideoMetadata.Channel, raw.Uploader, raw.Creator, raw.VideoMetadata.Creators)
-	raw.VideoMetadata.ChannelURL = bestMetadataChannelURL(raw.VideoMetadata.ChannelURL, raw.UploaderURL)
-	raw.VideoMetadata.PublishedAt = bestMetadataPublishedAt(raw.VideoMetadata.PublishedAt, raw.UploadDate)
 	metadata := raw.VideoMetadata
+	metadata.HasCaptions = len(languages) > 0
+	metadata.CaptionLanguages = languages
+	metadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
+	metadata.Channel = bestMetadataChannel(metadata.Channel, raw.Uploader, raw.Creator, metadata.Creators)
+	metadata.ChannelURL = bestMetadataChannelURL(metadata.ChannelURL, raw.UploaderURL)
+	metadata.PublishedAt = bestMetadataPublishedAt(metadata.PublishedAt, raw.UploadDate)
 
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Metadata extraction completed\n")
@@ -1072,16 +1072,6 @@ func (yt *YouTube) runWithProgress(ctx context.Context, args []string, progressB
 	return err
 }
 
-// parseProgress parses yt-dlp progress output and updates the progress bar
-func (yt *YouTube) parseProgress(pipe io.ReadCloser, progressBar ProgressBar) {
-	defer pipe.Close()
-	scanner := bufio.NewScanner(pipe)
-
-	for scanner.Scan() {
-		yt.updateProgress(scanner.Text(), progressBar)
-	}
-}
-
 func (yt *YouTube) updateProgress(line string, progressBar ProgressBar) {
 	if progressBar != nil {
 		applyYTProgress(parseYTProgress(line), progressBar, progressWindow{start: 0, end: 100})
@@ -1139,7 +1129,7 @@ func (yt *YouTube) runWithSharedProgress(ctx context.Context, args []string, bar
 
 // parseSharedProgress parses yt-dlp progress output and updates shared progress bar within range
 func (yt *YouTube) parseSharedProgress(pipe io.ReadCloser, bar ProgressBar, startPercent, endPercent int) {
-	defer pipe.Close()
+	defer func() { _ = pipe.Close() }()
 	scanner := bufio.NewScanner(pipe)
 
 	for scanner.Scan() {

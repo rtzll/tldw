@@ -114,7 +114,7 @@ type VideoTranscript struct {
 func (app *Engine) buildPlaylistTranscript(playlistTitle string, videos []VideoTranscript) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Playlist: %s\n\n", playlistTitle))
+	fmt.Fprintf(&sb, "Playlist: %s\n\n", playlistTitle)
 
 	for i, video := range videos {
 		// Format duration as minutes:seconds
@@ -122,10 +122,10 @@ func (app *Engine) buildPlaylistTranscript(playlistTitle string, videos []VideoT
 		seconds := int(video.Duration) % 60
 		duration := fmt.Sprintf("%d:%02d", minutes, seconds)
 
-		sb.WriteString(fmt.Sprintf("Video %d of %d: %s\n", i+1, len(videos), video.Title))
-		sb.WriteString(fmt.Sprintf("Duration: %s | Channel: %s\n", duration, video.Channel))
+		fmt.Fprintf(&sb, "Video %d of %d: %s\n", i+1, len(videos), video.Title)
+		fmt.Fprintf(&sb, "Duration: %s | Channel: %s\n", duration, video.Channel)
 		if video.Description != "" {
-			sb.WriteString(fmt.Sprintf("Description: %s\n", video.Description))
+			fmt.Fprintf(&sb, "Description: %s\n", video.Description)
 		}
 		sb.WriteString(video.Transcript)
 

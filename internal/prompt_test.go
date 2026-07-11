@@ -16,7 +16,7 @@ func TestIsLikelyFilePath(t *testing.T) {
 		{"windows path", `C:\Users\test\prompt.txt`, true},
 		{"txt extension", "customprompt.txt", true},
 		{"md extension", "customprompt.md", true},
-		{"long string no spaces", "a"+string(make([]byte, 210)), false},
+		{"long string no spaces", "a" + string(make([]byte, 210)), false},
 		{"with spaces", "This is a prompt string", false},
 		{"with newline", "Line1\nLine2", false},
 		{"short no indicators", "prompt", true},
@@ -110,12 +110,12 @@ func TestPromptManagerBuildPromptFromTemplate(t *testing.T) {
 	pm := &PromptManager{}
 
 	tests := []struct {
-		name     string
-		template string
+		name       string
+		template   string
 		transcript string
-		metadata *VideoMetadata
-		want     string
-		wantErr  bool
+		metadata   *VideoMetadata
+		want       string
+		wantErr    bool
 	}{
 		{
 			name:       "simple template",

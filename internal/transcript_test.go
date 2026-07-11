@@ -151,7 +151,7 @@ func TestTranscriptRender(t *testing.T) {
 	}
 }
 
-func TestFormatTranscriptTimestamp(t *testing.T) {
+func TestTranscriptTimestampRendering(t *testing.T) {
 	tests := []struct {
 		name    string
 		seconds float64
@@ -168,8 +168,14 @@ func TestFormatTranscriptTimestamp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatTranscriptTimestamp(tt.seconds); got != tt.want {
-				t.Errorf("formatTranscriptTimestamp(%v) = %q, want %q", tt.seconds, got, tt.want)
+			transcript := &Transcript{Segments: []TranscriptSegment{{Start: tt.seconds, Text: "text"}}}
+			got, err := transcript.Render(TranscriptRenderFormatTimestamps)
+			if err != nil {
+				t.Fatalf("Transcript.Render() error = %v", err)
+			}
+			want := "[" + tt.want + "] text"
+			if got != want {
+				t.Errorf("Transcript.Render() = %q, want %q", got, want)
 			}
 		})
 	}

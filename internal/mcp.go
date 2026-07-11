@@ -185,36 +185,32 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 		Chapters:         make([]mcpChapterOutput, 0, len(metadata.Chapters)),
 	}
 	for _, ch := range metadata.Chapters {
-		output.Chapters = append(output.Chapters, mcpChapterOutput{
-			StartTime: ch.StartTime,
-			EndTime:   ch.EndTime,
-			Title:     ch.Title,
-		})
+		output.Chapters = append(output.Chapters, mcpChapterOutput(ch))
 	}
 
 	// Format metadata as text
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("Title: %s\n", metadata.Title))
-	buf.WriteString(fmt.Sprintf("Channel: %s\n", metadata.Channel))
+	fmt.Fprintf(&buf, "Title: %s\n", metadata.Title)
+	fmt.Fprintf(&buf, "Channel: %s\n", metadata.Channel)
 	if len(metadata.Creators) > 0 {
-		buf.WriteString(fmt.Sprintf("Creators: %s\n", strings.Join(metadata.Creators, ", ")))
+		fmt.Fprintf(&buf, "Creators: %s\n", strings.Join(metadata.Creators, ", "))
 	}
-	buf.WriteString(fmt.Sprintf("Duration: %.0f seconds\n", metadata.Duration))
-	buf.WriteString(fmt.Sprintf("Description: %s\n", metadata.Description))
+	fmt.Fprintf(&buf, "Duration: %.0f seconds\n", metadata.Duration)
+	fmt.Fprintf(&buf, "Description: %s\n", metadata.Description)
 
 	// Caption availability information
-	buf.WriteString(fmt.Sprintf("Has Captions: %t\n", metadata.HasCaptions))
+	fmt.Fprintf(&buf, "Has Captions: %t\n", metadata.HasCaptions)
 
 	if len(metadata.Tags) > 0 {
-		buf.WriteString(fmt.Sprintf("Tags: %s\n", strings.Join(metadata.Tags, ", ")))
+		fmt.Fprintf(&buf, "Tags: %s\n", strings.Join(metadata.Tags, ", "))
 	}
 
 	if len(metadata.Categories) > 0 {
-		buf.WriteString(fmt.Sprintf("Categories: %s\n", strings.Join(metadata.Categories, ", ")))
+		fmt.Fprintf(&buf, "Categories: %s\n", strings.Join(metadata.Categories, ", "))
 	}
 
 	for _, ch := range metadata.Chapters {
-		buf.WriteString(fmt.Sprintf("Chapter (%.0f–%.0f): %s\n", ch.StartTime, ch.EndTime, ch.Title))
+		fmt.Fprintf(&buf, "Chapter (%.0f–%.0f): %s\n", ch.StartTime, ch.EndTime, ch.Title)
 	}
 
 	return mcpTextResult(buf.String()), output, nil

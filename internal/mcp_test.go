@@ -472,7 +472,7 @@ func unusedTCPPort(t *testing.T) int {
 	if err != nil {
 		t.Fatalf("finding unused TCP port: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	return listener.Addr().(*net.TCPAddr).Port
 }
