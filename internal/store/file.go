@@ -84,7 +84,7 @@ func SavePlainTranscript(videoID, transcript, dir string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(transcript), 0o644); err != nil {
+	if err := atomicWriteFile(path, []byte(transcript), 0o644); err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
 	return nil
@@ -102,7 +102,7 @@ func SaveTranscript(transcript *tldw.Transcript, dir string) error {
 	if err != nil {
 		return fmt.Errorf("marshaling transcript: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := atomicWriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("saving structured transcript: %w", err)
 	}
 	return nil
@@ -167,8 +167,46 @@ func SaveMetadata(videoID string, metadata *tldw.VideoMetadata, dir string) erro
 	if err != nil {
 		return fmt.Errorf("marshaling metadata: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := atomicWriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("saving metadata: %w", err)
+	}
+	return nil
+}
+
+func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
+	dir := filepath.Dir(path)
+	temp, err := os.CreateTemp(dir, ".tldw-*")
+	if err != nil {
+		return fmt.Errorf("creating temporary cache file: %w", err)
+	}
+	tempPath := temp.Name()
+	closed := false
+	defer func() {
+		if !closed {
+			if closeErr := temp.Close(); err == nil && closeErr != nil {
+				err = fmt.Errorf("closing temporary cache file: %w", closeErr)
+			}
+		}
+		if removeErr := os.Remove(tempPath); err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
+			err = fmt.Errorf("removing temporary cache file: %w", removeErr)
+		}
+	}()
+
+	if err := temp.Chmod(mode); err != nil {
+		return fmt.Errorf("setting temporary cache permissions: %w", err)
+	}
+	if _, err := temp.Write(data); err != nil {
+		return fmt.Errorf("writing temporary cache file: %w", err)
+	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("syncing temporary cache file: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("closing temporary cache file: %w", err)
+	}
+	closed = true
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replacing cache file: %w", err)
 	}
 	return nil
 }
