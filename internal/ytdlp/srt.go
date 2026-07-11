@@ -27,7 +27,7 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*tldw.Transcript, erro
 	}
 
 	// Extract video ID from filename
-	id := strings.Split(filepath.Base(filePath), ".")[0]
+	id, _, _ := strings.Cut(filepath.Base(filePath), ".")
 	segments := parseSRT(string(content))
 	deduplicatedSegments := condenseSubtitleSegments(segments)
 	transcript := &tldw.Transcript{
@@ -57,7 +57,7 @@ func pathWithinDirectory(path, directory string) bool {
 	if err != nil {
 		return false
 	}
-	return relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	return relative != "." && filepath.IsLocal(relative)
 }
 
 // parseSRT extracts timed transcript segments from SRT format.
@@ -149,17 +149,17 @@ func normalizeSubtitleLine(line string) string {
 }
 
 func parseSRTTiming(line string) (float64, float64, error) {
-	parts := strings.Split(line, "-->")
-	if len(parts) != 2 {
+	startText, endText, found := strings.Cut(line, "-->")
+	if !found || strings.Contains(endText, "-->") {
 		return 0, 0, fmt.Errorf("invalid SRT timing line: %q", line)
 	}
 
-	start, err := parseSRTTimestamp(parts[0])
+	start, err := parseSRTTimestamp(startText)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	end, err := parseSRTTimestamp(parts[1])
+	end, err := parseSRTTimestamp(endText)
 	if err != nil {
 		return 0, 0, err
 	}
