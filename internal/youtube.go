@@ -1,22 +1,13 @@
 package internal
 
 import (
-	"bufio"
-	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/muesli/termenv"
-	"github.com/openai/openai-go/v3"
-	"golang.org/x/term"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // Content type detection patterns
@@ -490,394 +481,30 @@ func ParseYouTubeArg(arg string) (YouTubeRef, error) {
 
 // ParseVideoArg parses and validates a YouTube video argument.
 func ParseVideoArg(arg string) (YouTubeRef, error) {
-	parsed, err := ParseYouTubeArg(arg)
-	if err != nil {
-		return YouTubeRef{}, err
-	}
-	if parsed.ContentType != ContentTypeVideo || !IsValidYouTubeID(parsed.ID) {
-		return YouTubeRef{}, fmt.Errorf("expected YouTube video, got %s", parsed.ContentType)
-	}
-	return parsed, nil
+	return tldw.ParseVideoRef(arg)
 }
 
-// AskUser is a variable that holds the function for asking user confirmation
-// This allows it to be replaced in tests
-var AskUser = func(message string) bool {
-	fmt.Printf("%s (y/N): ", message)
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		response := strings.ToLower(strings.TrimSpace(scanner.Text()))
-		return strings.HasPrefix(response, "y")
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-	}
-	return false
-}
+func IsValidYouTubeID(id string) bool { return videoIDPattern.MatchString(id) }
 
-// CleanupTempDir purges files from a temporary directory
-func CleanupTempDir(tempDir string) error {
-	// Check if directory exists
-	if _, err := os.Stat(tempDir); os.IsNotExist(err) {
-		return nil // Directory doesn't exist, nothing to clean up
-	}
-
-	// Read directory contents
-	entries, err := os.ReadDir(tempDir)
-	if err != nil {
-		return fmt.Errorf("reading temp directory: %w", err)
-	}
-
-	// Remove each file in the directory
-	for _, entry := range entries {
-		filePath := filepath.Join(tempDir, entry.Name())
-		if err := os.Remove(filePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove temporary file %s: %v\n", filePath, err)
-		}
-	}
-
-	// Try to remove the directory itself
-	if err := os.Remove(tempDir); err != nil {
-		// It's okay if we can't remove the directory (it might not be empty)
-		// Just log a warning
-		fmt.Fprintf(os.Stderr, "Note: could not remove temp directory %s: %v\n", tempDir, err)
-	}
-
-	return nil
-}
-
-// getTerminalWidth gets terminal width with fallback
-func getTerminalWidth() int {
-	width, _, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil {
-		return 80
-	}
-
-	if width > 10 {
-		return width - 4
-	}
-
-	return width
-}
-
-// RenderMarkdown renders markdown content with glamour
-func RenderMarkdown(content string) (string, error) {
-	width := getTerminalWidth()
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-		glamour.WithColorProfile(termenv.EnvColorProfile()),
-	)
-	if err != nil {
-		return "", fmt.Errorf("creating terminal renderer: %w", err)
-	}
-
-	renderedContent, err := r.Render(content)
-	if err != nil {
-		return "", fmt.Errorf("rendering markdown: %w", err)
-	}
-
-	return renderedContent, nil
-}
-
-func sleepWithContext(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-// FileExists checks if a file exists
-func FileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
-}
-
-// ValidateModel checks if the model is supported
-func ValidateModel(model string) error {
-	if strings.TrimSpace(model) == "" {
-		return fmt.Errorf("model cannot be empty")
-	}
-	if !modelNamePattern.MatchString(model) {
-		return fmt.Errorf("invalid model format: %s (allowed: lowercase letters, digits, dot, underscore, hyphen)", model)
-	}
-	supported := []openai.ChatModel{
-		openai.ChatModelO1,
-		openai.ChatModelO1Mini,
-		openai.ChatModelO3,
-		openai.ChatModelO3Mini,
-		openai.ChatModelO4Mini,
-		openai.ChatModelGPT4o,
-		openai.ChatModelGPT4oMini,
-		openai.ChatModelGPT4_1,
-		openai.ChatModelGPT4_1Mini,
-		openai.ChatModelGPT4_1Nano,
-		openai.ChatModelGPT5,
-		openai.ChatModelGPT5_4Mini,
-		openai.ChatModelGPT5Mini,
-		openai.ChatModelGPT5Nano,
-	}
-	if slices.Contains(supported, openai.ChatModel(model)) {
-		return nil
-	}
-	supportedStrings := make([]string, 0, len(supported))
-	for _, m := range supported {
-		supportedStrings = append(supportedStrings, string(m))
-	}
-	return fmt.Errorf("unsupported model: %s (supported: %s)", model, strings.Join(supportedStrings, ", "))
-}
-
-// EnsureDirs creates directories if needed
-func EnsureDirs(dirs ...string) error {
-	for _, d := range dirs {
-		if !FileExists(d) {
-			if err := os.MkdirAll(d, 0755); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// IsValidYouTubeID checks if a string looks like a valid YouTube video ID
-func IsValidYouTubeID(id string) bool {
-	// YouTube video IDs are exactly 11 characters long
-	if len(id) != 11 {
-		return false
-	}
-
-	// YouTube video IDs contain only alphanumeric characters, hyphens, and underscores
-	matched, _ := regexp.MatchString(`^[A-Za-z0-9_-]+$`, id)
-	return matched
-}
-
-// IsLikelyCommand checks if a string looks like it might be a mistyped command
 func IsLikelyCommand(arg string) bool {
-	// Short strings (1-10 chars) that don't look like YouTube IDs or playlist IDs are likely commands
-	if len(arg) <= 10 && !IsValidYouTubeID(arg) && !IsValidPlaylistID(arg) {
-		return true
-	}
-	return false
+	return len(arg) <= 10 && !IsValidYouTubeID(arg) && !IsValidPlaylistID(arg)
 }
 
-// IsValidPlaylistID checks if a string looks like a valid YouTube playlist ID
-func IsValidPlaylistID(id string) bool {
-	return isValidPlaylistID(id)
-}
+func IsValidPlaylistID(id string) bool { return isValidPlaylistID(id) }
 
 func isValidPlaylistID(id string) bool {
-	// Regular playlists (PL).
 	if strings.HasPrefix(id, "PL") {
 		return playlistIDPattern.MatchString(id)
 	}
-
-	// Common non-PL playlist prefixes: UU, FL, RD, etc.
-	nonPLPrefixes := []string{"UU", "FL", "RD", "LP", "BP", "QL", "SV", "EL", "LL", "UC"}
-
-	// Check for standard non-PL prefixes with appropriate lengths
-	for _, prefix := range nonPLPrefixes {
-		if strings.HasPrefix(id, prefix) {
-			// Standard playlist IDs are typically 18, 34 characters total
-			if len(id) == 18 || len(id) == 34 {
-				matched, _ := regexp.MatchString(`^[A-Za-z0-9_-]+$`, id)
-				return matched
-			}
+	for _, prefix := range []string{"UU", "FL", "RD", "LP", "BP", "QL", "SV", "EL", "LL", "UC"} {
+		if strings.HasPrefix(id, prefix) && (len(id) == 18 || len(id) == 34) {
+			return validIDCharacters.MatchString(id)
 		}
 	}
-
-	// Check for music playlists (OLAK5uy_, RDCLAK5uy_)
-	if strings.HasPrefix(id, "OLAK5uy_") || strings.HasPrefix(id, "RDCLAK5uy_") {
-		if len(id) == 40 {
-			matched, _ := regexp.MatchString(`^[A-Za-z0-9_-]+$`, id)
-			return matched
-		}
+	if (strings.HasPrefix(id, "OLAK5uy_") || strings.HasPrefix(id, "RDCLAK5uy_")) && len(id) == 40 {
+		return validIDCharacters.MatchString(id)
 	}
-
 	return false
 }
 
-// getPlaylistID extracts playlist ID from YouTube URLs
-// ValidateOpenAIAPIKey checks if the OpenAI API key is set and returns a standardized error if not
-func ValidateOpenAIAPIKey(apiKey string) error {
-	if apiKey == "" {
-		return fmt.Errorf("OpenAI API key is required - set it in config.toml or OPENAI_API_KEY environment variable")
-	}
-	return nil
-}
-
-func videoCachePath(youtubeID, transcriptsDir, suffix string) (string, error) {
-	if !IsValidYouTubeID(youtubeID) {
-		return "", fmt.Errorf("invalid YouTube video ID: %q", youtubeID)
-	}
-	return filepath.Join(transcriptsDir, youtubeID+suffix), nil
-}
-
-// SaveTranscript saves a transcript to the specified directory with standard error handling
-func SaveTranscript(youtubeID, transcript, transcriptsDir string) error {
-	transcriptPath, err := videoCachePath(youtubeID, transcriptsDir, ".txt")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(transcriptPath, []byte(transcript), 0644); err != nil {
-		return fmt.Errorf("saving transcript: %w", err)
-	}
-	return nil
-}
-
-func structuredTranscriptPath(youtubeID, transcriptsDir string) (string, error) {
-	return videoCachePath(youtubeID, transcriptsDir, ".transcript.json")
-}
-
-// SaveStructuredTranscript saves the canonical transcript representation to disk.
-func SaveStructuredTranscript(transcript *Transcript, transcriptsDir string) error {
-	if transcript == nil {
-		return fmt.Errorf("saving transcript: transcript is nil")
-	}
-
-	if !IsValidYouTubeID(transcript.VideoID) {
-		return fmt.Errorf("saving transcript: invalid YouTube video ID: %q", transcript.VideoID)
-	}
-
-	data, err := json.MarshalIndent(transcript, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling transcript: %w", err)
-	}
-
-	transcriptPath, err := structuredTranscriptPath(transcript.VideoID, transcriptsDir)
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(transcriptPath, data, 0644); err != nil {
-		return fmt.Errorf("saving structured transcript: %w", err)
-	}
-
-	return nil
-}
-
-// LoadStructuredTranscript loads a structured transcript from disk.
-func LoadStructuredTranscript(youtubeID, transcriptsDir string) (*Transcript, error) {
-	transcriptPath, err := structuredTranscriptPath(youtubeID, transcriptsDir)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(transcriptPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading structured transcript: %w", err)
-	}
-
-	var transcript Transcript
-	if err := json.Unmarshal(data, &transcript); err != nil {
-		return nil, fmt.Errorf("parsing structured transcript: %w", err)
-	}
-
-	if transcript.VideoID == "" {
-		transcript.VideoID = youtubeID
-	}
-
-	return &transcript, nil
-}
-
-const currentMetadataCacheVersion = 3
-
-// CachedVideoMetadata extends VideoMetadata with cache information
-type CachedVideoMetadata struct {
-	CacheVersion     int            `json:"cache_version"`
-	Title            string         `json:"title"`
-	Description      string         `json:"description"`
-	Channel          string         `json:"channel"`
-	ChannelURL       string         `json:"channel_url,omitempty"`
-	Creators         []string       `json:"creators,omitempty"`
-	PublishedAt      string         `json:"published_at,omitempty"`
-	Duration         float64        `json:"duration"`
-	Language         string         `json:"language"`
-	Categories       []string       `json:"categories"`
-	Tags             []string       `json:"tags"`
-	Chapters         []VideoChapter `json:"chapters"`
-	HasCaptions      bool           `json:"has_captions"`
-	CaptionLanguages []string       `json:"caption_languages"`
-	CachedAt         time.Time      `json:"cached_at"`
-}
-
-// SaveMetadata saves video metadata to cache as JSON
-func SaveMetadata(youtubeID string, metadata *VideoMetadata, transcriptsDir string) error {
-	metadataPath, err := videoCachePath(youtubeID, transcriptsDir, ".meta.json")
-	if err != nil {
-		return err
-	}
-
-	metadata.CacheVersion = currentMetadataCacheVersion
-	cached := CachedVideoMetadata{
-		CacheVersion:     currentMetadataCacheVersion,
-		Title:            metadata.Title,
-		Description:      metadata.Description,
-		Channel:          metadata.Channel,
-		ChannelURL:       metadata.ChannelURL,
-		Creators:         metadata.Creators,
-		PublishedAt:      metadata.PublishedAt,
-		Duration:         metadata.Duration,
-		Language:         metadata.Language,
-		Categories:       metadata.Categories,
-		Tags:             metadata.Tags,
-		Chapters:         metadata.Chapters,
-		HasCaptions:      metadata.HasCaptions,
-		CaptionLanguages: metadata.CaptionLanguages,
-		CachedAt:         time.Now(),
-	}
-
-	data, err := json.MarshalIndent(cached, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling metadata: %w", err)
-	}
-
-	if err := os.WriteFile(metadataPath, data, 0644); err != nil {
-		return fmt.Errorf("saving metadata: %w", err)
-	}
-
-	return nil
-}
-
-// LoadCachedMetadata loads video metadata from cache
-func LoadCachedMetadata(youtubeID, transcriptsDir string) (*VideoMetadata, error) {
-	metadataPath, err := videoCachePath(youtubeID, transcriptsDir, ".meta.json")
-	if err != nil {
-		return nil, err
-	}
-
-	if !FileExists(metadataPath) {
-		return nil, fmt.Errorf("metadata cache not found")
-	}
-
-	data, err := os.ReadFile(metadataPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading metadata cache: %w", err)
-	}
-
-	var cached CachedVideoMetadata
-	if err := json.Unmarshal(data, &cached); err != nil {
-		return nil, fmt.Errorf("parsing metadata cache: %w", err)
-	}
-
-	return &VideoMetadata{
-		Title:            cached.Title,
-		Description:      cached.Description,
-		Channel:          cached.Channel,
-		ChannelURL:       cached.ChannelURL,
-		Creators:         cached.Creators,
-		PublishedAt:      cached.PublishedAt,
-		Duration:         cached.Duration,
-		Language:         cached.Language,
-		Categories:       cached.Categories,
-		Tags:             cached.Tags,
-		Chapters:         cached.Chapters,
-		HasCaptions:      cached.HasCaptions,
-		CaptionLanguages: cached.CaptionLanguages,
-		CacheVersion:     cached.CacheVersion,
-	}, nil
-}
+var validIDCharacters = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)

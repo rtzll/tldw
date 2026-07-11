@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -46,7 +47,7 @@ func newTestEngine(config *Config, options ...tldw.EngineOption) *Engine {
 		tldw.WithAIAdapter(openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, false, true)),
 	}
 	return tldw.NewEngine(
-		tldw.Config{WhisperTimeout: config.WhisperTimeout, MetadataCacheVersion: store.MetadataCacheVersion},
+		tldw.Config{WhisperTimeout: config.WhisperTimeout},
 		legacy.NewPromptManager(config.ConfigDir, config.Prompt),
 		append(defaults, options...)...,
 	)
@@ -527,6 +528,9 @@ func unusedTCPPort(t *testing.T) int {
 	t.Helper()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if errors.Is(err, syscall.EPERM) {
+		t.Skip("loopback sockets are unavailable in this test environment")
+	}
 	if err != nil {
 		t.Fatalf("finding unused TCP port: %v", err)
 	}

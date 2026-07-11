@@ -1,4 +1,4 @@
-package internal
+package tldw_test
 
 import (
 	"context"

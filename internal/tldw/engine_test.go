@@ -1,13 +1,95 @@
-package internal
+package tldw_test
 
 import (
 	"context"
 	"errors"
 	"os"
 	"testing"
+	"time"
 
+	legacy "github.com/rtzll/tldw/internal"
+	openaiadapter "github.com/rtzll/tldw/internal/openai"
+	"github.com/rtzll/tldw/internal/process"
 	"github.com/rtzll/tldw/internal/store"
+	"github.com/rtzll/tldw/internal/tldw"
+	ytdlpadapter "github.com/rtzll/tldw/internal/ytdlp"
 )
+
+type Config = legacy.Config
+type Engine = tldw.Engine
+type EngineOption = tldw.EngineOption
+type YouTubeRef = tldw.YouTubeRef
+type VideoMetadata = tldw.VideoMetadata
+type Transcript = tldw.Transcript
+type TranscriptSegment = tldw.TranscriptSegment
+type PlaylistInfo = tldw.PlaylistInfo
+type TranscriptRequest = tldw.TranscriptRequest
+type PlaylistSummaryRequest = tldw.PlaylistSummaryRequest
+
+const (
+	ContentTypeVideo                 = tldw.ContentTypeVideo
+	TranscriptSourceCaptions         = tldw.TranscriptSourceCaptions
+	TranscriptSourceWhisper          = tldw.TranscriptSourceWhisper
+	TranscriptPolicyCaptionsOnly     = tldw.TranscriptPolicyCaptionsOnly
+	TranscriptPolicyWhisperOnly      = tldw.TranscriptPolicyWhisperOnly
+	TranscriptRenderFormatTimestamps = tldw.TranscriptRenderFormatTimestamps
+	WhisperLimit                     = legacy.WhisperLimit
+)
+
+var ErrCaptionsUnavailable = tldw.ErrCaptionsUnavailable
+
+func ParseVideoArg(input string) (YouTubeRef, error)         { return tldw.ParseVideoRef(input) }
+func WithVideoAdapter(video tldw.VideoAdapter) EngineOption  { return tldw.WithVideoAdapter(video) }
+func WithAIAdapter(ai tldw.AIAdapter) EngineOption           { return tldw.WithAIAdapter(ai) }
+func WithVideoStore(videoStore tldw.VideoStore) EngineOption { return tldw.WithVideoStore(videoStore) }
+func WithAI(ai *openaiadapter.AI) EngineOption               { return tldw.WithAIAdapter(ai) }
+func WithYouTube(youtube *ytdlpadapter.YouTube) EngineOption { return tldw.WithVideoAdapter(youtube) }
+func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose, quiet bool) *ytdlpadapter.YouTube {
+	return ytdlpadapter.NewYouTubeWithCache(transcriptsDir, cacheDir, verbose, quiet)
+}
+func ParseYouTubeArg(input string) (YouTubeRef, error) { return legacy.ParseYouTubeArg(input) }
+func SaveStructuredTranscript(transcript *Transcript, dir string) error {
+	return store.SaveTranscript(transcript, dir)
+}
+func SaveTranscript(videoID, transcript, dir string) error {
+	return store.SavePlainTranscript(videoID, transcript, dir)
+}
+func SaveMetadata(videoID string, metadata *VideoMetadata, dir string) error {
+	return store.SaveMetadata(videoID, metadata, dir)
+}
+func LoadCachedMetadata(videoID, dir string) (*VideoMetadata, error) {
+	return store.LoadMetadata(videoID, dir)
+}
+func NewAudio(runner process.Runner, dir string, verbose bool) *openaiadapter.Audio {
+	return openaiadapter.NewAudio(runner, dir, verbose)
+}
+func NewAI(client openaiadapter.OpenAIClientInterface, audio *openaiadapter.Audio, model string, limit int64, timeout time.Duration, verbose, quiet bool) *openaiadapter.AI {
+	return openaiadapter.NewAI(client, audio, model, limit, timeout, verbose, quiet)
+}
+
+type mockCommandRunner struct {
+	output []byte
+	err    error
+}
+
+func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return m.output, m.err
+}
+func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
+	return m.err
+}
+
+type mockOpenAIClient struct {
+	transcription string
+	err           error
+}
+
+func (m *mockOpenAIClient) CreateTranscription(context.Context, *os.File) (string, error) {
+	return m.transcription, m.err
+}
+func (m *mockOpenAIClient) CreateChatCompletion(context.Context, string, string) (string, error) {
+	return "", m.err
+}
 
 type engineVideoAdapter struct {
 	metadata        *VideoMetadata
@@ -25,14 +107,14 @@ type engineAIAdapter struct {
 }
 
 func newTestEngine(config *Config, options ...EngineOption) *Engine {
-	runner := &DefaultCommandRunner{}
+	runner := &process.CommandRunner{}
 	audio := NewAudio(runner, config.TempDir, config.Verbose)
 	defaults := []EngineOption{
-		WithVideoAdapter(NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)),
+		WithVideoAdapter(ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)),
 		WithVideoStore(store.NewFile(config.TranscriptsDir)),
-		WithAIAdapter(NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)),
+		WithAIAdapter(openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)),
 	}
-	return NewEngine(config, append(defaults, options...)...)
+	return tldw.NewEngine(tldw.Config{WhisperTimeout: config.WhisperTimeout}, legacy.NewPromptManager(config.ConfigDir, config.Prompt), append(defaults, options...)...)
 }
 
 func (f *engineAIAdapter) Transcribe(context.Context, string) (string, error) {

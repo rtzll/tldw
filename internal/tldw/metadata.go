@@ -15,9 +15,6 @@ type VideoMetadata struct {
 	Chapters         []VideoChapter `json:"chapters"`
 	HasCaptions      bool           `json:"has_captions"`
 	CaptionLanguages []string       `json:"caption_languages"`
-
-	// CacheVersion tracks on-disk metadata schema compatibility.
-	CacheVersion int `json:"-"`
 }
 
 // VideoChapter represents a video chapter marker.

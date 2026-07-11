@@ -7,19 +7,20 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rtzll/tldw/internal"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func requestedTranscriptFormat(cmd *cobra.Command) internal.TranscriptRenderFormat {
+func requestedTranscriptFormat(cmd *cobra.Command) tldw.TranscriptRenderFormat {
 	includeTimestamps, _ := cmd.Flags().GetBool("timestamps")
 	if includeTimestamps {
-		return internal.TranscriptRenderFormatTimestamps
+		return tldw.TranscriptRenderFormatTimestamps
 	}
 
-	return internal.TranscriptRenderFormatPlain
+	return tldw.TranscriptRenderFormatPlain
 }
 
 // fetchTranscript retrieves a transcript for the given argument and optionally falls back to Whisper.
-func fetchTranscript(cmd *cobra.Command, app *internal.Engine, arg string) (string, error) {
+func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, error) {
 	parsed, err := internal.ParseVideoArg(arg)
 	if err != nil {
 		return "", err
@@ -27,9 +28,9 @@ func fetchTranscript(cmd *cobra.Command, app *internal.Engine, arg string) (stri
 	format := requestedTranscriptFormat(cmd)
 
 	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-	if format == internal.TranscriptRenderFormatTimestamps {
-		transcript, err := app.Transcript(cmd.Context(), parsed, internal.TranscriptRequest{
-			Policy:            internal.TranscriptPolicyCaptionsOnly,
+	if format == tldw.TranscriptRenderFormatTimestamps {
+		transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{
+			Policy:            tldw.TranscriptPolicyCaptionsOnly,
 			RequireTimestamps: true,
 		})
 		if err != nil {
@@ -41,16 +42,16 @@ func fetchTranscript(cmd *cobra.Command, app *internal.Engine, arg string) (stri
 		return transcript.Render(format)
 	}
 
-	policy := internal.TranscriptPolicyCaptionsOnly
+	policy := tldw.TranscriptPolicyCaptionsOnly
 	if fallbackWhisper {
-		policy = internal.TranscriptPolicyCaptionsThenWhisper
+		policy = tldw.TranscriptPolicyCaptionsThenWhisper
 	}
-	transcript, err := app.Transcript(cmd.Context(), parsed, internal.TranscriptRequest{Policy: policy})
-	if errors.Is(err, internal.ErrCaptionsUnavailable) && fallbackWhisper {
-		transcript, err = app.Transcript(cmd.Context(), parsed, internal.TranscriptRequest{Policy: internal.TranscriptPolicyWhisperOnly})
+	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy})
+	if errors.Is(err, tldw.ErrCaptionsUnavailable) && fallbackWhisper {
+		transcript, err = app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
 	}
 	if err != nil {
 		return "", err
 	}
-	return transcript.Render(internal.TranscriptRenderFormatPlain)
+	return transcript.Render(tldw.TranscriptRenderFormatPlain)
 }

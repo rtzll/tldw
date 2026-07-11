@@ -1,6 +1,9 @@
 package store_test
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rtzll/tldw/internal/store"
@@ -42,8 +45,20 @@ func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMetadata() error = %v", err)
 	}
-	if loadedMetadata.Title != metadata.Title || loadedMetadata.CacheVersion != store.MetadataCacheVersion {
-		t.Fatalf("LoadMetadata() = %+v, want title and cache version", loadedMetadata)
+	if loadedMetadata.Title != metadata.Title {
+		t.Fatalf("LoadMetadata() = %+v, want title", loadedMetadata)
+	}
+}
+
+func TestFileTreatsOldMetadataSchemaAsCacheMiss(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dQw4w9WgXcQ.meta.json")
+	if err := os.WriteFile(path, []byte(`{"cache_version":2,"title":"Old"}`), 0o644); err != nil {
+		t.Fatalf("write stale metadata: %v", err)
+	}
+	_, err := store.NewFile(dir).LoadMetadata("dQw4w9WgXcQ")
+	if !errors.Is(err, store.ErrMetadataStale) {
+		t.Fatalf("LoadMetadata() error = %v, want ErrMetadataStale", err)
 	}
 }
 

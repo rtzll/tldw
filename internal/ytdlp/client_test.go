@@ -8,10 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"os"
 	"path/filepath"
-
-	"github.com/rtzll/tldw/internal/store"
 )
 
 type mockCommandRunner struct {
@@ -26,15 +23,6 @@ func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, err
 func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
 	return m.err
 }
-
-const currentMetadataCacheVersion = store.MetadataCacheVersion
-
-var SaveStructuredTranscript = store.SaveTranscript
-var LoadStructuredTranscript = store.LoadTranscript
-var SaveTranscript = store.SavePlainTranscript
-var SaveMetadata = store.SaveMetadata
-var LoadCachedMetadata = store.LoadMetadata
-var FileExists = fileExists
 
 type fakeStreamingRunner struct {
 	lines []string
@@ -659,84 +647,6 @@ func TestSetSubLangsArg(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadStructuredTranscript(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	original := &Transcript{
-		VideoID:  "dQw4w9WgXcQ",
-		Language: "en",
-		Source:   TranscriptSourceCaptions,
-		Text:     "Hello world",
-		Segments: []TranscriptSegment{
-			{Start: 0, End: 1, Text: "Hello world"},
-		},
-	}
-
-	if err := SaveStructuredTranscript(original, tmpDir); err != nil {
-		t.Fatalf("SaveStructuredTranscript() error = %v", err)
-	}
-
-	loaded, err := LoadStructuredTranscript("dQw4w9WgXcQ", tmpDir)
-	if err != nil {
-		t.Fatalf("LoadStructuredTranscript() error = %v", err)
-	}
-
-	if loaded.VideoID != original.VideoID || loaded.Language != original.Language || loaded.Text != original.Text {
-		t.Errorf("LoadStructuredTranscript() = %+v, want %+v", loaded, original)
-	}
-	if len(loaded.Segments) != len(original.Segments) {
-		t.Errorf("LoadStructuredTranscript() segments = %d, want %d", len(loaded.Segments), len(original.Segments))
-	}
-}
-
-func TestCurrentMetadataCacheVersion(t *testing.T) {
-	const want = 3
-	if currentMetadataCacheVersion != want {
-		t.Fatalf("currentMetadataCacheVersion = %d, want %d", currentMetadataCacheVersion, want)
-	}
-}
-
-func TestSaveAndLoadMetadata(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	original := &VideoMetadata{
-		Title:       "Test Video",
-		Channel:     "Test Channel",
-		ChannelURL:  "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA",
-		PublishedAt: "2026-06-29",
-		Duration:    120,
-		Description: "A test video",
-		HasCaptions: true,
-	}
-
-	if err := SaveMetadata("dQw4w9WgXcQ", original, tmpDir); err != nil {
-		t.Fatalf("SaveMetadata() error = %v", err)
-	}
-
-	loaded, err := LoadCachedMetadata("dQw4w9WgXcQ", tmpDir)
-	if err != nil {
-		t.Fatalf("LoadCachedMetadata() error = %v", err)
-	}
-
-	if loaded.Title != original.Title || loaded.Channel != original.Channel || loaded.ChannelURL != original.ChannelURL || loaded.PublishedAt != original.PublishedAt || loaded.Duration != original.Duration {
-		t.Errorf("LoadCachedMetadata() = %+v, want %+v", loaded, original)
-	}
-	if loaded.CacheVersion != currentMetadataCacheVersion {
-		t.Errorf("LoadCachedMetadata() CacheVersion = %d, want %d", loaded.CacheVersion, currentMetadataCacheVersion)
-	}
-
-	data, err := os.ReadFile(filepath.Join(tmpDir, "dQw4w9WgXcQ.meta.json"))
-	if err != nil {
-		t.Fatalf("reading saved metadata: %v", err)
-	}
-	if !strings.Contains(string(data), `"published_at": "2026-06-29"`) {
-		t.Fatalf("saved metadata missing published_at: %s", data)
-	}
-	if !strings.Contains(string(data), `"channel_url": "https://www.youtube.com/channel/UCLKPca3kwwd-B59HNr-_lvA"`) {
-		t.Fatalf("saved metadata missing channel_url: %s", data)
-	}
-}
-
 type mockProgressBar struct {
 	desc string
 	sets []int
@@ -794,52 +704,5 @@ func TestParseSharedProgressConversionStep(t *testing.T) {
 				t.Errorf("last Set() = %d, want %d", last, tt.wantLastSet)
 			}
 		})
-	}
-}
-
-func TestSaveTranscript(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	if err := SaveTranscript("dQw4w9WgXcQ", "Hello world", tmpDir); err != nil {
-		t.Fatalf("SaveTranscript() error = %v", err)
-	}
-
-	content, err := os.ReadFile(filepath.Join(tmpDir, "dQw4w9WgXcQ.txt"))
-	if err != nil {
-		t.Fatalf("reading saved transcript: %v", err)
-	}
-
-	if string(content) != "Hello world" {
-		t.Errorf("saved transcript = %q, want %q", string(content), "Hello world")
-	}
-}
-
-func TestCacheHelpersRejectInvalidVideoIDs(t *testing.T) {
-	baseDir := t.TempDir()
-	transcriptsDir := filepath.Join(baseDir, "transcripts")
-	if err := os.Mkdir(transcriptsDir, 0755); err != nil {
-		t.Fatalf("creating transcripts dir: %v", err)
-	}
-
-	metadata := &VideoMetadata{Title: "Test"}
-	structured := &Transcript{VideoID: "../outside", Source: TranscriptSourceCaptions, Text: "secret"}
-
-	if err := SaveTranscript("../outside", "secret", transcriptsDir); err == nil {
-		t.Fatal("SaveTranscript() expected invalid ID error")
-	}
-	if err := SaveStructuredTranscript(structured, transcriptsDir); err == nil {
-		t.Fatal("SaveStructuredTranscript() expected invalid ID error")
-	}
-	if _, err := LoadStructuredTranscript("../outside", transcriptsDir); err == nil {
-		t.Fatal("LoadStructuredTranscript() expected invalid ID error")
-	}
-	if err := SaveMetadata("../outside", metadata, transcriptsDir); err == nil {
-		t.Fatal("SaveMetadata() expected invalid ID error")
-	}
-	if _, err := LoadCachedMetadata("../outside", transcriptsDir); err == nil {
-		t.Fatal("LoadCachedMetadata() expected invalid ID error")
-	}
-	if FileExists(filepath.Join(baseDir, "outside.txt")) {
-		t.Fatal("invalid transcript ID wrote outside transcripts dir")
 	}
 }

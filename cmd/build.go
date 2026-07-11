@@ -42,8 +42,7 @@ func buildEngine(config *internal.Config, log tldw.LogSink) *tldw.Engine {
 	ai.SetLogSink(log)
 	return tldw.NewEngine(
 		tldw.Config{
-			WhisperTimeout:       config.WhisperTimeout,
-			MetadataCacheVersion: store.MetadataCacheVersion,
+			WhisperTimeout: config.WhisperTimeout,
 		},
 		internal.NewPromptManager(config.ConfigDir, config.Prompt),
 		tldw.WithVideoAdapter(youtube),

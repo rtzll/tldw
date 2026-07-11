@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -173,7 +172,7 @@ func mcpTextResult(text string) *mcp.CallToolResult {
 func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetMetadataInput) (*mcp.CallToolResult, mcpMetadataOutput, error) {
 	var zero mcpMetadataOutput
 	url := input.URL
-	parsed, err := parseVideoArg(url)
+	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_metadata - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
@@ -240,7 +239,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetTranscriptInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
 	url := input.URL
-	parsed, err := parseVideoArg(url)
+	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
@@ -283,7 +282,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallToolRequest, input mcpWhisperInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
 	url := input.URL
-	parsed, err := parseVideoArg(url)
+	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
@@ -385,31 +384,4 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 // GetServer returns the underlying MCP server for advanced configuration
 func (s *MCPServer) GetServer() *mcp.Server {
 	return s.mcpServer
-}
-
-func parseVideoArg(input string) (tldw.YouTubeRef, error) {
-	original := strings.TrimSpace(input)
-	id := original
-	if !tldw.IsValidVideoID(id) {
-		parsed, err := url.Parse(original)
-		if err != nil {
-			return tldw.YouTubeRef{}, fmt.Errorf("parsing URL: %w", err)
-		}
-		if parsed.Host != "youtube.com" && parsed.Host != "www.youtube.com" && parsed.Host != "youtu.be" {
-			return tldw.YouTubeRef{}, fmt.Errorf("not a YouTube URL")
-		}
-		id = parsed.Query().Get("v")
-		if parsed.Host == "youtu.be" {
-			id = strings.TrimPrefix(parsed.Path, "/")
-		}
-	}
-	if !tldw.IsValidVideoID(id) {
-		return tldw.YouTubeRef{}, fmt.Errorf("expected a valid YouTube video")
-	}
-	return tldw.YouTubeRef{
-		ContentType:   tldw.ContentTypeVideo,
-		OriginalInput: original,
-		NormalizedURL: "https://www.youtube.com/watch?v=" + id,
-		ID:            id,
-	}, nil
 }

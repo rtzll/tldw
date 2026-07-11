@@ -14,6 +14,8 @@ import (
 
 const MetadataCacheVersion = 3
 
+var ErrMetadataStale = fmt.Errorf("metadata cache is stale")
+
 var videoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // File is the filesystem adapter for the application's persistence seam.
@@ -147,7 +149,6 @@ func SaveMetadata(videoID string, metadata *tldw.VideoMetadata, dir string) erro
 	if metadata == nil {
 		return fmt.Errorf("saving metadata: metadata is nil")
 	}
-	metadata.CacheVersion = MetadataCacheVersion
 	cached := cachedMetadata{
 		CacheVersion: MetadataCacheVersion, Title: metadata.Title, Description: metadata.Description,
 		Channel: metadata.Channel, ChannelURL: metadata.ChannelURL, Creators: metadata.Creators,
@@ -181,11 +182,14 @@ func LoadMetadata(videoID, dir string) (*tldw.VideoMetadata, error) {
 	if err := json.Unmarshal(data, &cached); err != nil {
 		return nil, fmt.Errorf("parsing metadata cache: %w", err)
 	}
+	if cached.CacheVersion < MetadataCacheVersion {
+		return nil, ErrMetadataStale
+	}
 	return &tldw.VideoMetadata{
 		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,
 		ChannelURL: cached.ChannelURL, Creators: cached.Creators, PublishedAt: cached.PublishedAt,
 		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
 		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,
-		CaptionLanguages: cached.CaptionLanguages, CacheVersion: cached.CacheVersion,
+		CaptionLanguages: cached.CaptionLanguages,
 	}, nil
 }

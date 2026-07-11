@@ -9,8 +9,7 @@ import (
 )
 
 type Config struct {
-	WhisperTimeout       time.Duration
-	MetadataCacheVersion int
+	WhisperTimeout time.Duration
 }
 
 type PromptBuilder interface {
@@ -80,10 +79,6 @@ func (app *Engine) metadataRefreshReason(metadata *VideoMetadata) string {
 	if metadata.HasCaptions && len(metadata.CaptionLanguages) == 0 {
 		reasons = append(reasons, "caption languages")
 	}
-	if metadata.CacheVersion < app.config.MetadataCacheVersion {
-		reasons = append(reasons, "metadata schema")
-	}
-
 	return strings.Join(reasons, " and ")
 }
 

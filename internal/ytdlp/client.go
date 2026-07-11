@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/rtzll/tldw/internal/process"
-	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
@@ -91,25 +89,11 @@ func fileExists(path string) bool {
 }
 
 func getVideoID(youtubeURL string) (string, error) {
-	youtubeURL = strings.TrimSpace(youtubeURL)
-	parsed, err := url.Parse(youtubeURL)
+	parsed, err := tldw.ParseVideoRef(youtubeURL)
 	if err != nil {
-		return "", fmt.Errorf("parsing URL: %w", err)
+		return "", err
 	}
-	if parsed.Host != "www.youtube.com" && parsed.Host != "youtube.com" && parsed.Host != "youtu.be" {
-		return "", fmt.Errorf("not a YouTube URL: %s", youtubeURL)
-	}
-	if id := parsed.Query().Get("v"); id != "" {
-		return id, nil
-	}
-	if strings.Contains(parsed.Path, "/playlist") {
-		return "", fmt.Errorf("this is a playlist URL, not a video URL: %s", youtubeURL)
-	}
-	parts := strings.Split(parsed.Path, "/")
-	if len(parts) > 0 && parts[len(parts)-1] != "" {
-		return parts[len(parts)-1], nil
-	}
-	return "", fmt.Errorf("could not extract video ID from URL: %s", youtubeURL)
+	return parsed.ID, nil
 }
 
 func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
@@ -753,14 +737,6 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 		return nil, err
 	}
 	transcript.Text = text
-
-	// Save canonical and rendered forms to the transcripts directory.
-	if err := store.SaveTranscript(transcript, yt.transcriptsDir); err != nil {
-		return nil, err
-	}
-	if err := store.SavePlainTranscript(id, text, yt.transcriptsDir); err != nil {
-		return nil, err
-	}
 
 	// If the file is in the cache directory, remove it after processing
 	cacheDir := yt.cacheDir

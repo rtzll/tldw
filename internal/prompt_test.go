@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 func TestIsLikelyFilePath(t *testing.T) {
@@ -80,7 +82,7 @@ func TestPromptManagerCreatePrompt(t *testing.T) {
 
 	t.Run("with metadata", func(t *testing.T) {
 		pm := NewPromptManager(tmpDir, "Title: {{.Title}}\nChannel: {{.Channel}}\nTranscript: {{.Transcript}}")
-		metadata := &VideoMetadata{
+		metadata := &tldw.VideoMetadata{
 			Title:   "Test Video",
 			Channel: "Test Channel",
 		}
@@ -113,7 +115,7 @@ func TestPromptManagerBuildPromptFromTemplate(t *testing.T) {
 		name       string
 		template   string
 		transcript string
-		metadata   *VideoMetadata
+		metadata   *tldw.VideoMetadata
 		want       string
 		wantErr    bool
 	}{
@@ -129,7 +131,7 @@ func TestPromptManagerBuildPromptFromTemplate(t *testing.T) {
 			name:       "with metadata",
 			template:   "Title: {{.Title}}\nTranscript: {{.Transcript}}",
 			transcript: "Hello",
-			metadata:   &VideoMetadata{Title: "Test"},
+			metadata:   &tldw.VideoMetadata{Title: "Test"},
 			want:       "Title: Test\nTranscript: Hello",
 			wantErr:    false,
 		},
