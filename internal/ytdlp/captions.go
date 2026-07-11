@@ -17,9 +17,8 @@ func fileExists(path string) bool {
 }
 
 const (
-	subLangsFlag             = "--sub-langs"
-	englishFallbackSubLangs  = "en.*,en"
-	maxPreferredCaptionLangs = 5
+	subLangsFlag            = "--sub-langs"
+	englishFallbackSubLangs = "en.*,en"
 )
 
 var englishCaptionPreference = []string{"en-US", "en", "en-GB", "en-CA", "en-AU", "en-NZ", "en-orig"}
@@ -142,17 +141,34 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 	}
 
 	// Run the command (and optional fallback)
-	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	output, partialFiles, err := yt.runCaptionDownload(ctx, args, pattern)
 	attemptedFallback := false
-	if err != nil {
-		// If subtitles were partially downloaded, allow success
-		if files, globErr := filepath.Glob(pattern); globErr == nil && len(files) > 0 {
-			if yt.verbose && !yt.quiet {
-				yt.log.Printf("Subtitles downloaded despite errors (%s): %v\n", primarySubLangs, files)
-			}
-			err = nil
-		}
+	if len(partialFiles) > 0 && yt.verbose && !yt.quiet {
+		yt.log.Printf("Subtitles downloaded despite errors (%s): %v\n", primarySubLangs, partialFiles)
 	}
+
+	runFallback := func(message string) error {
+		if yt.verbose && !yt.quiet {
+			yt.log.Printf("%s\n", message)
+		}
+		if err := setSubLangsArg(args, fallbackSubLangs); err != nil {
+			return fmt.Errorf("configuring fallback subtitle languages: %w", err)
+		}
+		attemptedFallback = true
+		fallbackOutput, fallbackFiles, fallbackErr := yt.runCaptionDownload(ctx, args, pattern)
+		if len(fallbackFiles) > 0 && yt.verbose && !yt.quiet {
+			yt.log.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, fallbackFiles)
+		}
+		if fallbackErr != nil {
+			if yt.verbose {
+				yt.log.Printf("Fallback subtitle download error: %v\n", fallbackErr)
+				yt.log.Printf("Command output: %s\n", string(fallbackOutput))
+			}
+			return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, fallbackErr)
+		}
+		return nil
+	}
+
 	if err != nil {
 		if yt.verbose {
 			yt.log.Printf("Subtitle download error (%s): %v\n", primarySubLangs, err)
@@ -166,29 +182,8 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 
 		// Retry with a broader English wildcard when available
 		if fallbackSubLangs != "" {
-			if yt.verbose && !yt.quiet {
-				yt.log.Printf("Trying fallback subtitle languages: %s\n", fallbackSubLangs)
-			}
-			if err := setSubLangsArg(args, fallbackSubLangs); err != nil {
-				return fmt.Errorf("configuring fallback subtitle languages: %w", err)
-			}
-			output, err = yt.executor.Run(ctx, "yt-dlp", args...)
-			attemptedFallback = true
-			if err != nil {
-				// If subtitles were partially downloaded, allow success
-				if files, globErr := filepath.Glob(pattern); globErr == nil && len(files) > 0 {
-					if yt.verbose && !yt.quiet {
-						yt.log.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, files)
-					}
-					err = nil
-				}
-			}
-			if err != nil {
-				if yt.verbose {
-					yt.log.Printf("Fallback subtitle download error: %v\n", err)
-					yt.log.Printf("Command output: %s\n", string(output))
-				}
-				return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
+			if err := runFallback(fmt.Sprintf("Trying fallback subtitle languages: %s", fallbackSubLangs)); err != nil {
+				return err
 			}
 		} else {
 			return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
@@ -204,28 +199,9 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 	if err != nil || len(files) == 0 {
 		// If no files were found and we haven't tried the fallback yet, give it one more attempt
 		if len(files) == 0 && fallbackSubLangs != "" && !attemptedFallback {
-			if yt.verbose && !yt.quiet {
-				yt.log.Printf("No subtitles found for %s, retrying with: %s\n", primarySubLangs, fallbackSubLangs)
-			}
-			if err := setSubLangsArg(args, fallbackSubLangs); err != nil {
-				return fmt.Errorf("configuring fallback subtitle languages: %w", err)
-			}
-			output, err = yt.executor.Run(ctx, "yt-dlp", args...)
-			if err != nil {
-				// If subtitles were partially downloaded, allow success
-				if files, globErr := filepath.Glob(pattern); globErr == nil && len(files) > 0 {
-					if yt.verbose && !yt.quiet {
-						yt.log.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, files)
-					}
-					err = nil
-				}
-			}
-			if err != nil {
-				if yt.verbose {
-					yt.log.Printf("Fallback subtitle download error: %v\n", err)
-					yt.log.Printf("Command output: %s\n", string(output))
-				}
-				return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
+			message := fmt.Sprintf("No subtitles found for %s, retrying with: %s", primarySubLangs, fallbackSubLangs)
+			if err := runFallback(message); err != nil {
+				return err
 			}
 			files, err = filepath.Glob(pattern)
 		}
@@ -244,6 +220,19 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 	}
 
 	return nil
+}
+
+func (yt *YouTube) runCaptionDownload(ctx context.Context, args []string, pattern string) ([]byte, []string, error) {
+	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	if err == nil {
+		return output, nil, nil
+	}
+
+	files, globErr := filepath.Glob(pattern)
+	if globErr == nil && len(files) > 0 {
+		return output, files, nil
+	}
+	return output, nil, err
 }
 
 func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTubeRef, subLangs []string, originalLang string) (*tldw.Transcript, error) {
@@ -324,7 +313,6 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 	return "", nil
 }
 
-// processSrtTranscript converts SRT to the canonical transcript representation.
 // extractCaptionLanguages returns a sorted, de-duplicated list of caption languages.
 func extractCaptionLanguages(subtitles, autoCaptions map[string]any) []string {
 	langs := make(map[string]struct{})
