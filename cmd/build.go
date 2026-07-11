@@ -21,7 +21,7 @@ func (l cliLogSink) Printf(format string, args ...any) {
 	}
 }
 
-func newEngine(config *internal.Config) *tldw.Engine {
+func newEngine(config *internal.Config) (*tldw.Engine, error) {
 	return buildEngine(config, cliLogSink{config: config})
 }
 
@@ -29,11 +29,11 @@ type silentLogSink struct{}
 
 func (silentLogSink) Printf(string, ...any) {}
 
-func newMCPEngine(config *internal.Config) *tldw.Engine {
+func newMCPEngine(config *internal.Config) (*tldw.Engine, error) {
 	return buildEngine(config, silentLogSink{})
 }
 
-func buildEngine(config *internal.Config, log tldw.LogSink) *tldw.Engine {
+func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error) {
 	runner := &process.CommandRunner{}
 	audio := openaiadapter.NewAudio(runner, config.TempDir, config.Verbose)
 	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
@@ -44,10 +44,12 @@ func buildEngine(config *internal.Config, log tldw.LogSink) *tldw.Engine {
 		tldw.Config{
 			WhisperTimeout: config.WhisperTimeout,
 		},
-		internal.NewPromptManager(config.ConfigDir, config.Prompt),
-		tldw.WithVideoAdapter(youtube),
-		tldw.WithVideoStore(store.NewFile(config.TranscriptsDir)),
-		tldw.WithAIAdapter(ai),
+		tldw.Dependencies{
+			Video:   youtube,
+			Store:   store.NewFile(config.TranscriptsDir),
+			AI:      ai,
+			Prompts: internal.NewPromptManager(config.ConfigDir, config.Prompt),
+		},
 		tldw.WithLogSink(log),
 	)
 }

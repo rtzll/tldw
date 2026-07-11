@@ -52,7 +52,10 @@ Transport options:
 			host = "127.0.0.1"
 		}
 
-		app := newMCPEngine(config)
+		app, err := newMCPEngine(config)
+		if err != nil {
+			return fmt.Errorf("building application: %w", err)
+		}
 
 		mcpserver.InitLogging(config.MCPLogEnabled)
 		mcpServer := mcpserver.NewMCPServer(app)

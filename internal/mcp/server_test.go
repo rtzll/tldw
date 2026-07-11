@@ -34,23 +34,37 @@ var SaveStructuredTranscript = store.SaveTranscript
 var NewAudio = openaiadapter.NewAudio
 var NewAI = openaiadapter.NewAI
 var NewYouTubeWithCache = ytdlpadapter.NewYouTubeWithCache
-var WithVideoAdapter = tldw.WithVideoAdapter
 
-func WithAI(ai *openaiadapter.AI) tldw.EngineOption { return tldw.WithAIAdapter(ai) }
+type engineOption func(*tldw.Dependencies)
 
-func newTestEngine(config *Config, options ...tldw.EngineOption) *Engine {
+func WithVideoAdapter(video tldw.VideoAdapter) engineOption {
+	return func(dependencies *tldw.Dependencies) { dependencies.Video = video }
+}
+
+func WithAI(ai *openaiadapter.AI) engineOption {
+	return func(dependencies *tldw.Dependencies) { dependencies.AI = ai }
+}
+
+func newTestEngine(config *Config, options ...engineOption) *Engine {
 	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, false, true)
 	audio := openaiadapter.NewAudio(&mockCommandRunner{}, config.TempDir, false)
-	defaults := []tldw.EngineOption{
-		tldw.WithVideoAdapter(youtube),
-		tldw.WithVideoStore(store.NewFile(config.TranscriptsDir)),
-		tldw.WithAIAdapter(openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, false, true)),
+	dependencies := tldw.Dependencies{
+		Video:   youtube,
+		Store:   store.NewFile(config.TranscriptsDir),
+		AI:      openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, false, true),
+		Prompts: legacy.NewPromptManager(config.ConfigDir, config.Prompt),
 	}
-	return tldw.NewEngine(
+	for _, option := range options {
+		option(&dependencies)
+	}
+	engine, err := tldw.NewEngine(
 		tldw.Config{WhisperTimeout: config.WhisperTimeout},
-		legacy.NewPromptManager(config.ConfigDir, config.Prompt),
-		append(defaults, options...)...,
+		dependencies,
 	)
+	if err != nil {
+		panic(err)
+	}
+	return engine
 }
 
 type mockCommandRunner struct {

@@ -3,7 +3,6 @@ package internal
 import (
 	"fmt"
 
-	"github.com/rtzll/tldw/internal/tldw"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +19,7 @@ func AddOpenAIFlags(cmd *cobra.Command) {
 }
 
 // HandlePromptFlag processes the --prompt flag to set custom prompt
-func HandlePromptFlag(cmd *cobra.Command, app *tldw.Engine, config *Config) error {
+func HandlePromptFlag(cmd *cobra.Command, config *Config) error {
 	// Check if prompt flag was explicitly set
 	promptFlag := cmd.Flags().Lookup("prompt")
 	if promptFlag == nil || !promptFlag.Changed {
@@ -37,8 +36,7 @@ func HandlePromptFlag(cmd *cobra.Command, app *tldw.Engine, config *Config) erro
 		return nil
 	}
 
-	// Create a new PromptManager with the specified prompt
-	app.SetPromptManager(NewPromptManager(config.ConfigDir, prompt))
+	config.Prompt = prompt
 
 	// Check if it's a file path or a prompt string for verbose output
 	if IsLikelyFilePath(prompt) && FileExists(prompt) {

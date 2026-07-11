@@ -94,27 +94,6 @@ type PlaylistSummaryResult struct {
 	Skipped   []string
 }
 
-// WithVideoAdapter replaces YouTube access at the application seam.
-func WithVideoAdapter(video VideoAdapter) EngineOption {
-	return func(a *Engine) {
-		a.video = video
-	}
-}
-
-// WithAIAdapter replaces OpenAI access at the application seam.
-func WithAIAdapter(ai AIAdapter) EngineOption {
-	return func(a *Engine) {
-		a.ai = ai
-	}
-}
-
-// WithVideoStore replaces local persistence at the application seam.
-func WithVideoStore(store VideoStore) EngineOption {
-	return func(a *Engine) {
-		a.store = store
-	}
-}
-
 // WithLogSink supplies diagnostic event handling for the application module.
 func WithLogSink(log LogSink) EngineOption {
 	return func(a *Engine) {

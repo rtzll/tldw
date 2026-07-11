@@ -16,6 +16,14 @@ type PromptBuilder interface {
 	CreatePrompt(transcript string, metadata *VideoMetadata) (string, error)
 }
 
+// Dependencies contains the collaborators required by every Engine instance.
+type Dependencies struct {
+	Video   VideoAdapter
+	Store   VideoStore
+	AI      AIAdapter
+	Prompts PromptBuilder
+}
+
 // Engine is the application's deep module and owns workflow policy.
 type Engine struct {
 	video         VideoAdapter
@@ -28,10 +36,28 @@ type Engine struct {
 	metadataMu    sync.RWMutex
 }
 
-// NewEngine initializes the application module.
-func NewEngine(config Config, promptManager PromptBuilder, options ...EngineOption) *Engine {
+// NewEngine initializes a fully usable application module.
+func NewEngine(config Config, dependencies Dependencies, options ...EngineOption) (*Engine, error) {
+	if dependencies.Video == nil {
+		return nil, fmt.Errorf("video adapter is required")
+	}
+	if dependencies.Store == nil {
+		return nil, fmt.Errorf("video store is required")
+	}
+	if dependencies.AI == nil {
+		return nil, fmt.Errorf("AI adapter is required")
+	}
+	if dependencies.Prompts == nil {
+		return nil, fmt.Errorf("prompt builder is required")
+	}
+	if config.WhisperTimeout < 0 {
+		return nil, fmt.Errorf("whisper timeout must not be negative")
+	}
 	app := &Engine{
-		promptManager: promptManager,
+		video:         dependencies.Video,
+		store:         dependencies.Store,
+		ai:            dependencies.AI,
+		promptManager: dependencies.Prompts,
 		config:        config,
 		log:           discardLogSink{},
 		metadataCache: make(map[string]*VideoMetadata),
@@ -40,17 +66,15 @@ func NewEngine(config Config, promptManager PromptBuilder, options ...EngineOpti
 	for _, option := range options {
 		option(app)
 	}
+	if app.log == nil {
+		return nil, fmt.Errorf("log sink must not be nil")
+	}
 
-	return app
+	return app, nil
 }
 
 // EngineOption customizes Engine creation.
 type EngineOption func(*Engine)
-
-// SetPromptManager sets a new prompt manager
-func (app *Engine) SetPromptManager(pm PromptBuilder) {
-	app.promptManager = pm
-}
 
 // getCachedMetadata returns metadata from the in-memory cache if available
 func (app *Engine) getCachedMetadata(id string) (*VideoMetadata, bool) {

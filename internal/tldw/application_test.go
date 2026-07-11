@@ -7,7 +7,44 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rtzll/tldw/internal/store"
+	"github.com/rtzll/tldw/internal/tldw"
 )
+
+type fixedPromptBuilder struct{}
+
+func (fixedPromptBuilder) CreatePrompt(string, *tldw.VideoMetadata) (string, error) {
+	return "prompt", nil
+}
+
+func TestNewEngineRejectsMissingRequiredDependencies(t *testing.T) {
+	valid := tldw.Dependencies{
+		Video:   &engineVideoAdapter{},
+		Store:   store.NewFile(t.TempDir()),
+		AI:      &engineAIAdapter{},
+		Prompts: fixedPromptBuilder{},
+	}
+	tests := map[string]func(*tldw.Dependencies){
+		"video":   func(dependencies *tldw.Dependencies) { dependencies.Video = nil },
+		"store":   func(dependencies *tldw.Dependencies) { dependencies.Store = nil },
+		"AI":      func(dependencies *tldw.Dependencies) { dependencies.AI = nil },
+		"prompts": func(dependencies *tldw.Dependencies) { dependencies.Prompts = nil },
+	}
+	for name, remove := range tests {
+		t.Run(name, func(t *testing.T) {
+			dependencies := valid
+			remove(&dependencies)
+			if _, err := tldw.NewEngine(tldw.Config{}, dependencies); err == nil {
+				t.Fatalf("NewEngine() accepted a missing %s dependency", name)
+			}
+		})
+	}
+
+	if _, err := tldw.NewEngine(tldw.Config{WhisperTimeout: -time.Second}, valid); err == nil {
+		t.Fatal("NewEngine() accepted a negative Whisper timeout")
+	}
+}
 
 type deadlineOpenAIClient struct {
 	sawDeadline bool

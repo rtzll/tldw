@@ -62,9 +62,12 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return err
 		}
 
-		app := newEngine(config)
-		if err := internal.HandlePromptFlag(cmd, app, config); err != nil {
+		if err := internal.HandlePromptFlag(cmd, config); err != nil {
 			return err
+		}
+		app, err := newEngine(config)
+		if err != nil {
+			return fmt.Errorf("building application: %w", err)
 		}
 
 		// Parse and validate argument using enhanced parser

@@ -18,7 +18,7 @@ import (
 
 type Config = legacy.Config
 type Engine = tldw.Engine
-type EngineOption = tldw.EngineOption
+type EngineOption func(*tldw.Dependencies)
 type YouTubeRef = tldw.YouTubeRef
 type VideoMetadata = tldw.VideoMetadata
 type Transcript = tldw.Transcript
@@ -39,12 +39,17 @@ const (
 
 var ErrCaptionsUnavailable = tldw.ErrCaptionsUnavailable
 
-func ParseVideoArg(input string) (YouTubeRef, error)         { return tldw.ParseVideoRef(input) }
-func WithVideoAdapter(video tldw.VideoAdapter) EngineOption  { return tldw.WithVideoAdapter(video) }
-func WithAIAdapter(ai tldw.AIAdapter) EngineOption           { return tldw.WithAIAdapter(ai) }
-func WithVideoStore(videoStore tldw.VideoStore) EngineOption { return tldw.WithVideoStore(videoStore) }
-func WithAI(ai *openaiadapter.AI) EngineOption               { return tldw.WithAIAdapter(ai) }
-func WithYouTube(youtube *ytdlpadapter.YouTube) EngineOption { return tldw.WithVideoAdapter(youtube) }
+func ParseVideoArg(input string) (YouTubeRef, error) { return tldw.ParseVideoRef(input) }
+func WithVideoAdapter(video tldw.VideoAdapter) EngineOption {
+	return func(dependencies *tldw.Dependencies) { dependencies.Video = video }
+}
+func WithAIAdapter(ai tldw.AIAdapter) EngineOption {
+	return func(dependencies *tldw.Dependencies) { dependencies.AI = ai }
+}
+func WithAI(ai *openaiadapter.AI) EngineOption { return WithAIAdapter(ai) }
+func WithYouTube(youtube *ytdlpadapter.YouTube) EngineOption {
+	return WithVideoAdapter(youtube)
+}
 func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose, quiet bool) *ytdlpadapter.YouTube {
 	return ytdlpadapter.NewYouTubeWithCache(transcriptsDir, cacheDir, verbose, quiet)
 }
@@ -110,12 +115,20 @@ type engineAIAdapter struct {
 func newTestEngine(config *Config, options ...EngineOption) *Engine {
 	runner := &process.CommandRunner{}
 	audio := NewAudio(runner, config.TempDir, config.Verbose)
-	defaults := []EngineOption{
-		WithVideoAdapter(ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)),
-		WithVideoStore(store.NewFile(config.TranscriptsDir)),
-		WithAIAdapter(openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)),
+	dependencies := tldw.Dependencies{
+		Video:   ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet),
+		Store:   store.NewFile(config.TranscriptsDir),
+		AI:      openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet),
+		Prompts: legacy.NewPromptManager(config.ConfigDir, config.Prompt),
 	}
-	return tldw.NewEngine(tldw.Config{WhisperTimeout: config.WhisperTimeout}, legacy.NewPromptManager(config.ConfigDir, config.Prompt), append(defaults, options...)...)
+	for _, option := range options {
+		option(&dependencies)
+	}
+	engine, err := tldw.NewEngine(tldw.Config{WhisperTimeout: config.WhisperTimeout}, dependencies)
+	if err != nil {
+		panic(err)
+	}
+	return engine
 }
 
 func (f *engineAIAdapter) Transcribe(context.Context, string) (string, error) {
