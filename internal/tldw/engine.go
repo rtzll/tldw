@@ -16,9 +16,6 @@ const (
 	TranscriptPolicyCaptionsOnly TranscriptPolicy = iota
 	TranscriptPolicyCaptionsThenWhisper
 	TranscriptPolicyWhisperOnly
-
-	// TranscriptPolicyWhisperAllowed is retained as a compatibility name.
-	TranscriptPolicyWhisperAllowed = TranscriptPolicyCaptionsThenWhisper
 )
 
 // TranscriptRequest describes transcript acquisition without presentation
@@ -36,6 +33,9 @@ var ErrCaptionsUnavailable = errors.New("captions are unavailable")
 
 // ErrDownloadFailed marks a retryable failure from a video adapter.
 var ErrDownloadFailed = errors.New("video download failed")
+
+// ErrInvalidTranscriptPolicy indicates a request with an unknown policy value.
+var ErrInvalidTranscriptPolicy = errors.New("invalid transcript policy")
 
 // ErrStoreNotFound indicates that a requested cache entry does not exist.
 var ErrStoreNotFound = errors.New("store entry not found")
@@ -104,6 +104,9 @@ func WithLogSink(log LogSink) EngineOption {
 // Transcript acquires a canonical transcript through one workflow shared by
 // CLI, MCP, summaries, and playlists.
 func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request TranscriptRequest) (*Transcript, error) {
+	if err := validateTranscriptRequest(request); err != nil {
+		return nil, err
+	}
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
@@ -123,6 +126,9 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return nil, fmt.Errorf("checking video metadata: %w", err)
 	}
 	if !metadata.HasCaptions {
+		if request.RequireTimestamps {
+			return nil, ErrTranscriptTimestampsUnavailable
+		}
 		if request.Policy == TranscriptPolicyCaptionsOnly {
 			return nil, fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.ID())
 		}
@@ -136,11 +142,14 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		}
 		transcript, err = app.video.FetchCaptions(ctx, ref, metadata.CaptionLanguages, metadata.Language)
 	}
-	if (err != nil || transcript == nil) && request.Policy == TranscriptPolicyCaptionsThenWhisper {
+	if (err != nil || transcript == nil) && request.Policy == TranscriptPolicyCaptionsThenWhisper && !request.RequireTimestamps {
 		return app.transcribeVideo(ctx, ref)
 	}
 	if err != nil || transcript == nil {
 		return nil, fmt.Errorf("no transcript available for %s", ref.ID())
+	}
+	if request.RequireTimestamps && !transcript.HasTimestamps() {
+		return nil, ErrTranscriptTimestampsUnavailable
 	}
 
 	transcript.VideoID = ref.ID()
@@ -195,6 +204,9 @@ func (app *Engine) SummarizeVideo(ctx context.Context, ref YouTubeRef, request T
 // returns transport-neutral output. A caller may provide a consent callback;
 // the application module never prompts or prints directly.
 func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, request PlaylistSummaryRequest) (PlaylistSummaryResult, error) {
+	if err := validateTranscriptRequest(request.Transcript); err != nil {
+		return PlaylistSummaryResult{}, err
+	}
 	if !ref.IsPlaylist() {
 		return PlaylistSummaryResult{}, fmt.Errorf("playlist summary requires a playlist reference")
 	}
@@ -254,6 +266,18 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, re
 	}
 	result.Processed = len(videos)
 	return result, nil
+}
+
+func validateTranscriptRequest(request TranscriptRequest) error {
+	switch request.Policy {
+	case TranscriptPolicyCaptionsOnly, TranscriptPolicyCaptionsThenWhisper, TranscriptPolicyWhisperOnly:
+	default:
+		return fmt.Errorf("%w: %d", ErrInvalidTranscriptPolicy, request.Policy)
+	}
+	if request.RequireTimestamps && request.Policy == TranscriptPolicyWhisperOnly {
+		return ErrTranscriptTimestampsUnavailable
+	}
+	return nil
 }
 
 func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {

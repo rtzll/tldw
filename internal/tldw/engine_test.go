@@ -23,21 +23,24 @@ type YouTubeRef = tldw.YouTubeRef
 type VideoMetadata = tldw.VideoMetadata
 type Transcript = tldw.Transcript
 type TranscriptSegment = tldw.TranscriptSegment
+type TranscriptPolicy = tldw.TranscriptPolicy
 type PlaylistInfo = tldw.PlaylistInfo
 type TranscriptRequest = tldw.TranscriptRequest
 type PlaylistSummaryRequest = tldw.PlaylistSummaryRequest
 
 const (
-	ContentTypeVideo                 = tldw.ContentTypeVideo
-	TranscriptSourceCaptions         = tldw.TranscriptSourceCaptions
-	TranscriptSourceWhisper          = tldw.TranscriptSourceWhisper
-	TranscriptPolicyCaptionsOnly     = tldw.TranscriptPolicyCaptionsOnly
-	TranscriptPolicyWhisperOnly      = tldw.TranscriptPolicyWhisperOnly
-	TranscriptRenderFormatTimestamps = tldw.TranscriptRenderFormatTimestamps
-	WhisperLimit                     = legacy.WhisperLimit
+	ContentTypeVideo                    = tldw.ContentTypeVideo
+	TranscriptSourceCaptions            = tldw.TranscriptSourceCaptions
+	TranscriptSourceWhisper             = tldw.TranscriptSourceWhisper
+	TranscriptPolicyCaptionsOnly        = tldw.TranscriptPolicyCaptionsOnly
+	TranscriptPolicyCaptionsThenWhisper = tldw.TranscriptPolicyCaptionsThenWhisper
+	TranscriptPolicyWhisperOnly         = tldw.TranscriptPolicyWhisperOnly
+	TranscriptRenderFormatTimestamps    = tldw.TranscriptRenderFormatTimestamps
+	WhisperLimit                        = legacy.WhisperLimit
 )
 
 var ErrCaptionsUnavailable = tldw.ErrCaptionsUnavailable
+var ErrInvalidTranscriptPolicy = tldw.ErrInvalidTranscriptPolicy
 
 func ParseVideoArg(input string) (YouTubeRef, error) { return tldw.ParseVideoRef(input) }
 func WithVideoAdapter(video tldw.VideoAdapter) EngineOption {
@@ -214,6 +217,48 @@ func TestEngineTranscriptWhisperOnlySkipsCaptionsAndCachesResult(t *testing.T) {
 	}
 	if video.audioCalls != 1 {
 		t.Fatalf("audio calls = %d, want 1", video.audioCalls)
+	}
+}
+
+func TestEngineTranscriptRejectsUnknownPolicy(t *testing.T) {
+	ref, err := ParseVideoArg("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
+	}
+	video := &engineVideoAdapter{
+		metadata:   &VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
+		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "captions"},
+	}
+	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true}, WithVideoAdapter(video))
+
+	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{Policy: TranscriptPolicy(99)})
+	if !errors.Is(err, ErrInvalidTranscriptPolicy) {
+		t.Fatalf("Transcript() error = %v, want ErrInvalidTranscriptPolicy", err)
+	}
+	if video.transcriptCalls != 0 {
+		t.Fatalf("caption transcript calls = %d, want 0", video.transcriptCalls)
+	}
+}
+
+func TestEngineTranscriptDoesNotUseWhisperForTimestampRequest(t *testing.T) {
+	ref, err := ParseVideoArg("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
+	}
+	video := &engineVideoAdapter{
+		metadata:  &VideoMetadata{HasCaptions: false},
+		audioPath: t.TempDir() + "/audio.mp3",
+	}
+	engine := newTestEngine(&Config{TranscriptsDir: t.TempDir(), Quiet: true}, WithVideoAdapter(video))
+
+	_, err = engine.Transcript(context.Background(), ref, TranscriptRequest{
+		Policy: TranscriptPolicyCaptionsThenWhisper, RequireTimestamps: true,
+	})
+	if !errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
+		t.Fatalf("Transcript() error = %v, want ErrTranscriptTimestampsUnavailable", err)
+	}
+	if video.audioCalls != 0 {
+		t.Fatalf("audio calls = %d, want 0", video.audioCalls)
 	}
 }
 
