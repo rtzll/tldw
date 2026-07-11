@@ -74,8 +74,6 @@ func (yt *YouTube) SetLogSink(log tldw.LogSink) {
 	yt.log = log
 }
 
-func (yt *YouTube) SetExecutor(executor process.Runner) { yt.executor = executor }
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -90,23 +88,22 @@ func getVideoID(youtubeURL string) (string, error) {
 }
 
 func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
-	return yt.Metadata(ctx, ref.URL())
+	return yt.metadata(ctx, ref.URL())
 }
 
 func (yt *YouTube) FetchCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) (*Transcript, error) {
-	return yt.FetchStructuredTranscript(ctx, ref.URL(), preferredLangs, originalLang)
+	return yt.fetchStructuredTranscript(ctx, ref.URL(), preferredLangs, originalLang)
 }
 
 func (yt *YouTube) DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error) {
-	return yt.Audio(ctx, ref.URL())
+	return yt.audio(ctx, ref.URL())
 }
 
 func (yt *YouTube) FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
-	return yt.PlaylistVideoURLs(ctx, ref.URL())
+	return yt.playlistVideoURLs(ctx, ref.URL())
 }
 
-// Metadata fetches video details using direct yt-dlp command execution
-func (yt *YouTube) Metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
+func (yt *YouTube) metadata(ctx context.Context, youtubeURL string) (*VideoMetadata, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting video metadata...\n")
 	}
@@ -265,7 +262,7 @@ func nonEmptyStrings(values []string) []string {
 }
 
 // Audio gets mp3 audio from a YouTube video
-func (yt *YouTube) Audio(ctx context.Context, youtubeURL string) (string, error) {
+func (yt *YouTube) audio(ctx context.Context, youtubeURL string) (string, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading audio...\n")
 	}
@@ -553,18 +550,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 	return nil
 }
 
-// FetchTranscript gets a transcript, using cached version if available.
-func (yt *YouTube) FetchTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (string, error) {
-	transcript, err := yt.FetchStructuredTranscript(ctx, youtubeURL, subLangs, originalLang)
-	if err != nil {
-		return "", err
-	}
-
-	return transcript.Render(TranscriptRenderFormatPlain)
-}
-
-// FetchStructuredTranscript gets a structured transcript, using cached subtitles if available.
-func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (*Transcript, error) {
+func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, youtubeURL string, subLangs []string, originalLang string) (*Transcript, error) {
 	youtubeID, err := getVideoID(youtubeURL)
 	if err != nil {
 		return nil, fmt.Errorf("extracting video ID: %w", err)
@@ -914,7 +900,7 @@ type PlaylistMetadata struct {
 }
 
 // PlaylistVideoURLs fetches all video URLs from a YouTube playlist
-func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
+func (yt *YouTube) playlistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting playlist video URLs...\n")
 	}

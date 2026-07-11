@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 type mockCommandRunner struct {
@@ -20,15 +22,19 @@ func TestAudioUsesConfiguredCacheDir(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	yt := NewYouTubeWithCache(t.TempDir(), cacheDir, false, true)
 	yt.executor = &mockCommandRunner{}
-
-	got, err := yt.Audio(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+	ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	if err != nil {
-		t.Fatalf("Audio() error = %v", err)
+		t.Fatalf("ParseVideoRef() error = %v", err)
+	}
+
+	got, err := yt.DownloadAudio(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("DownloadAudio() error = %v", err)
 	}
 
 	want := filepath.Join(cacheDir, "dQw4w9WgXcQ.mp3")
 	if got != want {
-		t.Fatalf("Audio() = %q, want %q", got, want)
+		t.Fatalf("DownloadAudio() = %q, want %q", got, want)
 	}
 }
 
@@ -41,10 +47,14 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 			{"id":"../../outside","title":"invalid"}
 		]
 	}`)}
-
-	info, err := yt.PlaylistVideoURLs(context.Background(), "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
+	ref, err := tldw.ParseReference("PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
 	if err != nil {
-		t.Fatalf("PlaylistVideoURLs() error = %v", err)
+		t.Fatalf("ParseReference() error = %v", err)
+	}
+
+	info, err := yt.FetchPlaylist(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("FetchPlaylist() error = %v", err)
 	}
 	if len(info.Videos) != 1 {
 		t.Fatalf("Videos length = %d, want 1 (%v)", len(info.Videos), info.Videos)
@@ -76,10 +86,14 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			yt := NewYouTube(t.TempDir(), false, true)
 			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
-
-			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+			ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			if err != nil {
-				t.Fatalf("Metadata() error = %v", err)
+				t.Fatalf("ParseVideoRef() error = %v", err)
+			}
+
+			metadata, err := yt.FetchMetadata(context.Background(), ref)
+			if err != nil {
+				t.Fatalf("FetchMetadata() error = %v", err)
 			}
 			if metadata.ChannelURL != tt.wantChannelURL {
 				t.Fatalf("ChannelURL = %q, want %q", metadata.ChannelURL, tt.wantChannelURL)
@@ -91,10 +105,14 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
 	yt := NewYouTube(t.TempDir(), false, true)
 	yt.executor = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
-
-	metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+	ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	if err != nil {
-		t.Fatalf("Metadata() error = %v", err)
+		t.Fatalf("ParseVideoRef() error = %v", err)
+	}
+
+	metadata, err := yt.FetchMetadata(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("FetchMetadata() error = %v", err)
 	}
 	if metadata.PublishedAt != "2026-06-29" {
 		t.Fatalf("PublishedAt = %q, want 2026-06-29", metadata.PublishedAt)
@@ -144,10 +162,14 @@ func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			yt := NewYouTube(t.TempDir(), false, true)
 			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
-
-			metadata, err := yt.Metadata(context.Background(), "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+			ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			if err != nil {
-				t.Fatalf("Metadata() error = %v", err)
+				t.Fatalf("ParseVideoRef() error = %v", err)
+			}
+
+			metadata, err := yt.FetchMetadata(context.Background(), ref)
+			if err != nil {
+				t.Fatalf("FetchMetadata() error = %v", err)
 			}
 			if metadata.Channel != tt.wantChannel {
 				t.Fatalf("Channel = %q, want %q", metadata.Channel, tt.wantChannel)
