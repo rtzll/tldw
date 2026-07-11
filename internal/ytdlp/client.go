@@ -852,6 +852,9 @@ func parseSRTTiming(line string) (float64, float64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	if end < start {
+		return 0, 0, fmt.Errorf("invalid SRT timing range: end precedes start")
+	}
 
 	return start, end, nil
 }
