@@ -29,10 +29,6 @@ type silentLogSink struct{}
 
 func (silentLogSink) Printf(string, ...any) {}
 
-func newMCPEngine(config *internal.Config) (*tldw.Engine, error) {
-	return buildEngine(config, silentLogSink{})
-}
-
 func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error) {
 	runner := &process.CommandRunner{}
 	audio := openaiadapter.NewAudio(runner, config.TempDir, config.Verbose)
