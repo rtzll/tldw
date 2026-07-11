@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -38,21 +37,6 @@ func HandlePromptFlag(cmd *cobra.Command, config *Config) error {
 	}
 
 	config.Prompt = prompt
-
-	isPromptFile := false
-	if IsLikelyFilePath(prompt) {
-		_, err := os.Stat(prompt)
-		isPromptFile = err == nil
-	}
-	if isPromptFile {
-		if config.Verbose {
-			fmt.Printf("Using custom prompt file: %s\n", prompt)
-		}
-	} else {
-		if config.Verbose {
-			fmt.Printf("Using custom prompt string\n")
-		}
-	}
 
 	return nil
 }
