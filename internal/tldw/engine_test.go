@@ -361,12 +361,16 @@ func TestEngineSummarizePlaylistReturnsResultWithoutPrinting(t *testing.T) {
 		t.Fatalf("ParseYouTubeArg() error = %v", err)
 	}
 
+	videoRef, err := ParseVideoArg("dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatalf("ParseVideoArg() error = %v", err)
+	}
 	video := &engineVideoAdapter{
 		metadata:   &VideoMetadata{Title: "First", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}},
 		transcript: &Transcript{Source: TranscriptSourceCaptions, Text: "playlist transcript"},
 		playlist: &PlaylistInfo{
 			Title:  "Examples",
-			Videos: []YouTubeRef{{ContentType: ContentTypeVideo, NormalizedURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ID: "dQw4w9WgXcQ"}},
+			Videos: []YouTubeRef{videoRef},
 		},
 	}
 	engine := newTestEngine(

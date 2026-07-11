@@ -34,7 +34,7 @@ func (p *summaryProgress) finish() {
 }
 
 func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.YouTubeRef, fallbackWhisper bool) error {
-	if ref.ContentType == internal.ContentTypePlaylist {
+	if ref.IsPlaylist() {
 		return runPlaylistSummary(ctx, engine, config, ref, fallbackWhisper)
 	}
 
@@ -76,7 +76,7 @@ func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *intern
 		request.Transcript.Policy = tldw.TranscriptPolicyCaptionsThenWhisper
 	} else {
 		request.ConfirmWhisper = func(video tldw.YouTubeRef, metadata *tldw.VideoMetadata) bool {
-			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use Whisper ($$$)?", video.ID, metadata.Title))
+			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use Whisper ($$$)?", video.ID(), metadata.Title))
 		}
 	}
 

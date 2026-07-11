@@ -70,29 +70,13 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		// Parse and validate argument using enhanced parser
-		parsed := internal.ParseArgNew(args[0])
-
-		if parsed.Error != nil {
-			// Handle command-like inputs with suggestions
-			if parsed.ContentType == internal.ContentTypeCommand {
-				availableCommands := []string{"mcp", "transcribe", "cp", "version", "paths", "help"}
-				suggestion := parsed.SuggestCorrection(availableCommands)
-				return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
-			}
-
-			// Handle other parsing errors
-			return fmt.Errorf("invalid input '%s': %v", args[0], parsed.Error)
-		}
-
-		// Ensure we have valid YouTube content for summarization
-		if !parsed.IsValid() {
-			return fmt.Errorf("'%s' is not valid YouTube content (got %s)", args[0], parsed.ContentType)
-		}
-
-		ref, err := parsed.Ref()
+		ref, err := internal.ParseYouTubeArg(args[0])
 		if err != nil {
-			return err
+			if internal.IsLikelyCommand(args[0]) {
+				availableCommands := []string{"mcp", "transcribe", "cp", "version", "paths", "help"}
+				return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], internal.SuggestCommand(args[0], availableCommands))
+			}
+			return fmt.Errorf("invalid input %q: %w", args[0], err)
 		}
 		fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
 		return runSummary(cmd.Context(), app, config, ref, fallbackWhisper)

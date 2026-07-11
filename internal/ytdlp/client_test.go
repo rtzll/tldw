@@ -107,7 +107,7 @@ func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
 	if len(info.Videos) != 1 {
 		t.Fatalf("Videos length = %d, want 1 (%v)", len(info.Videos), info.Videos)
 	}
-	if info.Videos[0].NormalizedURL != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+	if info.Videos[0].URL() != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
 		t.Fatalf("Videos[0] = %+v", info.Videos[0])
 	}
 }

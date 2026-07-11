@@ -16,7 +16,7 @@ func TestParseVideoRefNormalizesSupportedInputs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseVideoRef(%q) error = %v", input, err)
 		}
-		if ref.ID != "dQw4w9WgXcQ" || ref.NormalizedURL != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+		if ref.ID() != "dQw4w9WgXcQ" || ref.URL() != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
 			t.Fatalf("ParseVideoRef(%q) = %+v", input, ref)
 		}
 	}

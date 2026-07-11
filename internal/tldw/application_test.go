@@ -82,7 +82,7 @@ func TestTranscribeAudioAppliesWhisperTimeout(t *testing.T) {
 	}
 }
 
-func TestGetTranscriptRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
+func TestParseVideoRefRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
 	baseDir := t.TempDir()
 	transcriptsDir := filepath.Join(baseDir, "transcripts")
 	if err := os.Mkdir(transcriptsDir, 0755); err != nil {
@@ -92,13 +92,12 @@ func TestGetTranscriptRejectsInvalidInputBeforeCacheLookup(t *testing.T) {
 		t.Fatalf("failed to create outside transcript: %v", err)
 	}
 
-	engine := newTestEngine(&Config{TranscriptsDir: transcriptsDir, Quiet: true})
-	got, err := engine.Transcript(context.Background(), YouTubeRef{ContentType: ContentTypeVideo, ID: "../outside"}, TranscriptRequest{Policy: TranscriptPolicyCaptionsOnly})
+	_, err := ParseVideoArg("../outside")
 	if err == nil {
 		t.Fatal("expected invalid input error")
 	}
-	if got != nil && got.PlainText() == "secret" {
-		t.Fatal("read transcript outside configured directory")
+	if data, readErr := os.ReadFile(filepath.Join(baseDir, "outside.txt")); readErr != nil || string(data) != "secret" {
+		t.Fatal("invalid input affected the file outside the transcript directory")
 	}
 }
 

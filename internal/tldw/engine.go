@@ -107,7 +107,7 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
-	if transcript, err := app.store.LoadTranscript(ref.ID); err == nil {
+	if transcript, err := app.store.LoadTranscript(ref.ID()); err == nil {
 		if cachedTranscriptAllowed(transcript, request) {
 			return transcript, nil
 		}
@@ -124,7 +124,7 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	}
 	if !metadata.HasCaptions {
 		if request.Policy == TranscriptPolicyCaptionsOnly {
-			return nil, fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.ID)
+			return nil, fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.ID())
 		}
 		return app.transcribeVideo(ctx, ref)
 	}
@@ -140,10 +140,10 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return app.transcribeVideo(ctx, ref)
 	}
 	if err != nil || transcript == nil {
-		return nil, fmt.Errorf("no transcript available for %s", ref.ID)
+		return nil, fmt.Errorf("no transcript available for %s", ref.ID())
 	}
 
-	transcript.VideoID = ref.ID
+	transcript.VideoID = ref.ID()
 	if err := app.persistTranscript(transcript); err != nil {
 		app.log.Printf("Warning: %v\n", err)
 	}
@@ -195,7 +195,7 @@ func (app *Engine) SummarizeVideo(ctx context.Context, ref YouTubeRef, request T
 // returns transport-neutral output. A caller may provide a consent callback;
 // the application module never prompts or prints directly.
 func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, request PlaylistSummaryRequest) (PlaylistSummaryResult, error) {
-	if ref.ContentType != ContentTypePlaylist {
+	if !ref.IsPlaylist() {
 		return PlaylistSummaryResult{}, fmt.Errorf("playlist summary requires a playlist reference")
 	}
 	playlist, err := app.video.FetchPlaylist(ctx, ref)
@@ -231,7 +231,7 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, re
 			description = description[:147] + "..."
 		}
 		videos = append(videos, VideoTranscript{
-			URL:         videoRef.NormalizedURL,
+			URL:         videoRef.URL(),
 			Title:       metadata.Title,
 			Channel:     metadata.Channel,
 			Duration:    metadata.Duration,
@@ -257,13 +257,13 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, re
 }
 
 func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
-	if cached, ok := app.getCachedMetadata(ref.ID); ok {
+	if cached, ok := app.getCachedMetadata(ref.ID()); ok {
 		return app.useOrRefreshMetadata(ctx, ref, cached), nil
 	}
 
-	if cached, err := app.store.LoadMetadata(ref.ID); err == nil {
+	if cached, err := app.store.LoadMetadata(ref.ID()); err == nil {
 		resolved := app.useOrRefreshMetadata(ctx, ref, cached)
-		app.setCachedMetadata(ref.ID, resolved)
+		app.setCachedMetadata(ref.ID(), resolved)
 		return resolved, nil
 	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
 		return nil, fmt.Errorf("loading cached metadata: %w", err)
@@ -273,7 +273,7 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 	if err != nil {
 		return nil, err
 	}
-	app.cacheMetadata(ref.ID, metadata)
+	app.cacheMetadata(ref.ID(), metadata)
 	return metadata, nil
 }
 
@@ -285,7 +285,7 @@ func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cac
 	if err != nil {
 		return cached
 	}
-	app.cacheMetadata(ref.ID, refreshed)
+	app.cacheMetadata(ref.ID(), refreshed)
 	return refreshed
 }
 
@@ -305,7 +305,7 @@ func (app *Engine) transcribeVideo(ctx context.Context, ref YouTubeRef) (*Transc
 	if err != nil {
 		return nil, err
 	}
-	transcript.VideoID = ref.ID
+	transcript.VideoID = ref.ID()
 	if err := app.persistTranscript(transcript); err != nil {
 		app.log.Printf("Warning: %v\n", err)
 	}

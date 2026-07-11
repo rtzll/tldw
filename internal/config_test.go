@@ -76,26 +76,3 @@ func TestCleanupTempDir(t *testing.T) {
 		}
 	})
 }
-
-func TestIsLikelyYouTubeChannelHandle(t *testing.T) {
-	tests := []struct {
-		name string
-		s    string
-		want bool
-	}{
-		{"valid brand", "mkbhd", true},
-		{"valid with @", "@mkbhd", true},
-		{"command-like", "help", false},
-		{"common word", "test", false},
-		{"too long no digits", "verylonghandlename", false},
-		{"long with digits", "channel12345", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isLikelyYouTubeChannelHandle(tt.s); got != tt.want {
-				t.Errorf("isLikelyYouTubeChannelHandle(%q) = %v, want %v", tt.s, got, tt.want)
-			}
-		})
-	}
-}

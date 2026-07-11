@@ -177,7 +177,7 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 		MCPLogError("Tool: get_youtube_metadata - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
 	}
-	url = parsed.NormalizedURL
+	url = parsed.URL()
 	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
 
 	// Get metadata from YouTube
@@ -244,7 +244,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 		MCPLogError("Tool: get_youtube_transcript - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
 	}
-	url = parsed.NormalizedURL
+	url = parsed.URL()
 	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
 	includeTimestamps := input.IncludeTimestamps
 
@@ -287,7 +287,7 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 		MCPLogError("Tool: transcribe_youtube_whisper - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
 	}
-	url = parsed.NormalizedURL
+	url = parsed.URL()
 	MCPLogInfo("Tool: transcribe_youtube_whisper - URL: %s (PAID OPERATION)", url)
 	if input.IncludeTimestamps {
 		err := fmt.Errorf("timestamped Whisper transcripts are not supported yet")

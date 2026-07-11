@@ -2,11 +2,14 @@ package internal
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
 )
+
+var modelNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,}$`)
 
 func ValidateModel(model string) error {
 	if strings.TrimSpace(model) == "" {

@@ -93,23 +93,23 @@ func getVideoID(youtubeURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parsed.ID, nil
+	return parsed.ID(), nil
 }
 
 func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
-	return yt.Metadata(ctx, ref.NormalizedURL)
+	return yt.Metadata(ctx, ref.URL())
 }
 
 func (yt *YouTube) FetchCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) (*Transcript, error) {
-	return yt.FetchStructuredTranscript(ctx, ref.NormalizedURL, preferredLangs, originalLang)
+	return yt.FetchStructuredTranscript(ctx, ref.URL(), preferredLangs, originalLang)
 }
 
 func (yt *YouTube) DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error) {
-	return yt.Audio(ctx, ref.NormalizedURL)
+	return yt.Audio(ctx, ref.URL())
 }
 
 func (yt *YouTube) FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error) {
-	return yt.PlaylistVideoURLs(ctx, ref.NormalizedURL)
+	return yt.PlaylistVideoURLs(ctx, ref.URL())
 }
 
 // Metadata fetches video details using direct yt-dlp command execution
@@ -1001,13 +1001,10 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	var videos []YouTubeRef
 	for _, entry := range playlist.Entries {
 		if tldw.IsValidVideoID(entry.ID) {
-			videoURL := "https://www.youtube.com/watch?v=" + entry.ID
-			videos = append(videos, YouTubeRef{
-				ContentType:   ContentTypeVideo,
-				OriginalInput: entry.URL,
-				NormalizedURL: videoURL,
-				ID:            entry.ID,
-			})
+			ref, err := tldw.ParseVideoRef(entry.ID)
+			if err == nil {
+				videos = append(videos, ref)
+			}
 		}
 	}
 
