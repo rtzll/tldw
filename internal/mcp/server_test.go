@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,89 +14,39 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	legacy "github.com/rtzll/tldw/internal"
-	openaiadapter "github.com/rtzll/tldw/internal/openai"
-	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
-	ytdlpadapter "github.com/rtzll/tldw/internal/ytdlp"
 )
 
-type Config = legacy.Config
-type Engine = tldw.Engine
-type YouTube = ytdlpadapter.YouTube
-type TranscriptSegment = tldw.TranscriptSegment
-
-const WhisperLimit = legacy.WhisperLimit
-
-var SaveStructuredTranscript = store.SaveTranscript
-var NewAudio = openaiadapter.NewAudio
-var NewYouTubeWithCache = ytdlpadapter.NewYouTubeWithCache
-
-func NewAI(client openaiadapter.OpenAIClientInterface, audio *openaiadapter.Audio, model string, limit int64, timeout time.Duration, verbose, quiet bool) *openaiadapter.AI {
-	ai, err := openaiadapter.NewAI(client, audio, openaiadapter.Config{Model: model, WhisperLimit: limit, Timeout: timeout, Verbose: verbose, Quiet: quiet})
-	if err != nil {
-		panic(err)
-	}
-	return ai
+type applicationStub struct {
+	metadata        *VideoMetadata
+	metadataErr     error
+	transcript      *Transcript
+	transcriptErr   error
+	metadataCalls   int
+	transcriptCalls int
+	lastRequest     TranscriptRequest
 }
 
-type engineOption func(*tldw.Dependencies)
-
-func WithVideoAdapter(video tldw.VideoAdapter) engineOption {
-	return func(dependencies *tldw.Dependencies) { dependencies.Video = video }
+func (stub *applicationStub) MetadataFor(context.Context, YouTubeRef) (*VideoMetadata, error) {
+	stub.metadataCalls++
+	return stub.metadata, stub.metadataErr
 }
 
-func WithAI(ai *openaiadapter.AI) engineOption {
-	return func(dependencies *tldw.Dependencies) { dependencies.AI = ai }
+func (stub *applicationStub) Transcript(_ context.Context, _ YouTubeRef, request TranscriptRequest) (*Transcript, error) {
+	stub.transcriptCalls++
+	stub.lastRequest = request
+	return stub.transcript, stub.transcriptErr
 }
 
-func newTestEngine(config *Config, options ...engineOption) *Engine {
-	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, false, true)
-	audio := openaiadapter.NewAudio(&mockCommandRunner{}, config.TempDir, false)
-	model := config.TLDRModel
-	if model == "" {
-		model = "gpt-5.4-mini"
+func newTestApplication() *applicationStub {
+	return &applicationStub{
+		metadata:   &VideoMetadata{Title: "Test Video", Channel: "Test Channel", HasCaptions: true, CaptionLanguages: []string{"en"}},
+		transcript: &Transcript{VideoID: "dQw4w9WgXcQ", Source: TranscriptSourceCaptions, Text: "transcript"},
 	}
-	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
-		Model: model, WhisperLimit: WhisperLimit, Timeout: config.SummaryTimeout, Quiet: true,
-	})
-	if err != nil {
-		panic(err)
-	}
-	dependencies := tldw.Dependencies{
-		Video:   youtube,
-		Store:   store.NewFile(config.TranscriptsDir),
-		AI:      ai,
-		Prompts: legacy.NewPromptManager(config.ConfigDir, config.Prompt),
-	}
-	for _, option := range options {
-		option(&dependencies)
-	}
-	engine, err := tldw.NewEngine(
-		tldw.Config{WhisperTimeout: config.WhisperTimeout},
-		dependencies,
-	)
-	if err != nil {
-		panic(err)
-	}
-	return engine
-}
-
-type mockCommandRunner struct {
-	output []byte
-	err    error
-}
-
-func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
-	return m.output, m.err
-}
-
-func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
-	return m.err
 }
 
 func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
-	server := NewMCPServer(newTestMCPApp(t))
+	server := NewMCPServer(newTestApplication())
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	res, err := clientSession.ListTools(ctx, nil)
@@ -225,7 +173,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 }
 
 func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
-	server := NewMCPServer(newTestMCPApp(t))
+	server := NewMCPServer(newTestApplication())
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	res, err := clientSession.ListTools(ctx, nil)
@@ -240,19 +188,14 @@ func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
 }
 
 func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
-	app := newTestMCPApp(t)
-	testYouTube(t, app).SetExecutor(&mockCommandRunner{output: []byte(`{
-		"title": "Test Video",
-		"description": "Test Description",
-		"channel": "Test Channel",
-		"creators": ["Test Channel", "Guest Creator"],
-		"duration": 42,
-		"language": "en",
-		"categories": ["Education"],
-		"tags": ["go", "mcp"],
-		"chapters": [{"start_time": 0, "end_time": 10, "title": "Intro"}],
-		"subtitles": {"en": [{}]}
-	}`)})
+	app := newTestApplication()
+	app.metadata = &VideoMetadata{
+		Title: "Test Video", Description: "Test Description", Channel: "Test Channel",
+		Creators: []string{"Test Channel", "Guest Creator"}, Duration: 42, Language: "en",
+		Categories: []string{"Education"}, Tags: []string{"go", "mcp"},
+		Chapters:    []tldw.VideoChapter{{StartTime: 0, EndTime: 10, Title: "Intro"}},
+		HasCaptions: true, CaptionLanguages: []string{"en"},
+	}
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -300,19 +243,20 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 	if len(output.Chapters) != 1 || output.Chapters[0].Title != "Intro" {
 		t.Errorf("structured chapters = %#v, want Intro chapter", output.Chapters)
 	}
+	if app.metadataCalls != 1 {
+		t.Fatalf("MetadataFor() calls = %d, want 1", app.metadataCalls)
+	}
 }
 
 func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
-	app := newTestMCPApp(t)
-	if err := SaveStructuredTranscript(&Transcript{
+	app := newTestApplication()
+	app.transcript = &Transcript{
 		VideoID:  "dQw4w9WgXcQ",
 		Language: "en",
 		Source:   TranscriptSourceCaptions,
-		Segments: []TranscriptSegment{
+		Segments: []tldw.TranscriptSegment{
 			{Start: 1, End: 3, Text: "Hello world"},
 		},
-	}, app.config.TranscriptsDir); err != nil {
-		t.Fatalf("SaveStructuredTranscript() error = %v", err)
 	}
 
 	server := NewMCPServer(app)
@@ -350,17 +294,14 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	if !output.IncludeTimestamps {
 		t.Error("structured include_timestamps = false, want true")
 	}
+	if app.transcriptCalls != 1 || app.lastRequest.Policy != TranscriptPolicyCaptionsOnly || !app.lastRequest.RequireTimestamps {
+		t.Fatalf("Transcript() calls = %d, request = %+v", app.transcriptCalls, app.lastRequest)
+	}
 }
 
 func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
-	app := newTestMCPApp(t)
-	audioPath := filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")
-	testYouTube(t, app).SetExecutor(&writeAudioCommandRunner{audioPath: audioPath})
-	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
-	app.Engine = newTestEngine(app.config,
-		WithVideoAdapter(app.youtube),
-		WithAI(NewAI(&fixedOpenAIClient{text: "whisper transcript"}, audio, "whisper-1", WhisperLimit, 0, false, true)),
-	)
+	app := newTestApplication()
+	app.transcript = &Transcript{VideoID: "dQw4w9WgXcQ", Source: TranscriptSourceWhisper, Text: "whisper transcript"}
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -394,12 +335,13 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	if output.IncludeTimestamps {
 		t.Error("structured include_timestamps = true, want false")
 	}
+	if app.transcriptCalls != 1 || app.lastRequest.Policy != TranscriptPolicyWhisperOnly {
+		t.Fatalf("Transcript() calls = %d, policy = %v", app.transcriptCalls, app.lastRequest.Policy)
+	}
 }
 
 func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
-	app := newTestMCPApp(t)
-	runner := &writeAudioCommandRunner{audioPath: filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")}
-	testYouTube(t, app).SetExecutor(runner)
+	app := newTestApplication()
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -420,13 +362,13 @@ func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
 	if got := textContent(t, result); !strings.Contains(got, "timestamped Whisper transcripts are not supported yet") {
 		t.Fatalf("tool error text = %q, want timestamp unsupported message", got)
 	}
-	if runner.calls.Load() != 0 {
-		t.Fatalf("download command was called %d times, want 0", runner.calls.Load())
+	if app.transcriptCalls != 0 {
+		t.Fatalf("Transcript() was called %d times, want 0", app.transcriptCalls)
 	}
 }
 
 func TestMCPHTTPTransportServesTools(t *testing.T) {
-	server := NewMCPServer(newTestMCPApp(t))
+	server := NewMCPServer(newTestApplication())
 	port := unusedTCPPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -471,7 +413,7 @@ func TestMCPHTTPTransportServesTools(t *testing.T) {
 }
 
 func TestMCPServerRejectsInvalidTransport(t *testing.T) {
-	server := NewMCPServer(newTestMCPApp(t))
+	server := NewMCPServer(newTestApplication())
 	err := server.Start(context.Background(), "htp", "127.0.0.1", 8765)
 	if err == nil {
 		t.Fatal("expected invalid transport error")
@@ -517,42 +459,6 @@ func TestMCPServerSerializesStdioToolHandlers(t *testing.T) {
 	if got := maxActive.Load(); got != 1 {
 		t.Fatalf("max concurrent handlers = %d, want 1", got)
 	}
-}
-
-type mcpTestHarness struct {
-	*Engine
-	config  *Config
-	youtube *YouTube
-}
-
-func newTestMCPApp(t *testing.T) *mcpTestHarness {
-	t.Helper()
-
-	baseDir := t.TempDir()
-	config := &Config{
-		CacheDir:       filepath.Join(baseDir, "cache"),
-		ConfigDir:      filepath.Join(baseDir, "config"),
-		TempDir:        filepath.Join(baseDir, "tmp"),
-		TranscriptsDir: filepath.Join(baseDir, "transcripts"),
-		Quiet:          true,
-	}
-	for _, dir := range []string{config.CacheDir, config.ConfigDir, config.TempDir, config.TranscriptsDir} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatalf("creating %s: %v", dir, err)
-		}
-	}
-
-	youtube := NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, false, true)
-	return &mcpTestHarness{
-		Engine:  newTestEngine(config, WithVideoAdapter(youtube)),
-		config:  config,
-		youtube: youtube,
-	}
-}
-
-func testYouTube(t *testing.T, app *mcpTestHarness) *YouTube {
-	t.Helper()
-	return app.youtube
 }
 
 func unusedTCPPort(t *testing.T) int {
@@ -665,34 +571,4 @@ func structuredContent[T any](t *testing.T, result *mcp.CallToolResult) T {
 		t.Fatalf("unmarshaling structuredContent %s: %v", data, err)
 	}
 	return out
-}
-
-type writeAudioCommandRunner struct {
-	audioPath string
-	calls     atomic.Int32
-}
-
-func (r *writeAudioCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	r.calls.Add(1)
-	if err := os.MkdirAll(filepath.Dir(r.audioPath), 0755); err != nil {
-		return nil, err
-	}
-	return nil, os.WriteFile(r.audioPath, []byte("audio"), 0644)
-}
-
-func (r *writeAudioCommandRunner) RunStreaming(ctx context.Context, name string, args []string, onLine func(string)) error {
-	_, err := r.Run(ctx, name, args...)
-	return err
-}
-
-type fixedOpenAIClient struct {
-	text string
-}
-
-func (c *fixedOpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
-	return c.text, nil
-}
-
-func (c *fixedOpenAIClient) CreateChatCompletion(ctx context.Context, model, prompt string) (string, error) {
-	return "", nil
 }
