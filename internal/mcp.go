@@ -334,8 +334,10 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := httpServer.Shutdown(shutdownCtx); err != nil {
-				MCPLogError("HTTP server shutdown failed: %v", err)
-				return err
+				if closeErr := httpServer.Close(); closeErr != nil {
+					MCPLogError("HTTP server forced close failed: %v", closeErr)
+					return closeErr
+				}
 			}
 			if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
 				MCPLogError("HTTP server failed: %v", err)

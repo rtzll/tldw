@@ -43,5 +43,7 @@ type PlaylistInfo struct {
 var videoIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 func validVideoRef(ref YouTubeRef) bool {
-	return ref.ContentType == ContentTypeVideo && videoIDPattern.MatchString(ref.ID)
+	return ref.ContentType == ContentTypeVideo && IsValidVideoID(ref.ID)
 }
+
+func IsValidVideoID(id string) bool { return videoIDPattern.MatchString(id) }

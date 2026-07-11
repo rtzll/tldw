@@ -1,4 +1,4 @@
-package internal
+package ytdlp
 
 import (
 	"context"
@@ -10,7 +10,31 @@ import (
 
 	"os"
 	"path/filepath"
+
+	"github.com/rtzll/tldw/internal/store"
 )
+
+type mockCommandRunner struct {
+	output []byte
+	err    error
+}
+
+func (m *mockCommandRunner) Run(context.Context, string, ...string) ([]byte, error) {
+	return m.output, m.err
+}
+
+func (m *mockCommandRunner) RunStreaming(context.Context, string, []string, func(string)) error {
+	return m.err
+}
+
+const currentMetadataCacheVersion = store.MetadataCacheVersion
+
+var SaveStructuredTranscript = store.SaveTranscript
+var LoadStructuredTranscript = store.LoadTranscript
+var SaveTranscript = store.SavePlainTranscript
+var SaveMetadata = store.SaveMetadata
+var LoadCachedMetadata = store.LoadMetadata
+var FileExists = fileExists
 
 type fakeStreamingRunner struct {
 	lines []string

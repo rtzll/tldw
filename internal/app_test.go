@@ -82,7 +82,7 @@ func TestVideoOnlyPathsRejectPlaylists(t *testing.T) {
 func TestMetadataRefreshesCachedMetadataWithMissingChannel(t *testing.T) {
 	transcriptsDir := t.TempDir()
 	youtube := NewYouTubeWithCache(transcriptsDir, t.TempDir(), false, true)
-	youtube.executor = &mockCommandRunner{output: []byte(`{"title":"Fresh Video","channel":"","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`)}
+	youtube.SetExecutor(&mockCommandRunner{output: []byte(`{"title":"Fresh Video","channel":"","uploader":"AI Engineer","creators":["AI Engineer","Matt Pocock"]}`)})
 	app := newTestEngine(&Config{TranscriptsDir: transcriptsDir, Quiet: true}, WithYouTube(youtube))
 
 	videoID := "dQw4w9WgXcQ"

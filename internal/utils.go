@@ -500,39 +500,6 @@ func ParseVideoArg(arg string) (YouTubeRef, error) {
 	return parsed, nil
 }
 
-// VideoIDExtractor extracts video IDs from YouTube URLs
-type VideoIDExtractor func(string) (string, error)
-
-// Default implementation of video ID extraction
-var getVideoID VideoIDExtractor = func(youtubeURL string) (string, error) {
-	// Trim any leading or trailing whitespace from the URL
-	youtubeURL = strings.TrimSpace(youtubeURL)
-	u, err := url.Parse(youtubeURL)
-	if err != nil {
-		return "", fmt.Errorf("parsing URL: %w", err)
-	}
-
-	if u.Host != "www.youtube.com" && u.Host != "youtube.com" && u.Host != "youtu.be" {
-		return "", fmt.Errorf("not a YouTube URL: %s", youtubeURL)
-	}
-
-	if v := u.Query().Get("v"); v != "" {
-		return v, nil
-	}
-
-	// Don't extract video IDs from playlist URLs
-	if strings.Contains(u.Path, "/playlist") {
-		return "", fmt.Errorf("this is a playlist URL, not a video URL: %s", youtubeURL)
-	}
-
-	parts := strings.Split(u.Path, "/")
-	if len(parts) > 0 && parts[len(parts)-1] != "" {
-		return parts[len(parts)-1], nil
-	}
-
-	return "", fmt.Errorf("could not extract video ID from URL: %s", youtubeURL)
-}
-
 // AskUser is a variable that holds the function for asking user confirmation
 // This allows it to be replaced in tests
 var AskUser = func(message string) bool {

@@ -1,4 +1,4 @@
-package internal
+package ytdlp
 
 import (
 	"bufio"
@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/rtzll/tldw/internal/process"
+	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
@@ -22,6 +25,25 @@ var ErrDownloadFailed = tldw.ErrDownloadFailed
 
 type VideoMetadata = tldw.VideoMetadata
 type VideoChapter = tldw.VideoChapter
+type YouTubeRef = tldw.YouTubeRef
+type Transcript = tldw.Transcript
+type TranscriptSegment = tldw.TranscriptSegment
+type PlaylistInfo = tldw.PlaylistInfo
+type ProgressBar interface {
+	Set(int)
+	Describe(string)
+	Finish()
+}
+
+const (
+	ContentTypeVideo            = tldw.ContentTypeVideo
+	TranscriptSourceCaptions    = tldw.TranscriptSourceCaptions
+	TranscriptRenderFormatPlain = tldw.TranscriptRenderFormatPlain
+)
+
+type discardLogSink struct{}
+
+func (discardLogSink) Printf(string, ...any) {}
 
 // YouTube handles YouTube video and transcript operations
 type YouTube struct {
@@ -29,8 +51,8 @@ type YouTube struct {
 	cacheDir       string
 	verbose        bool
 	quiet          bool
-	log            LogSink
-	executor       CommandExecutor
+	log            tldw.LogSink
+	executor       process.Executor
 }
 
 func defaultYouTubeCacheDir() string {
@@ -53,12 +75,41 @@ func NewYouTubeWithCache(transcriptsDir, cacheDir string, verbose bool, quiet bo
 		verbose:        verbose,
 		quiet:          quiet,
 		log:            discardLogSink{},
-		executor:       &DefaultCommandRunner{},
+		executor:       &process.CommandRunner{},
 	}
 }
 
-func (yt *YouTube) SetLogSink(log LogSink) {
+func (yt *YouTube) SetLogSink(log tldw.LogSink) {
 	yt.log = log
+}
+
+func (yt *YouTube) SetExecutor(executor process.Executor) { yt.executor = executor }
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func getVideoID(youtubeURL string) (string, error) {
+	youtubeURL = strings.TrimSpace(youtubeURL)
+	parsed, err := url.Parse(youtubeURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing URL: %w", err)
+	}
+	if parsed.Host != "www.youtube.com" && parsed.Host != "youtube.com" && parsed.Host != "youtu.be" {
+		return "", fmt.Errorf("not a YouTube URL: %s", youtubeURL)
+	}
+	if id := parsed.Query().Get("v"); id != "" {
+		return id, nil
+	}
+	if strings.Contains(parsed.Path, "/playlist") {
+		return "", fmt.Errorf("this is a playlist URL, not a video URL: %s", youtubeURL)
+	}
+	parts := strings.Split(parsed.Path, "/")
+	if len(parts) > 0 && parts[len(parts)-1] != "" {
+		return parts[len(parts)-1], nil
+	}
+	return "", fmt.Errorf("could not extract video ID from URL: %s", youtubeURL)
 }
 
 func (yt *YouTube) FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
@@ -255,7 +306,7 @@ func (yt *YouTube) AudioWithProgress(ctx context.Context, youtubeURL string, pro
 
 	// Create path in configured cache directory
 	cacheDir := yt.cacheDir
-	if err := EnsureDirs(cacheDir); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -311,7 +362,7 @@ func (yt *YouTube) AudioWithSharedProgress(ctx context.Context, youtubeURL strin
 
 	// Create path in configured cache directory
 	cacheDir := yt.cacheDir
-	if err := EnsureDirs(cacheDir); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -454,7 +505,7 @@ func (yt *YouTube) Transcript(ctx context.Context, youtubeURL string, preferredL
 
 	// Create path in configured cache directory
 	cacheDir := yt.cacheDir
-	if err := EnsureDirs(cacheDir); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -648,7 +699,7 @@ func (yt *YouTube) FetchStructuredTranscript(ctx context.Context, youtubeURL str
 func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 	// Look in configured cache directory
 	cacheDir := yt.cacheDir
-	if FileExists(cacheDir) {
+	if fileExists(cacheDir) {
 		cacheFiles, err := os.ReadDir(cacheDir)
 		if err == nil {
 			for _, entry := range cacheFiles {
@@ -661,7 +712,7 @@ func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
 	}
 
 	// Look in transcripts directory for already processed transcripts
-	if FileExists(yt.transcriptsDir) {
+	if fileExists(yt.transcriptsDir) {
 		transcriptFiles, err := os.ReadDir(yt.transcriptsDir)
 		if err == nil {
 			for _, entry := range transcriptFiles {
@@ -704,16 +755,16 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*Transcript, error) {
 	transcript.Text = text
 
 	// Save canonical and rendered forms to the transcripts directory.
-	if err := SaveStructuredTranscript(transcript, yt.transcriptsDir); err != nil {
+	if err := store.SaveTranscript(transcript, yt.transcriptsDir); err != nil {
 		return nil, err
 	}
-	if err := SaveTranscript(id, text, yt.transcriptsDir); err != nil {
+	if err := store.SavePlainTranscript(id, text, yt.transcriptsDir); err != nil {
 		return nil, err
 	}
 
 	// If the file is in the cache directory, remove it after processing
 	cacheDir := yt.cacheDir
-	if strings.HasPrefix(filePath, cacheDir) && FileExists(filePath) {
+	if strings.HasPrefix(filePath, cacheDir) && fileExists(filePath) {
 		if err := os.Remove(filePath); err != nil {
 			yt.log.Printf("Warning: failed to remove SRT file from cache: %v\n", err)
 		}
@@ -934,8 +985,6 @@ type PlaylistMetadata struct {
 	Entries []PlaylistEntry `json:"entries"`
 }
 
-type PlaylistInfo = tldw.PlaylistInfo
-
 // PlaylistVideoURLs fetches all video URLs from a YouTube playlist
 func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*PlaylistInfo, error) {
 	if yt.verbose && !yt.quiet {
@@ -975,7 +1024,7 @@ func (yt *YouTube) PlaylistVideoURLs(ctx context.Context, playlistURL string) (*
 	// Extract video URLs
 	var videos []YouTubeRef
 	for _, entry := range playlist.Entries {
-		if IsValidYouTubeID(entry.ID) {
+		if tldw.IsValidVideoID(entry.ID) {
 			videoURL := "https://www.youtube.com/watch?v=" + entry.ID
 			videos = append(videos, YouTubeRef{
 				ContentType:   ContentTypeVideo,

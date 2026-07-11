@@ -24,10 +24,6 @@ const (
 
 var ErrCaptionsUnavailable = tldw.ErrCaptionsUnavailable
 
-type discardLogSink struct{}
-
-func (discardLogSink) Printf(string, ...any) {}
-
 func NewEngine(config *Config, options ...EngineOption) *Engine {
 	return tldw.NewEngine(tldw.Config{
 		WhisperTimeout:       config.WhisperTimeout,

@@ -8,6 +8,7 @@ import (
 	"github.com/rtzll/tldw/internal/process"
 	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
+	ytdlpadapter "github.com/rtzll/tldw/internal/ytdlp"
 )
 
 type cliLogSink struct {
@@ -35,7 +36,7 @@ func newMCPEngine(config *internal.Config) *tldw.Engine {
 func buildEngine(config *internal.Config, log tldw.LogSink) *tldw.Engine {
 	runner := &process.CommandRunner{}
 	audio := openaiadapter.NewAudio(runner, config.TempDir, config.Verbose)
-	youtube := internal.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
+	youtube := ytdlpadapter.NewYouTubeWithCache(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
 	ai := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, config.TLDRModel, internal.WhisperLimit, config.SummaryTimeout, config.Verbose, config.Quiet)
 	youtube.SetLogSink(log)
 	ai.SetLogSink(log)

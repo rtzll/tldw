@@ -161,7 +161,7 @@ func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
 
 func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 	app := newTestMCPApp(t)
-	testYouTube(t, app).executor = &mockCommandRunner{output: []byte(`{
+	testYouTube(t, app).SetExecutor(&mockCommandRunner{output: []byte(`{
 		"title": "Test Video",
 		"description": "Test Description",
 		"channel": "Test Channel",
@@ -172,7 +172,7 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 		"tags": ["go", "mcp"],
 		"chapters": [{"start_time": 0, "end_time": 10, "title": "Intro"}],
 		"subtitles": {"en": [{}]}
-	}`)}
+	}`)})
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -275,7 +275,7 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	app := newTestMCPApp(t)
 	audioPath := filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")
-	testYouTube(t, app).executor = &writeAudioCommandRunner{audioPath: audioPath}
+	testYouTube(t, app).SetExecutor(&writeAudioCommandRunner{audioPath: audioPath})
 	audio := NewAudio(&mockCommandRunner{}, t.TempDir(), false)
 	app.Engine = newTestEngine(app.config,
 		WithVideoAdapter(app.youtube),
@@ -319,7 +319,7 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
 	app := newTestMCPApp(t)
 	runner := &writeAudioCommandRunner{audioPath: filepath.Join(app.config.CacheDir, "dQw4w9WgXcQ.mp3")}
-	testYouTube(t, app).executor = runner
+	testYouTube(t, app).SetExecutor(runner)
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
