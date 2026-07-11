@@ -9,6 +9,8 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
+const youtubeExtractorPolicy = "youtube:player_client=web,android,-tv"
+
 type discardLogSink struct{}
 
 func (discardLogSink) Printf(string, ...any) {}
@@ -65,4 +67,13 @@ func (yt *YouTube) DownloadAudio(ctx context.Context, ref tldw.YouTubeRef) (stri
 
 func (yt *YouTube) FetchPlaylist(ctx context.Context, ref tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
 	return yt.playlistVideoURLs(ctx, ref)
+}
+
+func youtubeLookupArgs() []string {
+	return []string{
+		"--sleep-interval", "1",
+		"--max-sleep-interval", "3",
+		"--extractor-args", youtubeExtractorPolicy,
+		"-q",
+	}
 }

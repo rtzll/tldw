@@ -16,15 +16,12 @@ func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.Vid
 
 	// Build arguments for yt-dlp command
 	args := []string{
-		"--skip-download",       // Don't download the actual video
-		"--dump-single-json",    // Get all info in JSON format
-		"--no-playlist",         // Don't process playlists
-		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
-		"--max-sleep-interval", "3",
-		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
-		"-q", // Quiet mode
-		ref.URL(),
+		"--skip-download",
+		"--dump-single-json",
+		"--no-playlist",
 	}
+	args = append(args, youtubeLookupArgs()...)
+	args = append(args, ref.URL())
 
 	// Run the command
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)

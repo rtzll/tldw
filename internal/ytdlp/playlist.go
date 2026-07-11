@@ -24,14 +24,11 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref tldw.YouTubeRef) (
 
 	// Build arguments for yt-dlp command
 	args := []string{
-		"--flat-playlist",       // Only extract video URLs, don't download
-		"--dump-single-json",    // Get all info in JSON format
-		"--sleep-interval", "1", // Sleep 1-3 seconds between requests to avoid rate limiting
-		"--max-sleep-interval", "3",
-		"--extractor-args", "youtube:player_client=web,android,-tv", // Exclude DRM-protected TV client
-		"-q", // Quiet mode
-		ref.URL(),
+		"--flat-playlist",
+		"--dump-single-json",
 	}
+	args = append(args, youtubeLookupArgs()...)
+	args = append(args, ref.URL())
 
 	// Run the command
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)

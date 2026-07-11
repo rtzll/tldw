@@ -16,7 +16,7 @@ internal/
 ├── tldw/                   Domain model and application workflows
 ├── store/                  Filesystem transcript/metadata adapter
 ├── ytdlp/                  YouTube adapter
-│   ├── client.go           Construction and application-facing interface
+│   ├── client.go           Construction, public interface, shared command policy
 │   ├── metadata.go         Video metadata and caption-language discovery
 │   ├── captions.go         Caption selection, download, and cache lookup
 │   ├── srt.go              Deterministic subtitle parsing and normalization
