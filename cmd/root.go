@@ -52,10 +52,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   # Run quietly without progress bars or extra output
   tldw "https://youtu.be/tAP1eZYEuKA" --quiet`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if err := internal.HandleVerboseFlag(cmd, config); err != nil {
-			return err
-		}
-		return internal.HandleQuietFlag(cmd, config)
+		return internal.ApplyOutputFlags(cmd, config)
 	},
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

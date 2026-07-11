@@ -57,22 +57,17 @@ func HandlePromptFlag(cmd *cobra.Command, config *Config) error {
 	return nil
 }
 
-// HandleVerboseFlag processes the --verbose flag to update config
-func HandleVerboseFlag(cmd *cobra.Command, config *Config) error {
+// ApplyOutputFlags updates output behavior from the command flags.
+func ApplyOutputFlags(cmd *cobra.Command, config *Config) error {
 	verbose, err := cmd.Flags().GetBool("verbose")
 	if err != nil {
 		return fmt.Errorf("failed to get verbose flag: %w", err)
 	}
-	config.Verbose = verbose
-	return nil
-}
-
-// HandleQuietFlag processes the --quiet flag to update config
-func HandleQuietFlag(cmd *cobra.Command, config *Config) error {
 	quiet, err := cmd.Flags().GetBool("quiet")
 	if err != nil {
 		return fmt.Errorf("failed to get quiet flag: %w", err)
 	}
+	config.Verbose = verbose
 	config.Quiet = quiet
 
 	// Quiet and verbose are mutually exclusive - quiet takes precedence
