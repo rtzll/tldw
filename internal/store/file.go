@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rtzll/tldw/internal/tldw"
@@ -68,13 +69,39 @@ func (s *File) LoadMetadata(videoID string) (*tldw.VideoMetadata, error) {
 	if cached.CacheVersion < metadataCacheVersion {
 		return nil, fmt.Errorf("%w: metadata version %d", tldw.ErrStoreStale, cached.CacheVersion)
 	}
-	return &tldw.VideoMetadata{
-		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,
-		ChannelURL: cached.ChannelURL, Creators: cached.Creators, PublishedAt: cached.PublishedAt,
-		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
-		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,
-		CaptionLanguages: cached.CaptionLanguages,
-	}, nil
+	metadata := metadataFromCached(cached)
+	return &metadata, nil
+}
+
+// ListMetadata returns every cached video's metadata and original cache time.
+func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
+	files, err := filepath.Glob(filepath.Join(s.dir, "*.meta.json"))
+	if err != nil {
+		return nil, fmt.Errorf("listing metadata cache: %w", err)
+	}
+	entries := make([]tldw.StoredVideoMetadata, 0, len(files))
+	for _, path := range files {
+		data, err := os.ReadFile(filepath.Clean(path))
+		if err != nil {
+			return nil, fmt.Errorf("reading metadata cache %s: %w", filepath.Base(path), err)
+		}
+		var cached cachedMetadata
+		if err := json.Unmarshal(data, &cached); err != nil {
+			return nil, fmt.Errorf("parsing metadata cache %s: %w", filepath.Base(path), err)
+		}
+		firstSeenAt, err := cachedMetadataFirstSeenAt(path, cached)
+		if err != nil {
+			return nil, fmt.Errorf("reading metadata timestamp %s: %w", filepath.Base(path), err)
+		}
+		videoID := strings.TrimSuffix(filepath.Base(path), ".meta.json")
+		if !tldw.IsValidVideoID(videoID) {
+			return nil, fmt.Errorf("invalid metadata cache filename: %q", filepath.Base(path))
+		}
+		entries = append(entries, tldw.StoredVideoMetadata{
+			VideoID: videoID, Metadata: metadataFromCached(cached), FirstSeenAt: firstSeenAt,
+		})
+	}
+	return entries, nil
 }
 
 func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error {
@@ -88,12 +115,15 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error 
 	if metadata == nil {
 		return fmt.Errorf("saving metadata: metadata is nil")
 	}
+	now := time.Now()
+	firstSeenAt := metadataFirstSeenAt(path, now)
 	cached := cachedMetadata{
 		CacheVersion: metadataCacheVersion, Title: metadata.Title, Description: metadata.Description,
 		Channel: metadata.Channel, ChannelURL: metadata.ChannelURL, Creators: metadata.Creators,
 		PublishedAt: metadata.PublishedAt, Duration: metadata.Duration, Language: metadata.Language,
 		Categories: metadata.Categories, Tags: metadata.Tags, Chapters: metadata.Chapters,
-		HasCaptions: metadata.HasCaptions, CaptionLanguages: metadata.CaptionLanguages, CachedAt: time.Now(),
+		HasCaptions: metadata.HasCaptions, CaptionLanguages: metadata.CaptionLanguages,
+		FirstSeenAt: firstSeenAt, UpdatedAt: now, CachedAt: now,
 	}
 	data, err := json.MarshalIndent(cached, "", "  ")
 	if err != nil {
@@ -103,6 +133,36 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error 
 		return fmt.Errorf("saving metadata: %w", err)
 	}
 	return nil
+}
+
+func metadataFirstSeenAt(path string, fallback time.Time) time.Time {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return fallback
+	}
+	var cached cachedMetadata
+	if err := json.Unmarshal(data, &cached); err != nil {
+		return fallback
+	}
+	firstSeenAt, err := cachedMetadataFirstSeenAt(path, cached)
+	if err != nil {
+		return fallback
+	}
+	return firstSeenAt
+}
+
+func cachedMetadataFirstSeenAt(path string, cached cachedMetadata) (time.Time, error) {
+	if !cached.FirstSeenAt.IsZero() {
+		return cached.FirstSeenAt, nil
+	}
+	if !cached.CachedAt.IsZero() {
+		return cached.CachedAt, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
 }
 
 func (s *File) cachePath(videoID, suffix string) (string, error) {
@@ -193,7 +253,19 @@ type cachedMetadata struct {
 	Chapters         []tldw.VideoChapter `json:"chapters"`
 	HasCaptions      bool                `json:"has_captions"`
 	CaptionLanguages []string            `json:"caption_languages"`
+	FirstSeenAt      time.Time           `json:"first_seen_at,omitempty"`
+	UpdatedAt        time.Time           `json:"updated_at,omitempty"`
 	CachedAt         time.Time           `json:"cached_at"`
+}
+
+func metadataFromCached(cached cachedMetadata) tldw.VideoMetadata {
+	return tldw.VideoMetadata{
+		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,
+		ChannelURL: cached.ChannelURL, Creators: cached.Creators, PublishedAt: cached.PublishedAt,
+		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
+		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,
+		CaptionLanguages: cached.CaptionLanguages,
+	}
 }
 
 func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {

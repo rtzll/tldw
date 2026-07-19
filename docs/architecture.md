@@ -73,7 +73,8 @@ The filesystem store owns all on-disk formats:
 
 - `<video-id>.transcript.json` — canonical timestamped transcript
 - `<video-id>.txt` — plain-text compatibility cache
-- `<video-id>.meta.json` — versioned metadata cache
+- `<video-id>.meta.json` — versioned metadata cache with first-seen time used by
+  unique-video stats
 
 Path validation is inside the store adapter. Audio files live under the XDG
 cache directory and are managed by external adapters.

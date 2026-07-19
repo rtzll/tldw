@@ -42,8 +42,13 @@ type memoryStore struct {
 	transcript      *tldw.Transcript
 	transcriptErr   error
 	metadata        *tldw.VideoMetadata
+	metadataEntries []tldw.StoredVideoMetadata
 	transcriptSaves int
 	metadataSaves   int
+}
+
+func (store *memoryStore) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
+	return store.metadataEntries, nil
 }
 
 func (store *memoryStore) LoadTranscript(videoID string) (*tldw.Transcript, error) {

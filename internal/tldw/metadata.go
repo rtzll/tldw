@@ -1,5 +1,7 @@
 package tldw
 
+import "time"
+
 // VideoMetadata contains transport-neutral YouTube video information.
 type VideoMetadata struct {
 	Title            string         `json:"title"`
@@ -22,4 +24,12 @@ type VideoChapter struct {
 	StartTime float64 `json:"start_time"`
 	EndTime   float64 `json:"end_time"`
 	Title     string  `json:"title"`
+}
+
+// StoredVideoMetadata is cached video metadata together with the time the
+// video first entered the local library.
+type StoredVideoMetadata struct {
+	VideoID     string
+	Metadata    VideoMetadata
+	FirstSeenAt time.Time
 }

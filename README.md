@@ -108,7 +108,18 @@ tldw tAP1eZYEuKA -m gpt-4o-mini -p "tldr: {{.Transcript}}"
 tldw metadata "https://youtu.be/tAP1eZYEuKA"
 tldw metadata tAP1eZYEuKA -o metadata.json   # Save to file
 tldw metadata tAP1eZYEuKA --pretty           # Format JSON output
+
+# Show unique-video stats from the local metadata library
+tldw stats
+tldw stats --period month
+tldw stats --period month --group-by day
+tldw stats --period week --json
 ```
+
+`tldw stats` reports the runtime of unique videos in the local metadata
+library. The estimated watch time avoided is the same runtime total and should
+be understood as an approximation. Supported periods are `today`, `week`,
+`month`, and `all`; grouped reports can use `day`, `week`, or `month`.
 
 ### Transcription smoke test
 

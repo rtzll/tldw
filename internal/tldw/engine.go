@@ -64,6 +64,7 @@ type VideoStore interface {
 	SaveTranscript(transcript *Transcript) error
 	LoadMetadata(videoID string) (*VideoMetadata, error)
 	SaveMetadata(videoID string, metadata *VideoMetadata) error
+	ListMetadata() ([]StoredVideoMetadata, error)
 }
 
 // LogSink receives diagnostic events without coupling workflows to a terminal.
