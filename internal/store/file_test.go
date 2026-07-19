@@ -90,6 +90,27 @@ func TestFileUsesModificationTimeForMetadataWithoutCacheTimestamp(t *testing.T) 
 	}
 }
 
+func TestFileListMetadataIgnoresNonVideoCacheFiles(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"dQw4w9WgXcQ.meta.json":                        `{"cache_version":3,"title":"Video","duration":300,"cached_at":"2026-07-01T10:00:00Z"}`,
+		"PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq.meta.json": `{"cache_version":3,"title":"Playlist","cached_at":"2026-06-01T10:00:00Z"}`,
+	}
+	for name, contents := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	entries, err := store.NewFile(dir).ListMetadata()
+	if err != nil {
+		t.Fatalf("ListMetadata() error = %v", err)
+	}
+	if len(entries) != 1 || entries[0].VideoID != "dQw4w9WgXcQ" {
+		t.Fatalf("ListMetadata() = %+v, want only the video cache", entries)
+	}
+}
+
 func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	adapter := store.NewFile(t.TempDir())
 	transcript := &tldw.Transcript{

@@ -81,6 +81,10 @@ func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
 	}
 	entries := make([]tldw.StoredVideoMetadata, 0, len(files))
 	for _, path := range files {
+		videoID := strings.TrimSuffix(filepath.Base(path), ".meta.json")
+		if !tldw.IsValidVideoID(videoID) {
+			continue
+		}
 		data, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
 			return nil, fmt.Errorf("reading metadata cache %s: %w", filepath.Base(path), err)
@@ -92,10 +96,6 @@ func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
 		firstSeenAt, err := cachedMetadataFirstSeenAt(path, cached)
 		if err != nil {
 			return nil, fmt.Errorf("reading metadata timestamp %s: %w", filepath.Base(path), err)
-		}
-		videoID := strings.TrimSuffix(filepath.Base(path), ".meta.json")
-		if !tldw.IsValidVideoID(videoID) {
-			return nil, fmt.Errorf("invalid metadata cache filename: %q", filepath.Base(path))
 		}
 		entries = append(entries, tldw.StoredVideoMetadata{
 			VideoID: videoID, Metadata: metadataFromCached(cached), FirstSeenAt: firstSeenAt,
