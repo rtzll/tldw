@@ -117,9 +117,8 @@ tldw stats --period week --json
 ```
 
 `tldw stats` reports the runtime of unique videos in the local metadata
-library. The estimated watch time avoided is the same runtime total and should
-be understood as an approximation. Supported periods are `today`, `week`,
-`month`, and `all`; grouped reports can use `day`, `week`, or `month`.
+library. Supported periods are `today`, `week`, `month`, and `all`; grouped
+reports can use `day`, `week`, or `month`.
 
 ### Transcription smoke test
 

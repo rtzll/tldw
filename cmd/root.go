@@ -22,7 +22,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "tldw [URL]",
 	Short: "Too Long; Didn't Watch - YouTube video summarizer",
-	Long: `TLDW (Too Long; Didn't Watch) summarizes YouTube videos and playlists using AI.
+	Long: `tldw (Too Long; Didn't Watch) summarizes YouTube videos and playlists using AI.
 
 It extracts transcripts directly from YouTube when available,
 or processes the audio with Whisper when transcripts are unavailable.

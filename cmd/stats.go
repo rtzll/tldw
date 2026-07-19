@@ -27,19 +27,18 @@ type statsPeriod struct {
 }
 
 type statsJSONOutput struct {
-	Period                    string             `json:"period"`
-	From                      string             `json:"from,omitempty"`
-	To                        string             `json:"to,omitempty"`
-	VideoCount                int                `json:"video_count"`
-	DurationSeconds           float64            `json:"duration_seconds"`
-	EstimatedTimeSavedSeconds float64            `json:"estimated_time_saved_seconds"`
-	Groups                    []tldw.StatsBucket `json:"groups,omitempty"`
+	Period          string             `json:"period"`
+	From            string             `json:"from,omitempty"`
+	To              string             `json:"to,omitempty"`
+	VideoCount      int                `json:"video_count"`
+	DurationSeconds float64            `json:"duration_seconds"`
+	Groups          []tldw.StatsBucket `json:"groups,omitempty"`
 }
 
 func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "stats",
-		Short: "Show time saved across cached videos",
+		Short: "Show video runtime across cached videos",
 		Example: `  # Show all-time stats
   tldw stats
 
@@ -132,7 +131,7 @@ func parseStatsGroup(name string) (tldw.StatsGroup, error) {
 func writeStatsJSON(writer io.Writer, period statsPeriod, report tldw.StatsReport) error {
 	output := statsJSONOutput{
 		Period: period.name, VideoCount: report.VideoCount, DurationSeconds: report.DurationSeconds,
-		EstimatedTimeSavedSeconds: report.DurationSeconds, Groups: report.Groups,
+		Groups: report.Groups,
 	}
 	if !period.from.IsZero() {
 		output.From = period.from.Format(time.RFC3339)
@@ -150,16 +149,13 @@ func writeStatsJSON(writer io.Writer, period statsPeriod, report tldw.StatsRepor
 
 func writeStatsText(writer io.Writer, period statsPeriod, group tldw.StatsGroup, report tldw.StatsReport) error {
 	duration := formatStatsDuration(report.DurationSeconds)
-	if _, err := fmt.Fprintf(writer, "TLDW stats — %s\n", period.label); err != nil {
+	if _, err := fmt.Fprintf(writer, "tldw stats — %s\n", period.label); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(writer, "%d unique %s\n", report.VideoCount, plural(report.VideoCount, "video", "videos")); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "Video runtime processed: %s\n", duration); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(writer, "Estimated watch time avoided: about %s\n", duration); err != nil {
+	if _, err := fmt.Fprintf(writer, "Video runtime: %s\n", duration); err != nil {
 		return err
 	}
 	if group == tldw.StatsGroupNone || len(report.Groups) == 0 {
@@ -182,22 +178,28 @@ func formatStatsDuration(seconds float64) string {
 	if total < 0 {
 		total = 0
 	}
-	hours := total / 3600
+	weeks := total / (7 * 24 * 3600)
+	days := (total % (7 * 24 * 3600)) / (24 * 3600)
+	hours := (total % (24 * 3600)) / 3600
 	minutes := (total % 3600) / 60
 	remainingSeconds := total % 60
+	parts := make([]string, 0, 5)
+	if weeks > 0 {
+		parts = append(parts, fmt.Sprintf("%dw", weeks))
+	}
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
 	if hours > 0 {
-		if minutes > 0 {
-			return fmt.Sprintf("%dh %dm", hours, minutes)
-		}
-		return fmt.Sprintf("%dh", hours)
+		parts = append(parts, fmt.Sprintf("%dh", hours))
 	}
 	if minutes > 0 {
-		if remainingSeconds > 0 {
-			return fmt.Sprintf("%dm %ds", minutes, remainingSeconds)
-		}
-		return fmt.Sprintf("%dm", minutes)
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
 	}
-	return fmt.Sprintf("%ds", remainingSeconds)
+	if len(parts) == 0 || (weeks == 0 && days == 0 && hours == 0 && remainingSeconds > 0) {
+		parts = append(parts, fmt.Sprintf("%ds", remainingSeconds))
+	}
+	return strings.Join(parts, " ")
 }
 
 func plural(count int, singular, plural string) string {

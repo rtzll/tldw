@@ -39,7 +39,7 @@ func TestStatsCommandReportsThisMonthAndGroupsByDay(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("stats command error = %v", err)
 	}
-	want := "TLDW stats — this month\n2 unique videos\nVideo runtime processed: 1h 30m\nEstimated watch time avoided: about 1h 30m\n\nBy day:\n2026-07-02  2 videos  1h 30m\n"
+	want := "tldw stats — this month\n2 unique videos\nVideo runtime: 1h 30m\n\nBy day:\n2026-07-02  2 videos  1h 30m\n"
 	if output.String() != want {
 		t.Fatalf("stats output = %q, want %q", output.String(), want)
 	}
@@ -63,9 +63,29 @@ func TestStatsCommandReturnsStructuredJSON(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("stats command error = %v", err)
 	}
-	for _, fragment := range []string{`"period": "all"`, `"video_count": 1`, `"duration_seconds": 90`, `"estimated_time_saved_seconds": 90`} {
+	for _, fragment := range []string{`"period": "all"`, `"video_count": 1`, `"duration_seconds": 90`} {
 		if !strings.Contains(output.String(), fragment) {
 			t.Fatalf("JSON output %q does not contain %q", output.String(), fragment)
+		}
+	}
+	if strings.Contains(output.String(), "estimated_time_saved_seconds") {
+		t.Fatalf("JSON output contains duplicate time estimate: %q", output.String())
+	}
+}
+
+func TestFormatStatsDurationUsesWeeksAndDaysForLargeTotals(t *testing.T) {
+	tests := []struct {
+		seconds float64
+		want    string
+	}{
+		{seconds: 90, want: "1m 30s"},
+		{seconds: 90000, want: "1d 1h"},
+		{seconds: 691200, want: "1w 1d"},
+		{seconds: 5985960, want: "9w 6d 6h 46m"},
+	}
+	for _, tt := range tests {
+		if got := formatStatsDuration(tt.seconds); got != tt.want {
+			t.Errorf("formatStatsDuration(%v) = %q, want %q", tt.seconds, got, tt.want)
 		}
 	}
 }
