@@ -11,6 +11,7 @@ func TestParseVideoRefNormalizesSupportedInputs(t *testing.T) {
 		"dQw4w9WgXcQ",
 		"https://youtu.be/dQw4w9WgXcQ",
 		"https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		"https://www.youtube.com/shorts/dQw4w9WgXcQ?",
 	} {
 		ref, err := tldw.ParseVideoRef(input)
 		if err != nil {
@@ -23,7 +24,7 @@ func TestParseVideoRefNormalizesSupportedInputs(t *testing.T) {
 }
 
 func TestParseVideoRefRejectsNonVideoInput(t *testing.T) {
-	for _, input := range []string{"https://example.com/video", "https://youtu.be/short", "../outside"} {
+	for _, input := range []string{"https://example.com/video", "https://youtu.be/short", "https://www.youtube.com/shorts/short", "../outside"} {
 		if _, err := tldw.ParseVideoRef(input); err == nil {
 			t.Fatalf("ParseVideoRef(%q) succeeded", input)
 		}
@@ -48,7 +49,7 @@ func TestParseReferenceNormalizesSupportedContent(t *testing.T) {
 		{name: "custom channel", input: "https://www.youtube.com/c/SomeChannel", wantKind: tldw.ContentTypeChannel, wantID: "SomeChannel", wantURL: "https://www.youtube.com/c/SomeChannel"},
 		{name: "legacy user channel", input: "https://www.youtube.com/user/SomeUser", wantKind: tldw.ContentTypeChannel, wantID: "SomeUser", wantURL: "https://www.youtube.com/user/SomeUser"},
 		{name: "not YouTube", input: "https://example.com/watch?v=dQw4w9WgXcQ", wantErr: true},
-		{name: "unsupported path", input: "https://www.youtube.com/shorts/dQw4w9WgXcQ", wantErr: true},
+		{name: "unsupported path", input: "https://www.youtube.com/embed/dQw4w9WgXcQ", wantErr: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

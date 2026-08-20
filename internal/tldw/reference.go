@@ -148,6 +148,12 @@ func parseReferenceURL(original string) (YouTubeRef, error) {
 			return YouTubeRef{}, fmt.Errorf("invalid playlist ID: %s", id)
 		}
 		return playlistRef(id), nil
+	case strings.HasPrefix(parsed.Path, "/shorts/"):
+		id := strings.TrimPrefix(parsed.Path, "/shorts/")
+		if !IsValidVideoID(id) {
+			return YouTubeRef{}, fmt.Errorf("invalid video ID in Shorts URL: %s", id)
+		}
+		return videoRef(id), nil
 	case strings.HasPrefix(parsed.Path, "/channel/"):
 		id := strings.TrimPrefix(parsed.Path, "/channel/")
 		if !channelIDPattern.MatchString(id) {
