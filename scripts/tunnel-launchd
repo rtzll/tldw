@@ -45,10 +45,14 @@ install_agent() {
 
   case "$tunnel_client" in
     /*) client="$tunnel_client" ;;
-    *) client="$repo_dir/$tunnel_client" ;;
+    */*) client="$repo_dir/$tunnel_client" ;;
+    *) client="$(command -v "$tunnel_client" || true)" ;;
   esac
 
-  test -x "$client" || { echo "Install tunnel-client at $client or set TLDW_TUNNEL_CLIENT"; exit 1; }
+  test -n "$client" && test -x "$client" || {
+    echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"
+    exit 1
+  }
 
   local account
   account="$(keychain_account)"

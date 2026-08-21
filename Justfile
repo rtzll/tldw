@@ -2,7 +2,7 @@ set shell := ["bash", "-cu"]
 
 binary := "tldw"
 justfile_dir := justfile_directory()
-tunnel_client := env_var_or_default("TLDW_TUNNEL_CLIENT", "./bin/tunnel-client")
+tunnel_client := env_var_or_default("TLDW_TUNNEL_CLIENT", "tunnel-client")
 tunnel_profile := env_var_or_default("TLDW_TUNNEL_PROFILE", "tldw")
 tunnel_id := env_var_or_default("TLDW_TUNNEL_ID", "")
 mcp_http_command := env_var_or_default("TLDW_MCP_HTTP_COMMAND", "tldw mcp --transport=http")
@@ -55,7 +55,7 @@ tunnel-init:
     #!/usr/bin/env bash
     set -euo pipefail
     test -n "{{tunnel_id}}" || { echo "Set TLDW_TUNNEL_ID=tunnel_..."; exit 1; }
-    test -x "{{tunnel_client}}" || { echo "Install tunnel-client at {{tunnel_client}} or set TLDW_TUNNEL_CLIENT"; exit 1; }
+    command -v "{{tunnel_client}}" > /dev/null || { echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"; exit 1; }
     "{{tunnel_client}}" init \
         --sample sample_mcp_with_dcr \
         --profile "{{tunnel_profile}}" \
@@ -64,13 +64,13 @@ tunnel-init:
         --health-listen-addr "{{tunnel_health_addr}}"
 
 tunnel-doctor:
-    test -x "{{tunnel_client}}" || { echo "Install tunnel-client at {{tunnel_client}} or set TLDW_TUNNEL_CLIENT"; exit 1; }
+    command -v "{{tunnel_client}}" > /dev/null || { echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"; exit 1; }
     "{{tunnel_client}}" doctor --profile "{{tunnel_profile}}" --explain
 
 tunnel-run:
     #!/usr/bin/env bash
     set -euo pipefail
-    test -x "{{tunnel_client}}" || { echo "Install tunnel-client at {{tunnel_client}} or set TLDW_TUNNEL_CLIENT"; exit 1; }
+    command -v "{{tunnel_client}}" > /dev/null || { echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"; exit 1; }
     cleanup() {
         if [[ -n "${mcp_pid:-}" ]] && kill -0 "$mcp_pid" >/dev/null 2>&1; then
             kill "$mcp_pid" >/dev/null 2>&1 || true

@@ -5,7 +5,7 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
 profile="${TLDW_TUNNEL_PROFILE:-tldw}"
-tunnel_client="${TLDW_TUNNEL_CLIENT:-./bin/tunnel-client}"
+tunnel_client="${TLDW_TUNNEL_CLIENT:-tunnel-client}"
 mcp_host="${TLDW_MCP_HTTP_HOST:-127.0.0.1}"
 mcp_port="${TLDW_MCP_HTTP_PORT:-8765}"
 health_addr="${TLDW_TUNNEL_HEALTH_ADDR:-127.0.0.1:18080}"
@@ -28,11 +28,13 @@ if [[ -z "$TLDW_TUNNEL_ID" ]]; then
   exit 1
 fi
 
-test -x "$tunnel_client" || {
-  echo "Install tunnel-client at $tunnel_client or set TLDW_TUNNEL_CLIENT" >&2
+tunnel_client="$(command -v "$tunnel_client" || true)"
+if [[ -z "$tunnel_client" || ! -x "$tunnel_client" ]]; then
+  echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT" >&2
   exit 1
-}
+fi
 
+export TLDW_TUNNEL_CLIENT="$tunnel_client"
 export TLDW_TUNNEL_PROFILE="$profile"
 export TLDW_MCP_HTTP_HOST="$mcp_host"
 export TLDW_MCP_HTTP_PORT="$mcp_port"

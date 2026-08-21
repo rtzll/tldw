@@ -45,14 +45,11 @@ afterward.
 Use OpenAI Secure MCP Tunnel to connect ChatGPT to your local `tldw mcp` without
 exposing a public server.
 
-Download tunnel-client from
-[Platform tunnel settings](https://platform.openai.com/settings/organization/tunnels).
+Install the OpenAI tunnel client with Homebrew:
 
 ```bash
-mkdir -p bin
-# Unzip the archive, then move the tunnel-client binary here:
-mv /path/to/tunnel-client ./bin/tunnel-client
-chmod +x ./bin/tunnel-client
+brew install openai/tools/tunnel-client
+tunnel-client --version
 
 export CONTROL_PLANE_API_KEY="sk-..."   # OpenAI runtime API key
 export TLDW_TUNNEL_ID="tunnel_..."      # From Platform tunnel settings
@@ -76,9 +73,10 @@ select or paste the tunnel ID. Keep `just tunnel-run` running while using the
 connector.
 
 Optional: `just tunnel-launchd-install` stores the runtime key in Keychain and
-starts both the local HTTP MCP server and the tunnel at login.
-After upgrading `tldw`, run `just tunnel-launchd-restart` so launchd starts the
-new binary.
+starts both the local HTTP MCP server and the tunnel at login. After upgrading
+`tldw` or running `brew upgrade openai/tools/tunnel-client`, run
+`just tunnel-launchd-restart` so launchd starts the new binary.
+Set `TLDW_TUNNEL_CLIENT` only when using a non-Homebrew tunnel-client binary.
 
 Tip: Put recurring summary prompts in a ChatGPT Project, then enable the `tldw`
 connector in chats from that Project.
