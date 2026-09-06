@@ -37,7 +37,7 @@ lint:
 
 install-tools:
     @echo "Installing golangci-lint..."
-    @which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 
 tidy:
     go mod tidy
