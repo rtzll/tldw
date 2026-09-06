@@ -196,7 +196,8 @@ run_agent() {
   trap 'cleanup; exit 130' INT
   trap 'cleanup; exit 143' TERM
 
-  MCP_HOST="$mcp_host" MCP_PORT="$mcp_port" /bin/bash -lc "exec $mcp_command --host \"\$MCP_HOST\" --port \"\$MCP_PORT\"" &
+  # Preserve launchd's PATH so Homebrew tools take precedence over older installs.
+  MCP_HOST="$mcp_host" MCP_PORT="$mcp_port" /bin/bash -c "exec $mcp_command --host \"\$MCP_HOST\" --port \"\$MCP_PORT\"" &
   mcp_pid="$!"
   wait_for_mcp
 
