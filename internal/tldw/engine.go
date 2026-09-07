@@ -115,7 +115,7 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return app.transcribeVideo(ctx, ref)
 	}
 
-	metadata, err := app.resolveMetadata(ctx, ref)
+	metadata, err := app.resolveMetadataWithPolicy(ctx, ref, request.Policy == TranscriptPolicyCaptionsThenWhisper)
 	if err != nil {
 		return nil, fmt.Errorf("checking video metadata: %w", err)
 	}
@@ -284,18 +284,28 @@ func validateTranscriptRequest(request TranscriptRequest) error {
 }
 
 func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+	return app.resolveMetadataWithPolicy(ctx, ref, false)
+}
+
+func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref YouTubeRef, refreshNegative bool) (*VideoMetadata, error) {
 	if cached, ok := app.getCachedMetadata(ref.ID()); ok {
-		return app.useOrRefreshMetadata(ctx, ref, cached), nil
+		return app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
 	}
 
 	if cached, err := app.store.LoadMetadata(ref.ID()); err == nil {
-		resolved := app.useOrRefreshMetadata(ctx, ref, cached)
-		app.setCachedMetadata(ref.ID(), resolved)
-		return resolved, nil
+		resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
+		if refreshErr == nil {
+			app.setCachedMetadata(ref.ID(), resolved)
+		}
+		return resolved, refreshErr
 	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
 		return nil, fmt.Errorf("loading cached metadata: %w", err)
 	}
 
+	return app.fetchMetadata(ctx, ref)
+}
+
+func (app *Engine) fetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
 	metadata, err := app.video.FetchMetadata(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -307,19 +317,24 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 	return metadata, nil
 }
 
-func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cached *VideoMetadata) *VideoMetadata {
-	if app.metadataRefreshReason(cached) == "" {
-		return cached
+func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cached *VideoMetadata, refreshNegative bool) (*VideoMetadata, error) {
+	if app.metadataRefreshReason(cached) == "" && (!refreshNegative || cached.HasCaptions) {
+		return cached, nil
 	}
-	refreshed, err := app.video.FetchMetadata(ctx, ref)
-	if err != nil || refreshed == nil {
-		return cached
+	refreshed, err := app.fetchMetadata(ctx, ref)
+	if err != nil {
+		// A failed lookup must not turn stale absence into a decision to charge for Whisper.
+		if !cached.HasCaptions || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		app.log.Printf("Warning: metadata refresh failed: %v\n", err)
+		return cached, nil
 	}
-	app.cacheMetadata(ref.ID(), refreshed)
-	return refreshed
+	return refreshed, nil
 }
 
 func (app *Engine) cacheMetadata(videoID string, metadata *VideoMetadata) {
+	metadata.CheckedAt = time.Now()
 	if err := app.store.SaveMetadata(videoID, metadata); err != nil {
 		app.log.Printf("Warning: Failed to cache metadata: %v\n", err)
 	}

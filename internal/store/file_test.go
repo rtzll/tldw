@@ -3,6 +3,7 @@ package store_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -192,5 +193,22 @@ func TestFileRejectsVideoIDPathTraversal(t *testing.T) {
 	}
 	if err := adapter.SaveTranscript(&tldw.Transcript{VideoID: "../outside", Text: "secret"}); err == nil {
 		t.Fatal("SaveTranscript() accepted an invalid video ID")
+	}
+}
+
+func TestMetadataLoadPreservesFreshness(t *testing.T) {
+	dir := t.TempDir()
+	for _, field := range []string{"updated_at", "cached_at"} {
+		data := fmt.Sprintf(`{"cache_version":3,"channel":"Channel","%s":"2026-09-06T12:00:00Z"}`, field)
+		if err := os.WriteFile(filepath.Join(dir, "dQw4w9WgXcQ.meta.json"), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+		metadata, err := store.NewFile(dir).LoadMetadata("dQw4w9WgXcQ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !metadata.CheckedAt.Equal(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)) {
+			t.Fatalf("%s lost freshness: %+v", field, metadata)
+		}
 	}
 }

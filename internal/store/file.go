@@ -259,8 +259,13 @@ type cachedMetadata struct {
 }
 
 func metadataFromCached(cached cachedMetadata) tldw.VideoMetadata {
+	checkedAt := cached.UpdatedAt
+	if checkedAt.IsZero() {
+		checkedAt = cached.CachedAt
+	}
 	return tldw.VideoMetadata{
-		Title: cached.Title, Description: cached.Description, Channel: cached.Channel,
+		CheckedAt: checkedAt,
+		Title:     cached.Title, Description: cached.Description, Channel: cached.Channel,
 		ChannelURL: cached.ChannelURL, Creators: cached.Creators, PublishedAt: cached.PublishedAt,
 		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
 		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,

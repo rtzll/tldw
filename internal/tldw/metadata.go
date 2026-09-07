@@ -4,6 +4,8 @@ import "time"
 
 // VideoMetadata contains transport-neutral YouTube video information.
 type VideoMetadata struct {
+	// CheckedAt records when metadata was fetched; it is not part of the public JSON.
+	CheckedAt        time.Time      `json:"-"`
 	Title            string         `json:"title"`
 	Description      string         `json:"description"`
 	Channel          string         `json:"channel"`

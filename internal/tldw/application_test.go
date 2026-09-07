@@ -2,6 +2,7 @@ package tldw_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -126,5 +127,85 @@ func TestEngineRejectsEmptyAdapterResults(t *testing.T) {
 		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
 	}); err == nil {
 		t.Fatal("CreatePlaylistSummary() accepted nil playlist data from the video adapter")
+	}
+}
+
+func TestNegativeCaptionCacheRefresh(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		age         time.Duration
+		paid        bool
+		fail        bool
+		wantRefresh bool
+	}{
+		{"expired", time.Hour, false, false, true},
+		{"recent", time.Minute, false, false, false},
+		{"recheck before paid fallback", time.Minute, true, false, true},
+		{"failed recheck does not spend", time.Minute, true, true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lookupErr := errors.New("upstream unavailable")
+			video := &videoStub{metadata: &tldw.VideoMetadata{Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}, captions: &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "captions became available"}}
+			if tt.fail {
+				video.metadataErr = lookupErr
+			}
+			cache := &memoryStore{metadata: &tldw.VideoMetadata{Channel: "Channel", CheckedAt: time.Now().Add(-tt.age)}}
+			ai := &aiStub{}
+			engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: cache, AI: ai, Prompts: &promptStub{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref, _ := tldw.ParseVideoRef(testVideoID)
+			policy := tldw.TranscriptPolicyCaptionsOnly
+			if tt.paid {
+				policy = tldw.TranscriptPolicyCaptionsThenWhisper
+			}
+			result, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: policy})
+			if tt.fail {
+				if !errors.Is(err, lookupErr) {
+					t.Fatalf("error=%v", err)
+				}
+			} else if tt.wantRefresh {
+				if err != nil || result.Source != tldw.TranscriptSourceCaptions {
+					t.Fatalf("result=%+v error=%v", result, err)
+				}
+			} else if !errors.Is(err, tldw.ErrCaptionsUnavailable) {
+				t.Fatalf("error=%v", err)
+			}
+			if (video.metadataCalls > 0) != tt.wantRefresh {
+				t.Fatalf("metadata calls=%d", video.metadataCalls)
+			}
+			if ai.transcribeCalls != 0 || video.audioCalls != 0 {
+				t.Fatal("negative cache caused paid work")
+			}
+			if tt.wantRefresh && !tt.fail {
+				if _, err := engine.MetadataFor(context.Background(), ref); err != nil {
+					t.Fatal(err)
+				}
+				if video.metadataCalls != 1 {
+					t.Fatal("fresh metadata was fetched again")
+				}
+			}
+		})
+	}
+}
+
+func TestExplicitMetadataRefreshBypassesMemory(t *testing.T) {
+	video := &videoStub{metadata: &tldw.VideoMetadata{Title: "Fresh", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}}
+	cache := &memoryStore{metadata: &tldw.VideoMetadata{Title: "Cached", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}}
+	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: cache, AI: &aiStub{}, Prompts: &promptStub{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := tldw.ParseVideoRef(testVideoID)
+	if _, err := engine.MetadataFor(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := engine.RefreshMetadata(context.Background(), ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Title != "Fresh" || fresh.CheckedAt.IsZero() || video.metadataCalls != 1 {
+		t.Fatalf("fresh=%+v calls=%d", fresh, video.metadataCalls)
 	}
 }

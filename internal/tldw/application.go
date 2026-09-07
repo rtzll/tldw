@@ -85,12 +85,17 @@ func (app *Engine) setCachedMetadata(id string, metadata *VideoMetadata) {
 	app.metadataCache[id] = metadata
 }
 
+const negativeMetadataTTL = 15 * time.Minute
+
 func (app *Engine) metadataRefreshReason(metadata *VideoMetadata) string {
 	if metadata == nil {
 		return ""
 	}
 
 	var reasons []string
+	if !metadata.HasCaptions && (metadata.CheckedAt.IsZero() || time.Since(metadata.CheckedAt) >= negativeMetadataTTL) {
+		reasons = append(reasons, "caption availability")
+	}
 	if strings.TrimSpace(metadata.Channel) == "" {
 		reasons = append(reasons, "channel")
 	}
@@ -144,4 +149,12 @@ func (app *Engine) buildPlaylistTranscript(playlistTitle string, videos []VideoT
 	}
 
 	return sb.String()
+}
+
+// RefreshMetadata bypasses both metadata caches for an explicit fresh lookup.
+func (app *Engine) RefreshMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+	if !validVideoRef(ref) {
+		return nil, fmt.Errorf("metadata requires a valid video reference")
+	}
+	return app.fetchMetadata(ctx, ref)
 }

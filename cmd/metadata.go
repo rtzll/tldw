@@ -34,7 +34,13 @@ var metadataCmd = &cobra.Command{
 			return err
 		}
 		// Get metadata for the video
-		metadata, err := app.MetadataFor(cmd.Context(), parsed)
+		var metadata *tldw.VideoMetadata
+		refresh, _ := cmd.Flags().GetBool("refresh")
+		if refresh {
+			metadata, err = app.RefreshMetadata(cmd.Context(), parsed)
+		} else {
+			metadata, err = app.MetadataFor(cmd.Context(), parsed)
+		}
 		if err != nil {
 			return err
 		}
@@ -66,6 +72,7 @@ var metadataCmd = &cobra.Command{
 
 func init() {
 	metadataCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
+	metadataCmd.Flags().Bool("refresh", false, "Fetch fresh metadata instead of using the cache")
 	metadataCmd.Flags().Bool("pretty", false, "Format output as pretty JSON")
 	rootCmd.AddCommand(metadataCmd)
 }

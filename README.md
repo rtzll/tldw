@@ -106,6 +106,7 @@ tldw tAP1eZYEuKA -m gpt-4o-mini -p "tldr: {{.Transcript}}"
 tldw metadata "https://youtu.be/tAP1eZYEuKA"
 tldw metadata tAP1eZYEuKA -o metadata.json   # Save to file
 tldw metadata tAP1eZYEuKA --pretty           # Format JSON output
+tldw metadata tAP1eZYEuKA --refresh          # Bypass metadata caches
 
 # Show unique-video stats from the local metadata library
 tldw stats
@@ -117,6 +118,10 @@ tldw stats --period week --json
 `tldw stats` reports the runtime of unique videos in the local metadata
 library. Supported periods are `today`, `week`, `month`, and `all`; grouped
 reports can use `day`, `week`, or `month`.
+
+Negative caption metadata expires after 15 minutes. Before automatic paid
+Whisper fallback, cached negative metadata is always checked again. A failed
+recheck returns an error instead of starting paid transcription.
 
 ### Transcription smoke test
 

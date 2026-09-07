@@ -10,6 +10,7 @@ const testVideoID = "dQw4w9WgXcQ"
 
 type videoStub struct {
 	metadata      *tldw.VideoMetadata
+	metadataErr   error
 	captions      *tldw.Transcript
 	captionsErr   error
 	playlist      *tldw.PlaylistInfo
@@ -21,7 +22,7 @@ type videoStub struct {
 
 func (stub *videoStub) FetchMetadata(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
 	stub.metadataCalls++
-	return stub.metadata, nil
+	return stub.metadata, stub.metadataErr
 }
 
 func (stub *videoStub) FetchCaptions(context.Context, tldw.YouTubeRef, []string, string) (*tldw.Transcript, error) {
