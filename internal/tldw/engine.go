@@ -34,6 +34,9 @@ var ErrCaptionsUnavailable = errors.New("captions are unavailable")
 // ErrDownloadFailed marks a retryable failure from a video adapter.
 var ErrDownloadFailed = errors.New("video download failed")
 
+// ErrRateLimited means callers should retry later, not switch to paid transcription.
+var ErrRateLimited = errors.New("video service rate limited; retry later")
+
 // ErrInvalidTranscriptPolicy indicates a request with an unknown policy value.
 var ErrInvalidTranscriptPolicy = errors.New("invalid transcript policy")
 
@@ -136,13 +139,16 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	}
 
 	transcript, err := app.video.FetchCaptions(ctx, ref, metadata.CaptionLanguages, metadata.Language)
+	if terminalTranscriptError(err) {
+		return nil, err
+	}
 	if errors.Is(err, ErrDownloadFailed) {
 		if waitErr := sleepWithContext(ctx, time.Second); waitErr != nil {
 			return nil, waitErr
 		}
 		transcript, err = app.video.FetchCaptions(ctx, ref, metadata.CaptionLanguages, metadata.Language)
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if terminalTranscriptError(err) {
 		return nil, err
 	}
 	if (err != nil || transcript == nil) && request.Policy == TranscriptPolicyCaptionsThenWhisper && !request.RequireTimestamps {
@@ -394,4 +400,8 @@ func sleepWithContext(ctx context.Context, duration time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func terminalTranscriptError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrRateLimited)
 }

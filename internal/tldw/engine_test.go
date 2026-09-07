@@ -3,6 +3,7 @@ package tldw_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/rtzll/tldw/internal/tldw"
@@ -349,5 +350,23 @@ func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
 	}
 	if !confirmed || result.Processed != 1 || video.audioCalls != 1 || ai.transcribeCalls != 1 {
 		t.Fatalf("confirmed=%v result=%+v audio=%d transcribe=%d", confirmed, result, video.audioCalls, ai.transcribeCalls)
+	}
+}
+
+func TestEngineDoesNotRetryOrSpendOnTerminalCaptionErrors(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded, tldw.ErrRateLimited} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			video := &videoStub{metadata: &tldw.VideoMetadata{Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}, captionsErr: fmt.Errorf("%w: %w", tldw.ErrDownloadFailed, cause)}
+			ai := &aiStub{}
+			engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref, _ := tldw.ParseVideoRef(testVideoID)
+			_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenWhisper})
+			if !errors.Is(err, cause) || video.captionCalls != 1 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
+				t.Fatalf("err=%v caption=%d audio=%d paid=%d", err, video.captionCalls, video.audioCalls, ai.transcribeCalls)
+			}
+		})
 	}
 }

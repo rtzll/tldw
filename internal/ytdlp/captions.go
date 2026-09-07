@@ -2,6 +2,7 @@ package ytdlp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -159,7 +160,7 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 				yt.log.Printf("Fallback subtitle download error: %v\n", fallbackErr)
 				yt.log.Printf("Command output: %s\n", string(fallbackOutput))
 			}
-			return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, fallbackErr)
+			return captionDownloadError(fallbackErr)
 		}
 		return nil
 	}
@@ -170,9 +171,9 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 			yt.log.Printf("Command output: %s\n", string(output))
 		}
 
-		// Check if this was a rate limit error - if so, don't retry with more variants
-		if strings.Contains(string(output), "429") || strings.Contains(string(output), "Too Many Requests") {
-			return fmt.Errorf("%w: rate limited", tldw.ErrDownloadFailed)
+		// Cancellation and throttling must not trigger another language request.
+		if terminalCaptionError(err) {
+			return err
 		}
 
 		// Retry with a broader English wildcard when available
@@ -181,7 +182,7 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 				return err
 			}
 		} else {
-			return fmt.Errorf("%w: %v", tldw.ErrDownloadFailed, err)
+			return captionDownloadError(err)
 		}
 	}
 
@@ -219,8 +220,19 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, pr
 
 func (yt *YouTube) runCaptionDownload(ctx context.Context, args []string, pattern string) ([]byte, []string, error) {
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	if ctx.Err() != nil {
+		return output, nil, errors.Join(err, ctx.Err())
+	}
 	if err == nil {
 		return output, nil, nil
+	}
+	if terminalCaptionError(err) {
+		return output, nil, err
+	}
+	// CommandError includes stderr; stdout alone misses yt-dlp HTTP errors.
+	details := strings.ToLower(string(output) + "\n" + err.Error())
+	if strings.Contains(details, "http error 429") || strings.Contains(details, "too many requests") {
+		return output, nil, fmt.Errorf("%w: %w", tldw.ErrRateLimited, err)
 	}
 
 	files, globErr := filepath.Glob(pattern)
@@ -350,4 +362,15 @@ func extractCaptionLanguages(subtitles, autoCaptions map[string]any) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func terminalCaptionError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, tldw.ErrRateLimited)
+}
+
+func captionDownloadError(err error) error {
+	if terminalCaptionError(err) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", tldw.ErrDownloadFailed, err)
 }

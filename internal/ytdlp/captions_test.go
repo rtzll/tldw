@@ -1,6 +1,10 @@
 package ytdlp
 
 import (
+	"context"
+	"errors"
+	"github.com/rtzll/tldw/internal/process"
+	"github.com/rtzll/tldw/internal/tldw"
 	"os"
 	"path/filepath"
 	"testing"
@@ -149,5 +153,69 @@ func TestSetSubLangsArg(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		stdout string
+		cause  error
+		stderr string
+		want   error
+	}{
+		{name: "cancel", cause: context.Canceled, want: context.Canceled},
+		{name: "deadline", cause: context.DeadlineExceeded, want: context.DeadlineExceeded},
+		{name: "rate limit on stderr", cause: errors.New("exit status 1"), stderr: "ERROR: HTTP Error 429: Too Many Requests", want: tldw.ErrRateLimited},
+		{name: "rate limit on stdout", cause: errors.New("exit status 1"), stdout: "HTTP Error 429", want: tldw.ErrRateLimited},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+			calls := 0
+			commandErr := &process.CommandError{Name: "yt-dlp", Stderr: tt.stderr, Err: tt.cause}
+			yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {
+				calls++
+				return []byte(tt.stdout), commandErr
+			})
+			ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
+			_, err := yt.FetchCaptions(context.Background(), ref, []string{"en"}, "en")
+			var got *process.CommandError
+			if !errors.Is(err, tt.want) || !errors.As(err, &got) || got != commandErr {
+				t.Fatalf("error chain lost: %v", err)
+			}
+			if calls != 1 {
+				t.Fatalf("terminal error made %d attempts", calls)
+			}
+		})
+	}
+}
+
+func TestCaptionFallbackPreservesErrorChain(t *testing.T) {
+	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	calls := 0
+	cause := errors.New("network failure")
+	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, cause })
+	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
+	_, err := yt.FetchCaptions(context.Background(), ref, []string{"en"}, "en")
+	if calls != 2 || !errors.Is(err, cause) || !errors.Is(err, tldw.ErrDownloadFailed) {
+		t.Fatalf("calls=%d error=%v", calls, err)
+	}
+}
+
+func TestCanceledDownloadDoesNotAcceptPartialFiles(t *testing.T) {
+	dir := t.TempDir()
+	yt := NewYouTube(t.TempDir(), dir, false, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {
+		if err := os.WriteFile(filepath.Join(dir, "partial.srt"), []byte("partial"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		return nil, errors.New("process exited")
+	})
+	_, files, err := yt.runCaptionDownload(ctx, nil, filepath.Join(dir, "*.srt"))
+	if !errors.Is(err, context.Canceled) || len(files) != 0 {
+		t.Fatalf("accepted canceled partial download: files=%v err=%v", files, err)
 	}
 }
