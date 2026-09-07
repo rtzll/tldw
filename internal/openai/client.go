@@ -176,7 +176,7 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 	}
 
 	if len(chunks) > 1 {
-		defer cleanupFiles(chunks...)
+		defer cleanupChunks(chunks)
 	}
 
 	transcript, err := ai.processAudioChunks(ctx, chunks)

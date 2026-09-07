@@ -60,26 +60,24 @@ func (a *Audio) Split(ctx context.Context, audioFile string, numChunks int) ([]s
 	}
 
 	chunkDuration := int(math.Ceil(duration / float64(numChunks)))
+	workDir, err := os.MkdirTemp(a.tempDir, "chunks-")
+	if err != nil {
+		return nil, fmt.Errorf("creating chunk workspace: %w", err)
+	}
 	chunks := make([]string, 0, numChunks)
 
 	for i := range numChunks {
 		start := i * chunkDuration
-		output := filepath.Join(a.tempDir, fmt.Sprintf("%s_chunk_%d.mp3", filepath.Base(audioFile), i))
+		output := filepath.Join(workDir, fmt.Sprintf("%s_chunk_%d.mp3", filepath.Base(audioFile), i))
 
 		if err := a.Chunk(ctx, audioFile, start, chunkDuration, output); err != nil {
-			cleanupFiles(chunks...)
+			_ = os.RemoveAll(workDir)
 			return nil, fmt.Errorf("creating chunk %d: %w", i, err)
 		}
 		chunks = append(chunks, output)
 	}
 
 	return chunks, nil
-}
-
-func cleanupFiles(paths ...string) {
-	for _, path := range paths {
-		_ = os.Remove(path)
-	}
 }
 
 // Chunk extracts a segment from an audio file
@@ -96,4 +94,11 @@ func (a *Audio) Chunk(ctx context.Context, audioFile string, start, duration int
 		return fmt.Errorf("ffmpeg failed: %w\nOutput: %s", err, string(cmdOutput))
 	}
 	return nil
+}
+
+// cleanupChunks owns only the private directory created by Split.
+func cleanupChunks(chunks []string) {
+	if len(chunks) > 0 {
+		_ = os.RemoveAll(filepath.Dir(chunks[0]))
+	}
 }

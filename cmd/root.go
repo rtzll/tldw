@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -106,9 +105,8 @@ func Execute() error {
 	}
 
 	fmt.Fprintln(os.Stderr, "\nReceived interrupt signal. Cleaning up and shutting down...")
-	if cleanupErr := internal.CleanupTempDir(config.TempDir); cleanupErr != nil {
-		return errors.Join(err, fmt.Errorf("cleaning up temporary files: %w", cleanupErr))
-	}
+	// Each operation cleans up its own workspace; other CLI/server processes
+	// may still be using the shared cache directory.
 	return err
 }
 

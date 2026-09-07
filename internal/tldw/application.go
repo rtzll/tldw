@@ -27,14 +27,16 @@ type Dependencies struct {
 
 // Engine is the application's deep module and owns workflow policy.
 type Engine struct {
-	video         VideoAdapter
-	store         VideoStore
-	ai            AIAdapter
-	promptManager PromptBuilder
-	config        Config
-	log           LogSink
-	metadataCache map[string]*VideoMetadata
-	metadataMu    sync.RWMutex
+	video          VideoAdapter
+	store          VideoStore
+	ai             AIAdapter
+	promptManager  PromptBuilder
+	config         Config
+	log            LogSink
+	metadataCache  map[string]*VideoMetadata
+	metadataMu     sync.RWMutex
+	transcriptWork workGates
+	metadataWork   workGates
 }
 
 // NewEngine initializes a fully usable application module.
@@ -156,5 +158,10 @@ func (app *Engine) RefreshMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("metadata requires a valid video reference")
 	}
+	release, err := app.metadataWork.acquire(ctx, ref.ID())
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return app.fetchMetadata(ctx, ref)
 }

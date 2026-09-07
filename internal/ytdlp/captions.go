@@ -253,15 +253,30 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTu
 		yt.log.Printf("No existing transcript found, attempting to download...\n")
 	}
 
+	// Keep partial downloads private to this operation, including across processes.
+	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
+		return nil, err
+	}
+	workDir, err := os.MkdirTemp(yt.cacheDir, "captions-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := os.RemoveAll(workDir); err != nil {
+			yt.log.Printf("Warning: failed to clean download workspace: %v\n", err)
+		}
+	}()
+	worker := *yt
+	worker.cacheDir, worker.transcriptsDir = workDir, workDir
 	// No existing transcript found, try to download one
-	err = yt.downloadCaptions(ctx, ref, subLangs, originalLang)
+	err = worker.downloadCaptions(ctx, ref, subLangs, originalLang)
 	if err != nil {
 		// Preserve the error type for retry logic
 		return nil, err
 	}
 
 	// Look for the downloaded transcript
-	transcriptPath, err = yt.findExistingTranscript(ref.ID())
+	transcriptPath, err = worker.findExistingTranscript(ref.ID())
 	if err != nil || transcriptPath == "" {
 		if yt.verbose {
 			yt.log.Printf("Could not find downloaded transcript: %v\n", err)
@@ -273,7 +288,7 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTu
 		yt.log.Printf("Successfully downloaded transcript: %s\n", transcriptPath)
 	}
 
-	return yt.processSrtTranscript(transcriptPath)
+	return worker.processSrtTranscript(transcriptPath)
 }
 
 // findExistingTranscript locates a previously downloaded transcript

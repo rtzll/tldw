@@ -3,6 +3,8 @@ package openai
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -102,5 +104,26 @@ func TestAudioSplitDurationError(t *testing.T) {
 	_, err := a.Split(context.Background(), "input.mp3", 2)
 	if err == nil {
 		t.Error("Audio.Split() expected error when duration fails")
+	}
+}
+
+func TestAudioSplitUsesPrivateWorkspaces(t *testing.T) {
+	root := t.TempDir()
+	audio := NewAudio(chunkingRunner{}, root, false)
+	first, err := audio.Split(context.Background(), "same.mp3", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := audio.Split(context.Background(), "same.mp3", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupChunks(second)
+	if filepath.Dir(first[0]) == filepath.Dir(second[0]) {
+		t.Fatal("chunk directories shared")
+	}
+	cleanupChunks(first)
+	if _, err := os.Stat(second[0]); err != nil {
+		t.Fatalf("cleanup removed another operation: %v", err)
 	}
 }

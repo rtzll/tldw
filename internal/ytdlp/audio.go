@@ -21,8 +21,20 @@ func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, erro
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	// Set output path in cache directory
-	outputPath := filepath.Join(cacheDir, "%(id)s.%(ext)s")
+	outputFile := filepath.Join(cacheDir, ref.ID()+".mp3")
+	if info, err := os.Stat(outputFile); err == nil && info.Mode().IsRegular() && info.Size() > 0 {
+		return outputFile, nil
+	}
+	workDir, err := os.MkdirTemp(cacheDir, "audio-")
+	if err != nil {
+		return "", fmt.Errorf("creating audio workspace: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(workDir); err != nil {
+			yt.log.Printf("Warning: failed to clean download workspace: %v\n", err)
+		}
+	}()
+	outputPath := filepath.Join(workDir, "%(id)s.%(ext)s")
 
 	// Build arguments for yt-dlp command
 	args := []string{
@@ -47,6 +59,12 @@ func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, erro
 	}
 
 	// Return the full path to the downloaded file
-	outputFile := filepath.Join(cacheDir, ref.ID()+".mp3")
+	downloaded := filepath.Join(workDir, ref.ID()+".mp3")
+	if info, err := os.Stat(downloaded); err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return "", fmt.Errorf("audio download produced no usable file")
+	}
+	if err := os.Rename(downloaded, outputFile); err != nil {
+		return "", fmt.Errorf("caching audio: %w", err)
+	}
 	return outputFile, nil
 }

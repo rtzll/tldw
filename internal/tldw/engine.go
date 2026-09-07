@@ -104,6 +104,12 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
+	// Recheck the cache after acquiring the video gate; another request may have filled it.
+	release, err := app.transcriptWork.acquire(ctx, ref.ID())
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if transcript, err := app.store.LoadTranscript(ref.ID()); err == nil {
 		if cachedTranscriptAllowed(transcript, request) {
 			return transcript, nil
@@ -288,6 +294,11 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoM
 }
 
 func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref YouTubeRef, refreshNegative bool) (*VideoMetadata, error) {
+	release, err := app.metadataWork.acquire(ctx, ref.ID())
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if cached, ok := app.getCachedMetadata(ref.ID()); ok {
 		return app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
 	}
