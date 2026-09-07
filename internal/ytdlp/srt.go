@@ -80,13 +80,16 @@ func parseSRT(content string) []tldw.TranscriptSegment {
 		textParts = nil
 	}
 
-	for _, rawLine := range strings.Split(content, "\n") {
+	lines := strings.Split(content, "\n")
+	for i, rawLine := range lines {
 		line := strings.TrimSpace(strings.TrimSuffix(rawLine, "\r"))
 		if line == "" {
+			flushCurrent()
 			continue
 		}
 
-		if isSRTSequenceNumber(line) {
+		// A sequence number precedes a timing line; digits inside a cue are speech.
+		if isSRTSequenceNumber(line) && i+1 < len(lines) && strings.Contains(lines[i+1], "-->") {
 			continue
 		}
 
@@ -223,6 +226,7 @@ func parseSRTTimestamp(value string) (float64, error) {
 func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.TranscriptSegment {
 	result := make([]tldw.TranscriptSegment, 0, len(segments))
 	prevText := ""
+	prevStart, prevEnd := 0.0, 0.0
 
 	for _, segment := range segments {
 		text := strings.TrimSpace(segment.Text)
@@ -230,15 +234,20 @@ func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.Transcri
 			continue
 		}
 
+		// Only overlapping display windows can repeat already displayed words.
+		if segment.Start >= prevEnd || segment.Start < prevStart {
+			prevText = ""
+		}
+		prevStart, prevEnd = segment.Start, segment.End
 		condensedText := text
 		switch {
 		case prevText == "":
 			// Keep the first segment as-is.
 		case text == prevText:
 			continue
-		case strings.HasPrefix(text, prevText):
+		case strings.HasPrefix(text, prevText+" "):
 			condensedText = strings.TrimSpace(strings.TrimPrefix(text, prevText))
-		case strings.HasSuffix(prevText, text):
+		case strings.HasSuffix(prevText, " "+text):
 			continue
 		default:
 			if overlap := longestSubtitleOverlap(prevText, text); overlap != "" && strings.HasPrefix(text, overlap) {

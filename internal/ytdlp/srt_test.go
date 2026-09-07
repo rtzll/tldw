@@ -237,54 +237,54 @@ func TestCondenseSubtitleSegments(t *testing.T) {
 		{
 			name: "no overlap",
 			segments: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 0, End: 2, Text: "Hello"},
 				{Start: 1, End: 2, Text: "world"},
 			},
 			want: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 0, End: 2, Text: "Hello"},
 				{Start: 1, End: 2, Text: "world"},
 			},
 		},
 		{
 			name: "prefix overlap",
 			segments: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 0, End: 2, Text: "Hello world"},
 				{Start: 1, End: 2, Text: "Hello world today"},
 			},
 			want: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 0, End: 2, Text: "Hello world"},
 				{Start: 1, End: 2, Text: "today"},
 			},
 		},
 		{
 			name: "exact duplicate",
 			segments: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 0, End: 2, Text: "Hello"},
 				{Start: 1, End: 2, Text: "Hello"},
 			},
 			want: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 0, End: 2, Text: "Hello"},
 			},
 		},
 		{
 			name: "suffix overlap skipped",
 			segments: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 0, End: 2, Text: "Hello world"},
 				{Start: 1, End: 2, Text: "world"},
 			},
 			want: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello world"},
+				{Start: 0, End: 2, Text: "Hello world"},
 			},
 		},
 		{
 			name: "empty text skipped",
 			segments: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 0, End: 2, Text: "Hello"},
 				{Start: 1, End: 2, Text: ""},
 				{Start: 2, End: 3, Text: "world"},
 			},
 			want: []tldw.TranscriptSegment{
-				{Start: 0, End: 1, Text: "Hello"},
+				{Start: 0, End: 2, Text: "Hello"},
 				{Start: 2, End: 3, Text: "world"},
 			},
 		},
@@ -326,5 +326,25 @@ func TestLongestSubtitleOverlap(t *testing.T) {
 				t.Errorf("longestSubtitleOverlap(%q, %q) = %q, want %q", tt.previous, tt.current, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseSRTPreservesNumericSpeech(t *testing.T) {
+	segments := parseSRT("1\r\n00:00:00,000 --> 00:00:01,000\r\nThe year is\r\n2026\r\n\r\n2\r\n00:00:02,000 --> 00:00:03,000\r\n42\r\n")
+	if len(segments) != 2 || segments[0].Text != "The year is 2026" || segments[1].Text != "42" {
+		t.Fatalf("numeric speech lost: %+v", segments)
+	}
+}
+
+func TestCondensePreservesSeparateSpeech(t *testing.T) {
+	for _, start := range []float64{1, 10} {
+		segments := []tldw.TranscriptSegment{{Start: 0, End: 1, Text: "Yes."}, {Start: start, End: start + 1, Text: "Yes."}}
+		if got := condenseSubtitleSegments(segments); len(got) != 2 {
+			t.Fatalf("separate cues at %v condensed: %+v", start, got)
+		}
+	}
+	segments := []tldw.TranscriptSegment{{Start: 0, End: 2, Text: "the"}, {Start: 1, End: 3, Text: "there"}}
+	if got := condenseSubtitleSegments(segments); len(got) != 2 || got[1].Text != "there" {
+		t.Fatalf("partial word removed: %+v", got)
 	}
 }
