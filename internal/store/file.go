@@ -15,6 +15,15 @@ import (
 
 const metadataCacheVersion = 3
 
+// Earlier caption caches can contain duplicated rolling windows or missing
+// speech. Refetch them once using the corrected SRT parser.
+const captionCacheVersion = 1
+
+type cachedTranscript struct {
+	CacheVersion int `json:"cache_version,omitempty"`
+	tldw.Transcript
+}
+
 // File is the filesystem adapter for the application's persistence seam.
 type File struct {
 	dir string
@@ -206,7 +215,11 @@ func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
 	if err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
-	data, err := json.MarshalIndent(transcript, "", "  ")
+	cached := cachedTranscript{Transcript: *transcript}
+	if transcript.Source == tldw.TranscriptSourceCaptions {
+		cached.CacheVersion = captionCacheVersion
+	}
+	data, err := json.MarshalIndent(cached, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling transcript: %w", err)
 	}
@@ -228,10 +241,14 @@ func (s *File) loadStructuredTranscript(videoID string) (*tldw.Transcript, error
 	if err != nil {
 		return nil, fmt.Errorf("reading structured transcript: %w", err)
 	}
-	var transcript tldw.Transcript
-	if err := json.Unmarshal(data, &transcript); err != nil {
+	var cached cachedTranscript
+	if err := json.Unmarshal(data, &cached); err != nil {
 		return nil, fmt.Errorf("parsing structured transcript: %w", err)
 	}
+	if cached.Source == tldw.TranscriptSourceCaptions && cached.CacheVersion < captionCacheVersion {
+		return nil, fmt.Errorf("%w: caption version %d", tldw.ErrStoreStale, cached.CacheVersion)
+	}
+	transcript := cached.Transcript
 	if transcript.VideoID == "" {
 		transcript.VideoID = videoID
 	}

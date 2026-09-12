@@ -84,7 +84,11 @@ func parseSRT(content string) []tldw.TranscriptSegment {
 	for i, rawLine := range lines {
 		line := strings.TrimSpace(strings.TrimSuffix(rawLine, "\r"))
 		if line == "" {
-			flushCurrent()
+			// Converted rolling captions can start with an empty display line.
+			// Only treat a blank as a separator after collecting actual text.
+			if len(textParts) > 0 {
+				flushCurrent()
+			}
 			continue
 		}
 
@@ -225,8 +229,7 @@ func parseSRTTimestamp(value string) (float64, error) {
 // condenseSubtitleSegments trims rolling subtitle windows down to newly introduced text.
 func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.TranscriptSegment {
 	result := make([]tldw.TranscriptSegment, 0, len(segments))
-	prevText := ""
-	prevStart, prevEnd := 0.0, 0.0
+	var previous tldw.TranscriptSegment
 
 	for _, segment := range segments {
 		text := strings.TrimSpace(segment.Text)
@@ -234,38 +237,46 @@ func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.Transcri
 			continue
 		}
 
-		// Only overlapping display windows can repeat already displayed words.
-		if segment.Start >= prevEnd || segment.Start < prevStart {
-			prevText = ""
-		}
-		prevStart, prevEnd = segment.Start, segment.End
 		condensedText := text
-		switch {
-		case prevText == "":
-			// Keep the first segment as-is.
-		case text == prevText:
-			continue
-		case strings.HasPrefix(text, prevText+" "):
-			condensedText = strings.TrimSpace(strings.TrimPrefix(text, prevText))
-		case strings.HasSuffix(prevText, " "+text):
-			continue
-		default:
-			if overlap := longestSubtitleOverlap(prevText, text); overlap != "" && strings.HasPrefix(text, overlap) {
+		if subtitleWindowsConnected(previous, segment) {
+			if overlap := longestSubtitleOverlap(previous.Text, text); overlap != "" {
 				condensedText = strings.TrimSpace(strings.TrimPrefix(text, overlap))
 			}
 		}
 
+		// Track the raw window even when it contributes no new words. A rolling
+		// window can shrink before introducing another occurrence of a word.
+		previous = segment
 		if condensedText == "" {
-			prevText = text
 			continue
 		}
 
 		segment.Text = condensedText
 		result = append(result, segment)
-		prevText = text
 	}
 
 	return result
+}
+
+func subtitleWindowsConnected(previous, current tldw.TranscriptSegment) bool {
+	if current.Start < previous.Start {
+		return false
+	}
+	if current.Start < previous.End {
+		return true
+	}
+	// yt-dlp's YouTube SRT conversion inserts 10 ms transition cues between
+	// adjacent rolling windows. Allow overlap removal across those transitions,
+	// while keeping ordinary back-to-back speech (e.g. "Yes." then "Yes.").
+	// Timing has millisecond precision; epsilon only absorbs float rounding.
+	const epsilon = 0.000001
+	if current.Start-previous.End > epsilon {
+		return false
+	}
+	previousDuration := previous.End - previous.Start
+	currentDuration := current.End - current.Start
+	return (previousDuration > 0 && previousDuration <= 0.01+epsilon) ||
+		(currentDuration > 0 && currentDuration <= 0.01+epsilon)
 }
 
 func longestSubtitleOverlap(previous, current string) string {

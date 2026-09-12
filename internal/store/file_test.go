@@ -163,6 +163,33 @@ func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
 	}
 }
 
+func TestFileRefreshesUnversionedCaptionsOnly(t *testing.T) {
+	for _, source := range []tldw.TranscriptSource{tldw.TranscriptSourceCaptions, tldw.TranscriptSourceWhisper, ""} {
+		t.Run(string(source), func(t *testing.T) {
+			dir := t.TempDir()
+			transcript := tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: source, Text: "old transcript"}
+			data, err := json.Marshal(transcript)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for suffix, contents := range map[string][]byte{".transcript.json": data, ".txt": []byte(transcript.Text)} {
+				if err := os.WriteFile(filepath.Join(dir, transcript.VideoID+suffix), contents, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := store.NewFile(dir).LoadTranscript(transcript.VideoID)
+			if source == tldw.TranscriptSourceCaptions {
+				// Do not fall back to the equally stale plain text file.
+				if !errors.Is(err, tldw.ErrStoreStale) {
+					t.Fatalf("old captions: got %+v, %v; want ErrStoreStale", got, err)
+				}
+			} else if err != nil || got.Text != transcript.Text || got.Source != source {
+				t.Fatalf("non-caption cache: got %+v, %v", got, err)
+			}
+		})
+	}
+}
+
 func TestFileTreatsOldMetadataSchemaAsCacheMiss(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dQw4w9WgXcQ.meta.json")

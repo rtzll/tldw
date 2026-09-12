@@ -3,6 +3,7 @@ package ytdlp
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/rtzll/tldw/internal/tldw"
@@ -346,5 +347,97 @@ func TestCondensePreservesSeparateSpeech(t *testing.T) {
 	segments := []tldw.TranscriptSegment{{Start: 0, End: 2, Text: "the"}, {Start: 1, End: 3, Text: "there"}}
 	if got := condenseSubtitleSegments(segments); len(got) != 2 || got[1].Text != "there" {
 		t.Fatalf("partial word removed: %+v", got)
+	}
+}
+
+func TestProcessSRTRollingCaptions(t *testing.T) {
+	// Match yt-dlp's converted YouTube captions: an empty first display line,
+	// two-line rolling windows, and 10 ms transition cues retaining the last line.
+	content := `1
+00:00:00,080 --> 00:00:01,750
+
+Hello world
+
+2
+00:00:01,750 --> 00:00:01,760
+Hello world
+
+
+3
+00:00:01,760 --> 00:00:05,030
+Hello world
+Yes. Yes.
+
+4
+00:00:05,030 --> 00:00:05,040
+Yes. Yes.
+
+
+5
+00:00:05,040 --> 00:00:07,030
+Yes. Yes.
+2026
+
+6
+00:00:07,030 --> 00:00:07,040
+2026
+
+
+7
+00:00:07,040 --> 00:00:08,230
+2026
+Goodbye
+
+8
+00:00:10,000 --> 00:00:12,000
+
+Goodbye
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dQw4w9WgXcQ.en.srt")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	yt := NewYouTube(dir, filepath.Join(dir, "cache"), false, true)
+	got, err := yt.processSrtTranscript(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []tldw.TranscriptSegment{
+		{Start: 0.08, End: 1.75, Text: "Hello world"},
+		{Start: 1.76, End: 5.03, Text: "Yes. Yes."},
+		{Start: 5.04, End: 7.03, Text: "2026"},
+		{Start: 7.04, End: 8.23, Text: "Goodbye"},
+		{Start: 10, End: 12, Text: "Goodbye"},
+	}
+	if !reflect.DeepEqual(got.Segments, want) {
+		t.Fatalf("rolling captions = %+v, want %+v", got.Segments, want)
+	}
+	if got.Text != "Hello world\nYes. Yes.\n2026\nGoodbye\nGoodbye" {
+		t.Fatalf("plain transcript = %q", got.Text)
+	}
+}
+
+func TestCondenseTracksShrinkingWindow(t *testing.T) {
+	segments := []tldw.TranscriptSegment{
+		{Start: 0, End: 2, Text: "go go"},
+		{Start: 1, End: 3, Text: "go"},
+		{Start: 2, End: 4, Text: "go go again"},
+	}
+	want := []tldw.TranscriptSegment{segments[0], {Start: 2, End: 4, Text: "go again"}}
+	if got := condenseSubtitleSegments(segments); !reflect.DeepEqual(got, want) {
+		t.Fatalf("shrinking window = %+v, want %+v", got, want)
+	}
+}
+
+func TestCondenseShortCuesPreserveSeparateSpeech(t *testing.T) {
+	for _, start := range []float64{0.5, 1.011, 10} {
+		segments := []tldw.TranscriptSegment{
+			{Start: 1, End: 1.01, Text: "Yes."},
+			{Start: start, End: start + 1, Text: "Yes."},
+		}
+		if got := condenseSubtitleSegments(segments); !reflect.DeepEqual(got, segments) {
+			t.Fatalf("separate short cue at %v condensed: %+v", start, got)
+		}
 	}
 }
