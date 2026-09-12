@@ -20,7 +20,6 @@ type CommandRunner struct{}
 // external process while still supporting errors.Is and errors.As.
 type CommandError struct {
 	Name   string
-	Args   []string
 	Stderr string
 	Err    error
 }
@@ -41,14 +40,14 @@ func (*CommandRunner) Run(ctx context.Context, name string, args ...string) ([]b
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.Bytes(), commandError(ctx, name, args, stderr.String(), err)
+		return stdout.Bytes(), commandError(ctx, name, stderr.String(), err)
 	}
 	return stdout.Bytes(), nil
 }
 
-func commandError(ctx context.Context, name string, args []string, stderr string, err error) *CommandError {
+func commandError(ctx context.Context, name, stderr string, err error) *CommandError {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		err = errors.Join(err, ctxErr)
 	}
-	return &CommandError{Name: name, Args: append([]string(nil), args...), Stderr: stderr, Err: err}
+	return &CommandError{Name: name, Stderr: stderr, Err: err}
 }

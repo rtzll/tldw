@@ -129,20 +129,13 @@ func (ai *AI) ensureClient() error {
 			return
 		}
 		if ai.apiKey == "" {
-			ai.clientErr = validateAPIKey("")
+			ai.clientErr = fmt.Errorf("OpenAI API key is required - set it in config.toml or OPENAI_API_KEY environment variable")
 			return
 		}
 		ai.client = newSDKClient(ai.apiKey)
 	})
 
 	return ai.clientErr
-}
-
-func validateAPIKey(apiKey string) error {
-	if apiKey == "" {
-		return fmt.Errorf("OpenAI API key is required - set it in config.toml or OPENAI_API_KEY environment variable")
-	}
-	return nil
 }
 
 // Transcribe transcribes audio using OpenAI's Whisper API

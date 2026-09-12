@@ -258,7 +258,6 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, re
 			description = description[:147] + "..."
 		}
 		videos = append(videos, VideoTranscript{
-			URL:         videoRef.URL(),
 			Title:       metadata.Title,
 			Channel:     metadata.Channel,
 			Duration:    metadata.Duration,
@@ -335,7 +334,7 @@ func (app *Engine) fetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMet
 }
 
 func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cached *VideoMetadata, refreshNegative bool) (*VideoMetadata, error) {
-	if app.metadataRefreshReason(cached) == "" && (!refreshNegative || cached.HasCaptions) {
+	if !metadataNeedsRefresh(cached) && (!refreshNegative || cached.HasCaptions) {
 		return cached, nil
 	}
 	refreshed, err := app.fetchMetadata(ctx, ref)

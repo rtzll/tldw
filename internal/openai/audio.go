@@ -16,15 +16,13 @@ import (
 type Audio struct {
 	cmdRunner process.Runner
 	tempDir   string
-	verbose   bool
 }
 
 // NewAudio creates a new audio processor
-func NewAudio(cmdRunner process.Runner, tempDir string, verbose bool) *Audio {
+func NewAudio(cmdRunner process.Runner, tempDir string) *Audio {
 	return &Audio{
 		cmdRunner: cmdRunner,
 		tempDir:   tempDir,
-		verbose:   verbose,
 	}
 }
 

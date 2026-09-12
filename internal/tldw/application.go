@@ -89,22 +89,18 @@ func (app *Engine) setCachedMetadata(id string, metadata *VideoMetadata) {
 
 const negativeMetadataTTL = 15 * time.Minute
 
-func (app *Engine) metadataRefreshReason(metadata *VideoMetadata) string {
+func metadataNeedsRefresh(metadata *VideoMetadata) bool {
 	if metadata == nil {
-		return ""
+		return false
 	}
 
-	var reasons []string
 	if !metadata.HasCaptions && (metadata.CheckedAt.IsZero() || time.Since(metadata.CheckedAt) >= negativeMetadataTTL) {
-		reasons = append(reasons, "caption availability")
+		return true
 	}
 	if strings.TrimSpace(metadata.Channel) == "" {
-		reasons = append(reasons, "channel")
+		return true
 	}
-	if metadata.HasCaptions && len(metadata.CaptionLanguages) == 0 {
-		reasons = append(reasons, "caption languages")
-	}
-	return strings.Join(reasons, " and ")
+	return metadata.HasCaptions && len(metadata.CaptionLanguages) == 0
 }
 
 // MetadataFor resolves metadata for an already validated video reference.
@@ -117,7 +113,6 @@ func (app *Engine) MetadataFor(ctx context.Context, ref YouTubeRef) (*VideoMetad
 
 // VideoTranscript holds a video's metadata and transcript
 type VideoTranscript struct {
-	URL         string
 	Title       string
 	Channel     string
 	Duration    float64

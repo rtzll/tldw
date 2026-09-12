@@ -41,7 +41,7 @@ func TestAudioDuration(t *testing.T) {
 				runner.err = fmt.Errorf("ffprobe failed")
 			}
 
-			a := NewAudio(runner, "/tmp", false)
+			a := NewAudio(runner, "/tmp")
 			got, err := a.Duration(context.Background(), "test.mp3")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Audio.Duration() error = %v, wantErr %v", err, tt.wantErr)
@@ -68,7 +68,7 @@ func TestAudioChunk(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := &mockCommandRunner{output: []byte(tt.output), err: tt.err}
-			a := NewAudio(runner, t.TempDir(), false)
+			a := NewAudio(runner, t.TempDir())
 			err := a.Chunk(context.Background(), "input.mp3", 10, 30, "output.mp3")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Audio.Chunk() error = %v, wantErr %v", err, tt.wantErr)
@@ -80,7 +80,7 @@ func TestAudioChunk(t *testing.T) {
 func TestAudioSplit(t *testing.T) {
 	runner := &mockCommandRunner{output: []byte("90.0\n")}
 	tmpDir := t.TempDir()
-	a := NewAudio(runner, tmpDir, false)
+	a := NewAudio(runner, tmpDir)
 
 	chunks, err := a.Split(context.Background(), "input.mp3", 3)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestAudioSplit(t *testing.T) {
 
 func TestAudioSplitDurationError(t *testing.T) {
 	runner := &mockCommandRunner{err: fmt.Errorf("ffprobe failed")}
-	a := NewAudio(runner, t.TempDir(), false)
+	a := NewAudio(runner, t.TempDir())
 
 	_, err := a.Split(context.Background(), "input.mp3", 2)
 	if err == nil {
@@ -109,7 +109,7 @@ func TestAudioSplitDurationError(t *testing.T) {
 
 func TestAudioSplitUsesPrivateWorkspaces(t *testing.T) {
 	root := t.TempDir()
-	audio := NewAudio(chunkingRunner{}, root, false)
+	audio := NewAudio(chunkingRunner{}, root)
 	first, err := audio.Split(context.Background(), "same.mp3", 2)
 	if err != nil {
 		t.Fatal(err)
