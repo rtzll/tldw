@@ -7,7 +7,7 @@ usage:
   tunnel-launchd install <label> <keychain-service> <tunnel-client> <profile> <repo-dir> <mcp-command> <mcp-host> <mcp-port>
   tunnel-launchd uninstall <label>
   tunnel-launchd restart <label>
-  tunnel-launchd status <label>
+  tunnel-launchd status <label> [--raw]
   tunnel-launchd logs [--tail]
   tunnel-launchd run <keychain-service> <tunnel-client> <profile> <mcp-command> <mcp-host> <mcp-port>
 EOF
@@ -143,6 +143,94 @@ restart_agent() {
   echo "Restarted $label"
 }
 
+summarize_agent_status() {
+  # Only read top-level fields: nested launchd diagnostics also contain state.
+  awk '
+    depth == 1 {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      separator = index(line, " = ")
+      if (separator) {
+        key = substr(line, 1, separator - 1)
+        value = substr(line, separator + 3)
+        fields[key] = value
+      }
+    }
+    /\{$/ { depth++ }
+    /^[[:space:]]*\}$/ { depth-- }
+    END {
+      state = fields["state"]
+      if (state == "running") {
+        printf "Service:       Running"
+        if (fields["pid"] != "") printf " (PID %s)", fields["pid"]
+        print ""
+      } else {
+        printf "Service:       Not running (launchd state: %s)\n", (state != "" ? state : "unknown")
+      }
+      if (fields["runs"] != "")
+        printf "Launches:      %s since the service was loaded\n", fields["runs"]
+      signal = fields["last terminating signal"]
+      code = fields["last exit code"]
+      if (signal != "") {
+        if (signal == "Killed: 9" || signal == "9" || signal == "SIGKILL") {
+          print "Previous stop: Forced stop (SIGKILL). A forced restart can cause this."
+        } else {
+          printf "Previous stop: Signal %s\n", signal
+        }
+      } else if (code != "") {
+        if (code == "0") print "Previous exit: Successful (code 0)"
+        else printf "Previous exit: Error (code %s); check the logs for the cause.\n", code
+      }
+      if (state != "running")
+        print "Next step:     Check the logs, then run just tunnel-launchd-restart."
+    }
+  '
+}
+
+status_agent() {
+  [[ $# -ge 1 && $# -le 2 ]] || usage
+  local label="$1"
+  local mode="${2:-}"
+  [[ -z "$mode" || "$mode" == "--raw" ]] || usage
+  local target="$(user_domain)/$label"
+  if [[ "$mode" == "--raw" ]]; then
+    /bin/launchctl print "$target"
+    return
+  fi
+
+  local report
+  if ! report="$(/bin/launchctl print "$target" 2>&1)"; then
+    if [[ "$report" == *"Could not find service"* ]]; then
+      if [[ -f "$HOME/Library/LaunchAgents/$label.plist" ]]; then
+        printf 'Service:       Not loaded\n'
+      else
+        printf 'Service:       Not installed\n'
+      fi
+      printf 'Next step:     Run just tunnel-launchd-install.\n'
+    else
+      printf 'Unable to read launchd status for %s:\n%s\n' "$label" "$report" >&2
+    fi
+    return 1
+  fi
+
+  printf 'tldw background service (%s)\n\n' "$label"
+  printf '%s\n' "$report" | summarize_agent_status
+
+  local plist="$HOME/Library/LaunchAgents/$label.plist"
+  local service_path binary version
+  service_path="$(/usr/bin/plutil -extract EnvironmentVariables.PATH raw -o - "$plist" 2>/dev/null)" || service_path=""
+  if [[ -n "$service_path" ]]; then
+    binary="$(PATH="$service_path" command -v tldw)" || binary=""
+    if [[ -n "$binary" ]] && version="$("$binary" version 2>/dev/null)"; then
+      printf 'Installed CLI: %s\n' "${version%% (*}"
+      printf '               Restart after upgrading; the running version is not checked here.\n'
+    fi
+  fi
+  printf '\nThis reports the launchd process; tunnel connectivity is not checked.\n'
+  printf 'Logs:          just tunnel-launchd-logs\n'
+  printf 'Full details:  just tunnel-launchd-status --raw\n'
+}
+
 run_agent() {
   [[ $# -eq 6 ]] || usage
 
@@ -208,6 +296,11 @@ run_agent() {
   return "$status"
 }
 
+# Allow the status formatter to be sourced by deterministic tests.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
+
 case "${1:-}" in
   install)
     shift
@@ -223,8 +316,7 @@ case "${1:-}" in
     ;;
   status)
     shift
-    [[ $# -eq 1 ]] || usage
-    /bin/launchctl print "$(user_domain)/$1"
+    status_agent "$@"
     ;;
   logs)
     shift
