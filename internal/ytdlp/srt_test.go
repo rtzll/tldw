@@ -1,6 +1,7 @@
 package ytdlp
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -84,7 +85,7 @@ Second line
 Third line
 `,
 			want: []tldw.TranscriptSegment{
-				{Start: 1, End: 4, Text: "First line Second line"},
+				{Start: 1, End: 4, Text: "First line\nSecond line"},
 				{Start: 5, End: 7, Text: "Third line"},
 			},
 		},
@@ -332,7 +333,7 @@ func TestLongestSubtitleOverlap(t *testing.T) {
 
 func TestParseSRTPreservesNumericSpeech(t *testing.T) {
 	segments := parseSRT("1\r\n00:00:00,000 --> 00:00:01,000\r\nThe year is\r\n2026\r\n\r\n2\r\n00:00:02,000 --> 00:00:03,000\r\n42\r\n")
-	if len(segments) != 2 || segments[0].Text != "The year is 2026" || segments[1].Text != "42" {
+	if len(segments) != 2 || segments[0].Text != "The year is\n2026" || segments[1].Text != "42" {
 		t.Fatalf("numeric speech lost: %+v", segments)
 	}
 }
@@ -439,5 +440,112 @@ func TestCondenseShortCuesPreserveSeparateSpeech(t *testing.T) {
 		if got := condenseSubtitleSegments(segments); !reflect.DeepEqual(got, segments) {
 			t.Fatalf("separate short cue at %v condensed: %+v", start, got)
 		}
+	}
+}
+
+func TestProcessSRTRollingCaptionsWithVariableTransitions(t *testing.T) {
+	// Reproduce cached fragments and timings from LlgiOCmFG_w with rolling
+	// display lines: transitions can last 34 ms, 100 ms, or much longer.
+	content := `1
+00:00:01,223 --> 00:00:03,895
+
+OK. I'm here to
+
+2
+00:00:03,895 --> 00:00:03,929
+OK. I'm here to
+
+3
+00:00:03,929 --> 00:00:04,842
+OK. I'm here to
+talk about
+
+4
+00:00:04,842 --> 00:00:04,876
+talk about
+
+5
+00:00:04,876 --> 00:00:06,059
+talk about
+solving the
+
+6
+00:01:57,661 --> 00:01:58,566
+maybe I'll
+notify people right away.
+
+7
+00:01:58,566 --> 00:01:58,666
+notify people right away.
+
+8
+00:01:58,666 --> 00:01:59,998
+notify people right away.
+Maybe you have something
+
+9
+00:02:52,274 --> 00:02:53,475
+will generate even
+more bad code.
+
+10
+00:02:53,475 --> 00:02:54,152
+more bad code.
+
+11
+00:02:54,152 --> 00:02:55,442
+more bad code.
+So, in this talk, I'll
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "LlgiOCmFG_w.en.srt")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	yt := NewYouTube(dir, filepath.Join(dir, "cache"), false, true)
+	got, err := yt.processSrtTranscript(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []tldw.TranscriptSegment{
+		{Start: 1.223, End: 3.895, Text: "OK. I'm here to"},
+		{Start: 3.929, End: 4.842, Text: "talk about"},
+		{Start: 4.876, End: 6.059, Text: "solving the"},
+		{Start: 117.661, End: 118.566, Text: "maybe I'll notify people right away."},
+		{Start: 118.666, End: 119.998, Text: "Maybe you have something"},
+		{Start: 172.274, End: 173.475, Text: "will generate even more bad code."},
+		{Start: 174.152, End: 175.442, Text: "So, in this talk, I'll"},
+	}
+	if len(got.Segments) != len(want) {
+		t.Fatalf("rolling captions = %+v, want %+v", got.Segments, want)
+	}
+	for i, segment := range got.Segments {
+		if segment.Text != want[i].Text || math.Abs(segment.Start-want[i].Start) > 0.000001 || math.Abs(segment.End-want[i].End) > 0.000001 {
+			t.Fatalf("rolling caption %d = %+v, want %+v", i, segment, want[i])
+		}
+	}
+	if got.Text != "OK. I'm here to\ntalk about\nsolving the\nmaybe I'll notify people right away.\nMaybe you have something\nwill generate even more bad code.\nSo, in this talk, I'll" {
+		t.Fatalf("plain transcript = %q", got.Text)
+	}
+}
+
+func TestCondenseAdjacentDisplayLines(t *testing.T) {
+	segments := []tldw.TranscriptSegment{
+		{Start: 0, End: 1, Text: "First line\nshared line"},
+		{Start: 1, End: 2, Text: "shared line\nnew line"},
+		{Start: 2, End: 3, Text: "new line"},
+		{Start: 3, End: 4, Text: "new line"},
+		{Start: 4, End: 5, Text: "New sentence\nnew line"},
+		{Start: 6, End: 7, Text: "new line\nafter a gap"},
+	}
+	want := []tldw.TranscriptSegment{
+		{Start: 0, End: 1, Text: "First line shared line"},
+		{Start: 1, End: 2, Text: "new line"},
+		segments[3],
+		{Start: 4, End: 5, Text: "New sentence new line"},
+		{Start: 6, End: 7, Text: "new line after a gap"},
+	}
+	if got := condenseSubtitleSegments(segments); !reflect.DeepEqual(got, want) {
+		t.Fatalf("adjacent display lines = %+v, want %+v", got, want)
 	}
 }

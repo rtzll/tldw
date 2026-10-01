@@ -17,7 +17,7 @@ const metadataCacheVersion = 3
 
 // Earlier caption caches can contain duplicated rolling windows or missing
 // speech. Refetch them once using the corrected SRT parser.
-const captionCacheVersion = 1
+const captionCacheVersion = 2
 
 type cachedTranscript struct {
 	CacheVersion int `json:"cache_version,omitempty"`

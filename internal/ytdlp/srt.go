@@ -60,7 +60,8 @@ func pathWithinDirectory(path, directory string) bool {
 	return relative != "." && filepath.IsLocal(relative)
 }
 
-// parseSRT extracts timed transcript segments from SRT format.
+// parseSRT extracts timed subtitle windows, retaining display-line boundaries
+// until rolling captions have been condensed.
 func parseSRT(content string) []tldw.TranscriptSegment {
 	var segments []tldw.TranscriptSegment
 	var current *tldw.TranscriptSegment
@@ -71,7 +72,7 @@ func parseSRT(content string) []tldw.TranscriptSegment {
 			return
 		}
 
-		current.Text = strings.TrimSpace(strings.Join(textParts, " "))
+		current.Text = strings.TrimSpace(strings.Join(textParts, "\n"))
 		if current.Text != "" {
 			segments = append(segments, *current)
 		}
@@ -232,7 +233,7 @@ func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.Transcri
 	var previous tldw.TranscriptSegment
 
 	for _, segment := range segments {
-		text := strings.TrimSpace(segment.Text)
+		text := strings.Join(strings.Fields(segment.Text), " ")
 		if text == "" {
 			continue
 		}
@@ -265,18 +266,31 @@ func subtitleWindowsConnected(previous, current tldw.TranscriptSegment) bool {
 	if current.Start < previous.End {
 		return true
 	}
-	// yt-dlp's YouTube SRT conversion inserts 10 ms transition cues between
-	// adjacent rolling windows. Allow overlap removal across those transitions,
-	// while keeping ordinary back-to-back speech (e.g. "Yes." then "Yes.").
+	// Converted rolling windows can be contiguous without overlapping in time.
+	// Require display-line or short-transition evidence before removing text
+	// from ordinary back-to-back speech (e.g. "Yes." then "Yes.").
 	// Timing has millisecond precision; epsilon only absorbs float rounding.
 	const epsilon = 0.000001
 	if current.Start-previous.End > epsilon {
 		return false
 	}
+	// Rolling captions carry the last display line into the next window.
+	// A retained line can stay visible for much longer than a transition frame,
+	// so recognize it by its line boundary rather than by a duration limit.
+	previousLines := strings.Split(strings.TrimSpace(previous.Text), "\n")
+	currentLines := strings.Split(strings.TrimSpace(current.Text), "\n")
+	if (len(previousLines) > 1 || len(currentLines) > 1) &&
+		previousLines[len(previousLines)-1] == currentLines[0] {
+		return true
+	}
+
 	previousDuration := previous.End - previous.Start
 	currentDuration := current.End - current.Start
-	return (previousDuration > 0 && previousDuration <= 0.01+epsilon) ||
-		(currentDuration > 0 && currentDuration <= 0.01+epsilon)
+	// The first single-line window has no line boundary to compare. Its short
+	// transition cue varies in duration; allow up to 50 ms without line evidence.
+	const shortTransition = 0.05
+	return (previousDuration > 0 && previousDuration <= shortTransition+epsilon) ||
+		(currentDuration > 0 && currentDuration <= shortTransition+epsilon)
 }
 
 func longestSubtitleOverlap(previous, current string) string {
