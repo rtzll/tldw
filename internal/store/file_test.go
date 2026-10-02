@@ -115,8 +115,9 @@ func TestFileListMetadataIgnoresNonVideoCacheFiles(t *testing.T) {
 func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	adapter := store.NewFile(t.TempDir())
 	transcript := &tldw.Transcript{
-		VideoID: "dQw4w9WgXcQ",
-		Source:  tldw.TranscriptSourceCaptions,
+		VideoID:      "dQw4w9WgXcQ",
+		Source:       tldw.TranscriptSourceCaptions,
+		CaptionTrack: &tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true},
 		Segments: []tldw.TranscriptSegment{
 			{Start: 1, End: 2, Text: "Hello world"},
 		},
@@ -164,7 +165,7 @@ func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
 }
 
 func TestFileRefreshesOldCaptionsOnly(t *testing.T) {
-	for _, version := range []int{0, 1} {
+	for _, version := range []int{0, 1, 2} {
 		t.Run(fmt.Sprintf("version %d", version), func(t *testing.T) {
 			for _, source := range []tldw.TranscriptSource{tldw.TranscriptSourceCaptions, tldw.TranscriptSourceWhisper, ""} {
 				t.Run(string(source), func(t *testing.T) {
@@ -233,7 +234,7 @@ func TestFileRejectsVideoIDPathTraversal(t *testing.T) {
 func TestMetadataLoadPreservesFreshness(t *testing.T) {
 	dir := t.TempDir()
 	for _, field := range []string{"updated_at", "cached_at"} {
-		data := fmt.Sprintf(`{"cache_version":3,"channel":"Channel","%s":"2026-09-06T12:00:00Z"}`, field)
+		data := fmt.Sprintf(`{"cache_version":4,"channel":"Channel","%s":"2026-09-06T12:00:00Z"}`, field)
 		if err := os.WriteFile(filepath.Join(dir, "dQw4w9WgXcQ.meta.json"), []byte(data), 0644); err != nil {
 			t.Fatal(err)
 		}

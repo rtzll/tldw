@@ -48,7 +48,7 @@ func TestConcurrentDownloadsUsePrivateWorkspaces(t *testing.T) {
 						if kind == "audio" {
 							_, err = yt.DownloadAudio(context.Background(), ref)
 						} else {
-							_, err = yt.FetchCaptions(context.Background(), ref, []string{"en"}, "en")
+							_, err = yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
 						}
 						results <- err
 					}()

@@ -35,11 +35,12 @@ type TranscriptSegment struct {
 
 // Transcript is the canonical transcript representation.
 type Transcript struct {
-	VideoID  string              `json:"video_id,omitempty"`
-	Language string              `json:"language,omitempty"`
-	Source   TranscriptSource    `json:"source,omitempty"`
-	Text     string              `json:"text,omitempty"`
-	Segments []TranscriptSegment `json:"segments,omitempty"`
+	VideoID      string              `json:"video_id,omitempty"`
+	Language     string              `json:"language,omitempty"`
+	Source       TranscriptSource    `json:"source,omitempty"`
+	Text         string              `json:"text,omitempty"`
+	Segments     []TranscriptSegment `json:"segments,omitempty"`
+	CaptionTrack *CaptionTrack       `json:"caption_track,omitempty"`
 }
 
 // PlainText renders the transcript as plain text.

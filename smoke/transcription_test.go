@@ -23,6 +23,10 @@ const readmeVideoURL = "https://youtu.be/tAP1eZYEuKA"
 
 func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 	requireExecutable(t, "yt-dlp")
+	videoURL := os.Getenv("TLDW_SMOKE_VIDEO_URL")
+	if videoURL == "" {
+		videoURL = readmeVideoURL
+	}
 
 	root := repositoryRoot(t)
 	binary := filepath.Join(t.TempDir(), "tldw")
@@ -30,7 +34,7 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 	xdg := isolatedXDG(t, "run")
 
 	cliTranscript := strings.TrimSpace(run(t, root, xdg, binary,
-		"transcribe", readmeVideoURL, "--timestamps", "--quiet"))
+		"transcribe", videoURL, "--timestamps", "--quiet"))
 	if cliTranscript == "" {
 		t.Fatal("CLI returned an empty transcript")
 	}
@@ -72,7 +76,7 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "get_youtube_transcript",
 		Arguments: map[string]any{
-			"url":                readmeVideoURL,
+			"url":                videoURL,
 			"include_timestamps": true,
 		},
 	})

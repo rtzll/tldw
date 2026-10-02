@@ -119,6 +119,11 @@ tldw stats --period week --json
 library. Supported periods are `today`, `week`, `month`, and `all`; grouped
 reports can use `day`, `week`, or `month`.
 
+Caption downloads prefer original English automatic captions, then manual
+English captions, then a direct track in another language. Each download requests
+one track; automatically translated captions are excluded. A rate-limit error
+stops the request without trying other languages or starting paid transcription.
+
 Negative caption metadata expires after 15 minutes. Before automatic paid
 Whisper fallback, cached negative metadata is always checked again. A failed
 recheck returns an error instead of starting paid transcription.
@@ -135,6 +140,7 @@ It builds `tldw`, transcribes the README video through both the CLI and the HTTP
 MCP `get_youtube_transcript` tool, and verifies that their timestamped outputs
 match. The test uses isolated temporary XDG directories and requires `yt-dlp`
 and network access. It is intentionally excluded from the default test suite.
+Set `TLDW_SMOKE_VIDEO_URL` to check a different video.
 
 #### Playlists
 

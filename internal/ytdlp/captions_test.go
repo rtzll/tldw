@@ -17,67 +17,8 @@ func TestFindExistingTranscriptReturnsDirectoryErrors(t *testing.T) {
 	}
 	yt := NewYouTube(t.TempDir(), cachePath, false, true)
 
-	if _, err := yt.findExistingTranscript("dQw4w9WgXcQ"); err == nil {
+	if _, err := yt.findExistingTranscript("dQw4w9WgXcQ", "en-orig"); err == nil {
 		t.Fatal("findExistingTranscript() ignored an unreadable cache directory")
-	}
-}
-
-func TestBuildSubLangs(t *testing.T) {
-	tests := []struct {
-		name         string
-		preferred    []string
-		originalLang string
-		wantPrimary  string
-		wantFallback string
-	}{
-		{"no preferred", nil, "", "en.*,en", ""},
-		{"english preferred", []string{"en-US", "en"}, "", "en-US", "en.*,en"},
-		{"non-english preferred", []string{"de"}, "de", "de", "en.*,en"},
-		{"multiple non-english", []string{"de", "fr"}, "de", "de", "en.*,en"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			primary, fallback := buildSubLangs(tt.preferred, tt.originalLang)
-			if primary != tt.wantPrimary {
-				t.Errorf("buildSubLangs() primary = %q, want %q", primary, tt.wantPrimary)
-			}
-			if fallback != tt.wantFallback {
-				t.Errorf("buildSubLangs() fallback = %q, want %q", fallback, tt.wantFallback)
-			}
-		})
-	}
-}
-
-func TestPrioritizeCaptionLanguages(t *testing.T) {
-	tests := []struct {
-		name         string
-		preferred    []string
-		originalLang string
-		want         []string
-	}{
-		{"empty", nil, "", nil},
-		{"english first match", []string{"en-US", "en-GB", "de"}, "", []string{"en-US"}},
-		{"original lang", []string{"de", "fr"}, "de", []string{"de"}},
-		{"first non-english", []string{"de", "fr"}, "es", []string{"de"}},
-		{"dedup", []string{"de", "de", "fr"}, "es", []string{"de"}},
-		{"skip live_chat", []string{"live_chat", "de"}, "es", []string{"de"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := prioritizeCaptionLanguages(tt.preferred, tt.originalLang)
-			if len(got) != len(tt.want) {
-				t.Errorf("prioritizeCaptionLanguages() = %v, want %v", got, tt.want)
-				return
-			}
-			for i := range got {
-				if got[i] != tt.want[i] {
-					t.Errorf("prioritizeCaptionLanguages() = %v, want %v", got, tt.want)
-					return
-				}
-			}
-		})
 	}
 }
 
@@ -112,50 +53,6 @@ func TestExtractCaptionLanguages(t *testing.T) {
 	}
 }
 
-func TestSetSubLangsArg(t *testing.T) {
-	tests := []struct {
-		name    string
-		args    []string
-		value   string
-		want    []string
-		wantErr bool
-	}{
-		{
-			name:    "update existing",
-			args:    []string{"--write-subs", "--sub-langs", "en", "--skip-download"},
-			value:   "en.*,en",
-			want:    []string{"--write-subs", "--sub-langs", "en.*,en", "--skip-download"},
-			wantErr: false,
-		},
-		{
-			name:    "flag not found",
-			args:    []string{"--write-subs", "--skip-download"},
-			value:   "en",
-			want:    nil,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			args := make([]string, len(tt.args))
-			copy(args, tt.args)
-			err := setSubLangsArg(args, tt.value)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("setSubLangsArg() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if tt.want != nil {
-				for i := range args {
-					if args[i] != tt.want[i] {
-						t.Errorf("setSubLangsArg() args[%d] = %q, want %q", i, args[i], tt.want[i])
-					}
-				}
-			}
-		})
-	}
-}
-
 func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -178,7 +75,7 @@ func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
 				return []byte(tt.stdout), commandErr
 			})
 			ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-			_, err := yt.FetchCaptions(context.Background(), ref, []string{"en"}, "en")
+			_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
 			var got *process.CommandError
 			if !errors.Is(err, tt.want) || !errors.As(err, &got) || got != commandErr {
 				t.Fatalf("error chain lost: %v", err)
@@ -190,14 +87,14 @@ func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
 	}
 }
 
-func TestCaptionFallbackPreservesErrorChain(t *testing.T) {
+func TestCaptionDownloadPreservesErrorChain(t *testing.T) {
 	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
 	calls := 0
 	cause := errors.New("network failure")
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, cause })
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	_, err := yt.FetchCaptions(context.Background(), ref, []string{"en"}, "en")
-	if calls != 2 || !errors.Is(err, cause) || !errors.Is(err, tldw.ErrDownloadFailed) {
+	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
+	if calls != 1 || !errors.Is(err, cause) || !errors.Is(err, tldw.ErrDownloadFailed) {
 		t.Fatalf("calls=%d error=%v", calls, err)
 	}
 }

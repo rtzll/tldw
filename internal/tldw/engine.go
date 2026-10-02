@@ -31,6 +31,18 @@ type TranscriptRequest struct {
 // request does not permit Whisper transcription.
 var ErrCaptionsUnavailable = errors.New("captions are unavailable")
 
+// CaptionTrackUnavailableError allows a fresh lookup to exclude a missing
+// exact track instead of retrying it or requesting every English variant.
+type CaptionTrackUnavailableError struct {
+	Track CaptionTrack
+}
+
+func (err *CaptionTrackUnavailableError) Error() string {
+	return fmt.Sprintf("caption track %q is unavailable", err.Track.Language)
+}
+
+func (err *CaptionTrackUnavailableError) Unwrap() error { return ErrCaptionsUnavailable }
+
 // ErrDownloadFailed marks a retryable failure from a video adapter.
 var ErrDownloadFailed = errors.New("video download failed")
 
@@ -50,7 +62,7 @@ var ErrStoreStale = errors.New("store entry is stale")
 // Production uses yt-dlp; tests can provide a local adapter.
 type VideoAdapter interface {
 	FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error)
-	FetchCaptions(ctx context.Context, ref YouTubeRef, preferredLangs []string, originalLang string) (*Transcript, error)
+	FetchCaptions(ctx context.Context, ref YouTubeRef, metadata *VideoMetadata) (*Transcript, error)
 	DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error)
 	FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error)
 }
@@ -138,15 +150,38 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return app.transcribeVideo(ctx, ref)
 	}
 
-	transcript, err := app.video.FetchCaptions(ctx, ref, metadata.CaptionLanguages, metadata.Language)
+	transcript, err := app.video.FetchCaptions(ctx, ref, metadata)
 	if terminalTranscriptError(err) {
 		return nil, err
 	}
-	if errors.Is(err, ErrDownloadFailed) {
+	if errors.Is(err, ErrCaptionsUnavailable) {
+		var missing *CaptionTrackUnavailableError
+		errors.As(err, &missing)
+		fresh, refreshErr := app.RefreshMetadata(ctx, ref)
+		if refreshErr != nil {
+			return nil, fmt.Errorf("refreshing caption availability: %w", refreshErr)
+		}
+		// Do not mutate metadata shared with concurrent readers or cache a
+		// temporary exclusion of a track that may return on a later request.
+		retryMetadata := *fresh
+		if missing != nil {
+			retryMetadata.CaptionTracks = nil
+			for _, track := range fresh.CaptionTracks {
+				if track.Language != missing.Track.Language || track.Automatic != missing.Track.Automatic {
+					retryMetadata.CaptionTracks = append(retryMetadata.CaptionTracks, track)
+				}
+			}
+		}
+		if fresh.HasCaptions {
+			transcript, err = app.video.FetchCaptions(ctx, ref, &retryMetadata)
+		} else {
+			transcript, err = nil, ErrCaptionsUnavailable
+		}
+	} else if errors.Is(err, ErrDownloadFailed) {
 		if waitErr := sleepWithContext(ctx, time.Second); waitErr != nil {
 			return nil, waitErr
 		}
-		transcript, err = app.video.FetchCaptions(ctx, ref, metadata.CaptionLanguages, metadata.Language)
+		transcript, err = app.video.FetchCaptions(ctx, ref, metadata)
 	}
 	if terminalTranscriptError(err) {
 		return nil, err

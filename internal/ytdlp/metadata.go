@@ -55,6 +55,7 @@ func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.Vid
 	metadata := raw.VideoMetadata
 	metadata.HasCaptions = len(languages) > 0
 	metadata.CaptionLanguages = languages
+	metadata.CaptionTracks = extractCaptionTracks(raw.Subtitles, raw.AutomaticCaptions)
 	metadata.Creators = bestMetadataCreators(raw.Creator, raw.Creators)
 	metadata.Channel = bestMetadataChannel(metadata.Channel, raw.Uploader)
 	metadata.ChannelURL = bestMetadataChannelURL(metadata.ChannelURL, raw.UploaderURL)

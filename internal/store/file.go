@@ -13,11 +13,11 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-const metadataCacheVersion = 3
+const metadataCacheVersion = 4
 
-// Earlier caption caches can contain duplicated rolling windows or missing
-// speech. Refetch them once using the corrected SRT parser.
-const captionCacheVersion = 2
+// Earlier caption caches can contain translations, duplicated rolling windows,
+// or missing speech. Reacquire them once with known track origin and cleanup.
+const captionCacheVersion = 3
 
 type cachedTranscript struct {
 	CacheVersion int `json:"cache_version,omitempty"`
@@ -78,6 +78,9 @@ func (s *File) LoadMetadata(videoID string) (*tldw.VideoMetadata, error) {
 	if cached.CacheVersion < metadataCacheVersion {
 		return nil, fmt.Errorf("%w: metadata version %d", tldw.ErrStoreStale, cached.CacheVersion)
 	}
+	if cached.HasCaptions && len(cached.CaptionTracks) == 0 {
+		return nil, fmt.Errorf("%w: caption origin is unknown", tldw.ErrStoreStale)
+	}
 	metadata := metadataFromCached(cached)
 	return &metadata, nil
 }
@@ -132,7 +135,8 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error 
 		PublishedAt: metadata.PublishedAt, Duration: metadata.Duration, Language: metadata.Language,
 		Categories: metadata.Categories, Tags: metadata.Tags, Chapters: metadata.Chapters,
 		HasCaptions: metadata.HasCaptions, CaptionLanguages: metadata.CaptionLanguages,
-		FirstSeenAt: firstSeenAt, UpdatedAt: now, CachedAt: now,
+		CaptionTracks: metadata.CaptionTracks,
+		FirstSeenAt:   firstSeenAt, UpdatedAt: now, CachedAt: now,
 	}
 	data, err := json.MarshalIndent(cached, "", "  ")
 	if err != nil {
@@ -248,6 +252,9 @@ func (s *File) loadStructuredTranscript(videoID string) (*tldw.Transcript, error
 	if cached.Source == tldw.TranscriptSourceCaptions && cached.CacheVersion < captionCacheVersion {
 		return nil, fmt.Errorf("%w: caption version %d", tldw.ErrStoreStale, cached.CacheVersion)
 	}
+	if cached.Source == tldw.TranscriptSourceCaptions && (cached.CaptionTrack == nil || !cached.CaptionTrack.Direct) {
+		return nil, fmt.Errorf("%w: caption origin is unknown or translated", tldw.ErrStoreStale)
+	}
 	transcript := cached.Transcript
 	if transcript.VideoID == "" {
 		transcript.VideoID = videoID
@@ -270,6 +277,7 @@ type cachedMetadata struct {
 	Chapters         []tldw.VideoChapter `json:"chapters"`
 	HasCaptions      bool                `json:"has_captions"`
 	CaptionLanguages []string            `json:"caption_languages"`
+	CaptionTracks    []tldw.CaptionTrack `json:"caption_tracks,omitempty"`
 	FirstSeenAt      time.Time           `json:"first_seen_at,omitempty"`
 	UpdatedAt        time.Time           `json:"updated_at,omitempty"`
 	CachedAt         time.Time           `json:"cached_at"`
@@ -287,6 +295,7 @@ func metadataFromCached(cached cachedMetadata) tldw.VideoMetadata {
 		Duration: cached.Duration, Language: cached.Language, Categories: cached.Categories,
 		Tags: cached.Tags, Chapters: cached.Chapters, HasCaptions: cached.HasCaptions,
 		CaptionLanguages: cached.CaptionLanguages,
+		CaptionTracks:    cached.CaptionTracks,
 	}
 }
 

@@ -12,209 +12,47 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-const (
-	subLangsFlag            = "--sub-langs"
-	englishFallbackSubLangs = "en.*,en"
-)
-
-var englishCaptionPreference = []string{"en-US", "en", "en-GB", "en-CA", "en-AU", "en-NZ", "en-orig"}
-
-// setSubLangsArg updates the value that follows the --sub-langs flag in-place
-func setSubLangsArg(args []string, value string) error {
-	for i := 0; i < len(args)-1; i++ {
-		if args[i] == subLangsFlag {
-			args[i+1] = value
-			return nil
-		}
+// downloadCaptions requests exactly one language and one caption source.
+// Rebuilding arguments prevents fallback from modifying the conversion flag.
+func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, track tldw.CaptionTrack) (string, error) {
+	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
+		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
-	return fmt.Errorf("sub-langs flag %q not found", subLangsFlag)
-}
-
-// buildSubLangs selects the primary --sub-langs value and an optional fallback.
-// The fallback is the broad English wildcard, used when the primary language
-// set does not yield any files.
-func buildSubLangs(preferred []string, originalLang string) (primary string, fallback string) {
-	if len(preferred) == 0 {
-		return englishFallbackSubLangs, ""
+	path := filepath.Join(yt.cacheDir, ref.ID()+"."+track.Language+".srt")
+	args := []string{"--write-subs", "--no-write-auto-subs"}
+	if track.Automatic {
+		args = []string{"--no-write-subs", "--write-auto-subs"}
 	}
-
-	langs := prioritizeCaptionLanguages(preferred, originalLang)
-
-	if len(langs) == 0 {
-		return englishFallbackSubLangs, ""
-	}
-
-	primary = strings.Join(langs, ",")
-
-	if primary == englishFallbackSubLangs {
-		return primary, ""
-	}
-
-	return primary, englishFallbackSubLangs
-}
-
-// prioritizeCaptionLanguages deduplicates languages, prefers English variants,
-// and limits the count to avoid enormous --sub-langs lists that can trigger rate limits.
-func prioritizeCaptionLanguages(preferred []string, originalLang string) []string {
-	seen := make(map[string]struct{})
-	var cleaned []string
-
-	for _, lang := range preferred {
-		lang = strings.TrimSpace(lang)
-		if lang == "" || lang == "live_chat" {
-			continue
-		}
-		if _, exists := seen[lang]; exists {
-			continue
-		}
-		seen[lang] = struct{}{}
-		cleaned = append(cleaned, lang)
-	}
-
-	// Put English variants first if present.
-	var ordered []string
-	for _, lang := range englishCaptionPreference {
-		if _, ok := seen[lang]; ok {
-			ordered = append(ordered, lang)
-		}
-	}
-
-	// If we found any English variants, return just the first match to keep
-	// requests minimal.
-	if len(ordered) > 0 {
-		return ordered[:1]
-	}
-
-	// If we have a declared original language and it exists in the captions,
-	// prefer that single language.
-	if originalLang != "" {
-		if _, ok := seen[originalLang]; ok {
-			return []string{originalLang}
-		}
-	}
-
-	// Otherwise, take the first non-English language (if any) to keep the list
-	// to a single entry.
-	for _, lang := range cleaned {
-		ordered = append(ordered, lang)
-		break
-	}
-
-	return ordered
-}
-
-// downloadCaptions fetches subtitles using yt-dlp.
-// preferredLangs allows us to target known caption languages (from metadata) instead of hardcoding English.
-// originalLang is the video's declared language; when English captions are absent we prefer this.
-func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, preferredLangs []string, originalLang string) error {
-	if yt.verbose && !yt.quiet {
-		yt.log.Printf("Downloading subtitles...\n")
-	}
-
-	// Create path in configured cache directory
-	cacheDir := yt.cacheDir
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return fmt.Errorf("creating cache directory: %w", err)
-	}
-
-	// Set output path in cache directory
-	outputPath := filepath.Join(cacheDir, "%(id)s")
-	pattern := filepath.Join(cacheDir, fmt.Sprintf("%s*.srt", ref.ID()))
-
-	primarySubLangs, fallbackSubLangs := buildSubLangs(preferredLangs, originalLang)
-
-	args := []string{
-		"--write-subs",      // Enable subtitle writing
-		"--write-auto-subs", // Enable auto-generated subtitle writing
-		"--sub-langs", primarySubLangs,
-		"--convert-subs", "srt", // Convert subtitles to SRT format
-		"--skip-download",        // Skip downloading the video
-		"--sleep-subtitles", "5", // Video sleep intervals do not apply to subtitle downloads
+	args = append(args,
+		"--sub-langs", track.Language,
+		"--convert-subs", "srt",
+		"--skip-download",
+		"--sleep-subtitles", "5",
 		"--extractor-args", youtubeExtractorPolicy,
-		"-o", outputPath, // Output to XDG cache directory
+		"-o", filepath.Join(yt.cacheDir, "%(id)s"),
 		ref.URL(),
+	)
+	if yt.verbose && !yt.quiet {
+		yt.log.Printf("Downloading direct captions: %s (automatic=%t)\n", track.Language, track.Automatic)
 	}
-
-	// Run the command (and optional fallback)
-	output, partialFiles, err := yt.runCaptionDownload(ctx, args, pattern)
-	attemptedFallback := false
-	if len(partialFiles) > 0 && yt.verbose && !yt.quiet {
-		yt.log.Printf("Subtitles downloaded despite errors (%s): %v\n", primarySubLangs, partialFiles)
-	}
-
-	runFallback := func(message string) error {
-		if yt.verbose && !yt.quiet {
-			yt.log.Printf("%s\n", message)
-		}
-		if err := setSubLangsArg(args, fallbackSubLangs); err != nil {
-			return fmt.Errorf("configuring fallback subtitle languages: %w", err)
-		}
-		attemptedFallback = true
-		fallbackOutput, fallbackFiles, fallbackErr := yt.runCaptionDownload(ctx, args, pattern)
-		if len(fallbackFiles) > 0 && yt.verbose && !yt.quiet {
-			yt.log.Printf("Subtitles downloaded despite fallback errors (%s): %v\n", fallbackSubLangs, fallbackFiles)
-		}
-		if fallbackErr != nil {
-			if yt.verbose {
-				yt.log.Printf("Fallback subtitle download error: %v\n", fallbackErr)
-				yt.log.Printf("Command output: %s\n", string(fallbackOutput))
-			}
-			return captionDownloadError(fallbackErr)
-		}
-		return nil
-	}
-
+	_, partialFiles, err := yt.runCaptionDownload(ctx, args, path)
 	if err != nil {
-		if yt.verbose {
-			yt.log.Printf("Subtitle download error (%s): %v\n", primarySubLangs, err)
-			yt.log.Printf("Command output: %s\n", string(output))
-		}
-
-		// Cancellation and throttling must not trigger another language request.
-		if terminalCaptionError(err) {
-			return err
-		}
-
-		// Retry with a broader English wildcard when available
-		if fallbackSubLangs != "" {
-			if err := runFallback(fmt.Sprintf("Trying fallback subtitle languages: %s", fallbackSubLangs)); err != nil {
-				return err
-			}
-		} else {
-			return captionDownloadError(err)
-		}
+		return "", captionDownloadError(err)
 	}
-
-	if yt.verbose && !yt.quiet {
-		yt.log.Printf("Subtitle download completed\n")
+	if len(partialFiles) > 0 && yt.verbose && !yt.quiet {
+		yt.log.Printf("Captions downloaded despite a nonterminal error: %s\n", track.Language)
 	}
-
-	// Check for the downloaded subtitle files
-	files, err := filepath.Glob(pattern)
-	if err != nil || len(files) == 0 {
-		// If no files were found and we haven't tried the fallback yet, give it one more attempt
-		if len(files) == 0 && fallbackSubLangs != "" && !attemptedFallback {
-			message := fmt.Sprintf("No subtitles found for %s, retrying with: %s", primarySubLangs, fallbackSubLangs)
-			if err := runFallback(message); err != nil {
-				return err
-			}
-			files, err = filepath.Glob(pattern)
-		}
-
-		if err != nil || len(files) == 0 {
-			if yt.verbose {
-				yt.log.Printf("No subtitle files found after download\n")
-				yt.log.Printf("Searched for pattern: %s\n", pattern)
-			}
-			return fmt.Errorf("no subtitle files found after download")
-		}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return "", &tldw.CaptionTrackUnavailableError{Track: track}
 	}
-
-	if yt.verbose && !yt.quiet {
-		yt.log.Printf("Found %d subtitle file(s): %v\n", len(files), files)
+	if err != nil {
+		return "", fmt.Errorf("checking downloaded captions: %w", err)
 	}
-
-	return nil
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("downloaded captions are not a regular file")
+	}
+	return path, nil
 }
 
 func (yt *YouTube) runCaptionDownload(ctx context.Context, args []string, pattern string) ([]byte, []string, error) {
@@ -241,30 +79,25 @@ func (yt *YouTube) runCaptionDownload(ctx context.Context, args []string, patter
 	return output, nil, err
 }
 
-func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTubeRef, subLangs []string, originalLang string) (*tldw.Transcript, error) {
-	if yt.verbose && !yt.quiet {
-		yt.log.Printf("Looking for existing transcript for video ID: %s\n", ref.ID())
+func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTubeRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
+	if metadata == nil {
+		return nil, tldw.ErrCaptionsUnavailable
 	}
-
-	// Look for an existing transcript first
-	transcriptPath, err := yt.findExistingTranscript(ref.ID())
-	if err != nil {
-		return nil, fmt.Errorf("error searching for existing transcript: %w", err)
+	track, ok := selectCaptionTrack(metadata.CaptionTracks, metadata.Language)
+	if !ok {
+		return nil, fmt.Errorf("%w: no direct caption track", tldw.ErrCaptionsUnavailable)
 	}
-
-	if transcriptPath != "" {
-		if yt.verbose && !yt.quiet {
-			yt.log.Printf("Found existing transcript: %s\n", transcriptPath)
+	// An old plain-language SRT might be manual or automatically translated.
+	// Only an exact -orig filename establishes its source without a sidecar.
+	if track.Automatic && strings.HasSuffix(track.Language, "-orig") {
+		path, err := yt.findExistingTranscript(ref.ID(), track.Language)
+		if err != nil {
+			return nil, fmt.Errorf("searching existing captions: %w", err)
 		}
-		// Process the existing transcript
-		return yt.processSrtTranscript(transcriptPath)
+		if path != "" {
+			return yt.processSrtTranscript(path, track)
+		}
 	}
-
-	if yt.verbose && !yt.quiet {
-		yt.log.Printf("No existing transcript found, attempting to download...\n")
-	}
-
-	// Keep partial downloads private to this operation, including across processes.
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -279,55 +112,25 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTu
 	}()
 	worker := *yt
 	worker.cacheDir, worker.transcriptsDir = workDir, workDir
-	// No existing transcript found, try to download one
-	err = worker.downloadCaptions(ctx, ref, subLangs, originalLang)
+	path, err := worker.downloadCaptions(ctx, ref, track)
 	if err != nil {
-		// Preserve the error type for retry logic
 		return nil, err
 	}
-
-	// Look for the downloaded transcript
-	transcriptPath, err = worker.findExistingTranscript(ref.ID())
-	if err != nil || transcriptPath == "" {
-		if yt.verbose {
-			yt.log.Printf("Could not find downloaded transcript: %v\n", err)
-		}
-		return nil, fmt.Errorf("downloaded transcript not found")
-	}
-
-	if yt.verbose && !yt.quiet {
-		yt.log.Printf("Successfully downloaded transcript: %s\n", transcriptPath)
-	}
-
-	return worker.processSrtTranscript(transcriptPath)
+	return worker.processSrtTranscript(path, track)
 }
 
-// findExistingTranscript locates a previously downloaded transcript
-func (yt *YouTube) findExistingTranscript(videoID string) (string, error) {
+func (yt *YouTube) findExistingTranscript(videoID, language string) (string, error) {
 	for _, dir := range []string{yt.cacheDir, yt.transcriptsDir} {
-		path, err := findTranscriptInDirectory(dir, videoID)
+		path := filepath.Join(dir, videoID+"."+language+".srt")
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
 		if err != nil {
-			return "", fmt.Errorf("searching transcript directory %q: %w", dir, err)
+			return "", err
 		}
-		if path != "" {
+		if info.Mode().IsRegular() {
 			return path, nil
-		}
-	}
-	return "", nil
-}
-
-func findTranscriptInDirectory(dir, videoID string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, videoID) && strings.HasSuffix(name, ".srt") {
-			return filepath.Join(dir, name), nil
 		}
 	}
 	return "", nil

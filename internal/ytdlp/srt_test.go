@@ -37,7 +37,7 @@ func TestProcessSRTTranscriptRemovesOnlyCacheFiles(t *testing.T) {
 			}
 
 			yt := NewYouTube(persistentDir, cacheDir, false, true)
-			if _, err := yt.processSrtTranscript(path); err != nil {
+			if _, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}); err != nil {
 				t.Fatalf("processSrtTranscript() error = %v", err)
 			}
 
@@ -400,7 +400,7 @@ Goodbye
 		t.Fatal(err)
 	}
 	yt := NewYouTube(dir, filepath.Join(dir, "cache"), false, true)
-	got, err := yt.processSrtTranscript(path)
+	got, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ So, in this talk, I'll
 		t.Fatal(err)
 	}
 	yt := NewYouTube(dir, filepath.Join(dir, "cache"), false, true)
-	got, err := yt.processSrtTranscript(path)
+	got, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,12 +540,46 @@ func TestCondenseAdjacentDisplayLines(t *testing.T) {
 	}
 	want := []tldw.TranscriptSegment{
 		{Start: 0, End: 1, Text: "First line shared line"},
-		{Start: 1, End: 2, Text: "new line"},
-		segments[3],
+		{Start: 1, End: 2, Text: "shared line new line"},
+		segments[2], segments[3],
 		{Start: 4, End: 5, Text: "New sentence new line"},
 		{Start: 6, End: 7, Text: "new line after a gap"},
 	}
 	if got := condenseSubtitleSegments(segments); !reflect.DeepEqual(got, want) {
 		t.Fatalf("adjacent display lines = %+v, want %+v", got, want)
+	}
+}
+
+func TestCondensePreservesIndependentMultilineRepetition(t *testing.T) {
+	for _, gap := range []float64{0, 0.001, 1} {
+		segments := []tldw.TranscriptSegment{
+			{Start: 0, End: 2, Text: "Yes.\nYes."},
+			{Start: 2 + gap, End: 4 + gap, Text: "Yes.\nYes."},
+		}
+		want := []tldw.TranscriptSegment{
+			{Start: 0, End: 2, Text: "Yes. Yes."},
+			{Start: 2 + gap, End: 4 + gap, Text: "Yes. Yes."},
+		}
+		if got := condenseSubtitleSegments(segments); !reflect.DeepEqual(got, want) {
+			t.Fatalf("independent speech at gap %v lost: %+v", gap, got)
+		}
+	}
+}
+
+func TestManualCaptionProcessingPreservesRollingLikeSpeech(t *testing.T) {
+	content := "1\n00:00:00,000 --> 00:00:02,000\nHello\nYes.\n\n2\n00:00:02,000 --> 00:00:04,000\nYes.\n\n3\n00:00:04,000 --> 00:00:06,000\nYes.\nAgain\n\n4\n00:00:05,000 --> 00:00:07,000\nAgain\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dQw4w9WgXcQ.en.srt")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	yt := NewYouTube(dir, t.TempDir(), false, true)
+	track := tldw.CaptionTrack{Language: "en", Direct: true}
+	got, err := yt.processSrtTranscript(path, track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "Hello Yes.\nYes.\nYes. Again\nAgain" || len(got.Segments) != 4 {
+		t.Fatalf("manual speech was deduplicated: %+v", got)
 	}
 }

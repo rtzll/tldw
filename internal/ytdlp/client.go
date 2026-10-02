@@ -43,8 +43,8 @@ func (yt *YouTube) FetchMetadata(ctx context.Context, ref tldw.YouTubeRef) (*tld
 	return yt.metadata(ctx, ref)
 }
 
-func (yt *YouTube) FetchCaptions(ctx context.Context, ref tldw.YouTubeRef, preferredLangs []string, originalLang string) (*tldw.Transcript, error) {
-	return yt.fetchStructuredTranscript(ctx, ref, preferredLangs, originalLang)
+func (yt *YouTube) FetchCaptions(ctx context.Context, ref tldw.YouTubeRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
+	return yt.fetchStructuredTranscript(ctx, ref, metadata)
 }
 
 func (yt *YouTube) DownloadAudio(ctx context.Context, ref tldw.YouTubeRef) (string, error) {

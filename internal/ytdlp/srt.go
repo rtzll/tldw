@@ -2,6 +2,7 @@ package ytdlp
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,7 +17,7 @@ var (
 	htmlTagRegex        = regexp.MustCompile(`<[^>]+>`)
 )
 
-func (yt *YouTube) processSrtTranscript(filePath string) (*tldw.Transcript, error) {
+func (yt *YouTube) processSrtTranscript(filePath string, track tldw.CaptionTrack) (*tldw.Transcript, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Processing SRT transcript: %s\n", filePath)
 	}
@@ -29,11 +30,19 @@ func (yt *YouTube) processSrtTranscript(filePath string) (*tldw.Transcript, erro
 	// Extract video ID from filename
 	id, _, _ := strings.Cut(filepath.Base(filePath), ".")
 	segments := parseSRT(string(content))
-	deduplicatedSegments := condenseSubtitleSegments(segments)
+	if track.Automatic {
+		segments = condenseSubtitleSegments(segments)
+	} else {
+		for i := range segments {
+			segments[i].Text = strings.Join(strings.Fields(segments[i].Text), " ")
+		}
+	}
 	transcript := &tldw.Transcript{
-		VideoID:  id,
-		Source:   tldw.TranscriptSourceCaptions,
-		Segments: deduplicatedSegments,
+		VideoID:      id,
+		Language:     strings.TrimSuffix(track.Language, "-orig"),
+		Source:       tldw.TranscriptSourceCaptions,
+		Segments:     segments,
+		CaptionTrack: &track,
 	}
 
 	text, err := transcript.Render(tldw.TranscriptRenderFormatPlain)
@@ -232,14 +241,23 @@ func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.Transcri
 	result := make([]tldw.TranscriptSegment, 0, len(segments))
 	var previous tldw.TranscriptSegment
 
-	for _, segment := range segments {
+	for i, segment := range segments {
 		text := strings.Join(strings.Fields(segment.Text), " ")
 		if text == "" {
 			continue
 		}
 
 		condensedText := text
-		if subtitleWindowsConnected(previous, segment) {
+		connected := subtitleWindowsConnected(previous, segment)
+		// Longer retained-line transitions need a complete three-window
+		// pattern. Adjacent matching multiline speech alone is insufficient.
+		if !connected && i+1 < len(segments) {
+			connected = rollingSubtitleBridge(previous, segment, segments[i+1])
+		}
+		if !connected && i >= 2 {
+			connected = rollingSubtitleBridge(segments[i-2], previous, segment)
+		}
+		if connected {
 			if overlap := longestSubtitleOverlap(previous.Text, text); overlap != "" {
 				condensedText = strings.TrimSpace(strings.TrimPrefix(text, overlap))
 			}
@@ -274,16 +292,6 @@ func subtitleWindowsConnected(previous, current tldw.TranscriptSegment) bool {
 	if current.Start-previous.End > epsilon {
 		return false
 	}
-	// Rolling captions carry the last display line into the next window.
-	// A retained line can stay visible for much longer than a transition frame,
-	// so recognize it by its line boundary rather than by a duration limit.
-	previousLines := strings.Split(strings.TrimSpace(previous.Text), "\n")
-	currentLines := strings.Split(strings.TrimSpace(current.Text), "\n")
-	if (len(previousLines) > 1 || len(currentLines) > 1) &&
-		previousLines[len(previousLines)-1] == currentLines[0] {
-		return true
-	}
-
 	previousDuration := previous.End - previous.Start
 	currentDuration := current.End - current.Start
 	// The first single-line window has no line boundary to compare. Its short
@@ -291,6 +299,21 @@ func subtitleWindowsConnected(previous, current tldw.TranscriptSegment) bool {
 	const shortTransition = 0.05
 	return (previousDuration > 0 && previousDuration <= shortTransition+epsilon) ||
 		(currentDuration > 0 && currentDuration <= shortTransition+epsilon)
+}
+
+func rollingSubtitleBridge(previous, retained, next tldw.TranscriptSegment) bool {
+	const epsilon = 0.000001
+	if retained.Start < previous.Start || next.Start < retained.Start ||
+		retained.End <= retained.Start ||
+		math.Abs(retained.Start-previous.End) > epsilon || math.Abs(next.Start-retained.End) > epsilon {
+		return false
+	}
+	previousLines := strings.Split(strings.TrimSpace(previous.Text), "\n")
+	retainedLines := strings.Split(strings.TrimSpace(retained.Text), "\n")
+	nextLines := strings.Split(strings.TrimSpace(next.Text), "\n")
+	return len(previousLines) > 1 && len(retainedLines) == 1 && len(nextLines) > 1 &&
+		retainedLines[0] != "" && previousLines[len(previousLines)-1] == retainedLines[0] &&
+		nextLines[0] == retainedLines[0]
 }
 
 func longestSubtitleOverlap(previous, current string) string {

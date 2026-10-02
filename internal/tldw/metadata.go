@@ -19,6 +19,15 @@ type VideoMetadata struct {
 	Chapters         []VideoChapter `json:"chapters"`
 	HasCaptions      bool           `json:"has_captions"`
 	CaptionLanguages []string       `json:"caption_languages"`
+	CaptionTracks    []CaptionTrack `json:"caption_tracks,omitempty"`
+}
+
+// CaptionTrack identifies a caption language and its origin without retaining
+// YouTube's signed download URLs. Direct excludes automatic translations.
+type CaptionTrack struct {
+	Language  string `json:"language"`
+	Automatic bool   `json:"automatic"`
+	Direct    bool   `json:"direct"`
 }
 
 // VideoChapter represents a video chapter marker.
