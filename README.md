@@ -169,11 +169,6 @@ Summaries are shown as markdown and rendered in the terminal.
 
 ## Configuration
 
-Summaries default to `gpt-6-luna`. Existing configuration files and environment
-variables keep their explicit model selection. Deprecated model IDs are no
-longer accepted; update those selections to `gpt-6-luna` or another supported
-model shown by the validation error.
-
 Either edit the config file or use environment variables.
 
 ### Config file
