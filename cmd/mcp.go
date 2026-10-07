@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,10 +80,6 @@ This command will:
 	},
 }
 
-type claudeDesktopConfig struct {
-	MCPServers map[string]mcpServerConfig `json:"mcpServers"`
-}
-
 type mcpServerConfig struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
@@ -114,27 +109,6 @@ func setupClaudeDesktop() error {
 		return fmt.Errorf("getting Claude Desktop config path: %w", err)
 	}
 
-	// Check if config file exists - abort if it doesn't
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("config for Claude Desktop not found at %s", configPath)
-	}
-
-	// Read existing config
-	var config claudeDesktopConfig
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("reading existing config: %w", err)
-	}
-
-	if err := json.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("parsing existing config: %w", err)
-	}
-
-	// Initialize mcpServers map if it doesn't exist
-	if config.MCPServers == nil {
-		config.MCPServers = make(map[string]mcpServerConfig)
-	}
-
 	// Get XDG base paths so internal config can add tldw
 	paths := map[string]string{
 		"HOME":            xdg.Home,
@@ -143,21 +117,12 @@ func setupClaudeDesktop() error {
 		"XDG_CACHE_HOME":  xdg.CacheHome,
 	}
 
-	// Add/update TL;DW MCP server configuration
-	config.MCPServers["tldw"] = mcpServerConfig{
+	if err := updateClaudeDesktopConfig(configPath, mcpServerConfig{
 		Command: execPath,
 		Args:    []string{"mcp"},
 		Env:     paths,
-	}
-
-	// Write updated config back to file
-	data, err = json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
+	}); err != nil {
+		return err
 	}
 
 	fmt.Printf("Successfully configured Claude Desktop MCP server\n")
