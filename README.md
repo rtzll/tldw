@@ -65,8 +65,14 @@ The ChatGPT tunnel setup uses local HTTP MCP by default:
 - `tunnel-client` keeps its own health/UI listener on `127.0.0.1:8080`
 
 Override the MCP host or port with `TLDW_MCP_HTTP_HOST` or
-`TLDW_MCP_HTTP_PORT` before `just tunnel-init`, or rerun `just tunnel-init`
-after changing either value so the profile URL is updated.
+`TLDW_MCP_HTTP_PORT` before `just tunnel-init`. For an existing profile, use
+`just tunnel-update` to edit its MCP URL and health address in `$VISUAL` or
+`$EDITOR`; the client validates the profile before the background service is
+reinstalled. Existing settings are not force-replaced.
+
+Profiles use `TLDW_TUNNEL_PROFILE_DIR`, then `TUNNEL_CLIENT_PROFILE_DIR`, then
+`$XDG_CONFIG_HOME/tunnel-client` (or `~/.config/tunnel-client`). The same directory
+is used by the foreground commands and launchd.
 
 Then open ChatGPT > Settings > Connectors > Create, choose **Tunnel**, and
 select or paste the tunnel ID. Keep `just tunnel-run` running while using the

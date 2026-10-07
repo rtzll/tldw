@@ -4,6 +4,7 @@ binary := "tldw"
 justfile_dir := justfile_directory()
 tunnel_client := env_var_or_default("TLDW_TUNNEL_CLIENT", "tunnel-client")
 tunnel_profile := env_var_or_default("TLDW_TUNNEL_PROFILE", "tldw")
+tunnel_profile_dir := env_var_or_default("TLDW_TUNNEL_PROFILE_DIR", env_var_or_default("TUNNEL_CLIENT_PROFILE_DIR", env_var_or_default("XDG_CONFIG_HOME", env_var("HOME") + "/.config") + "/tunnel-client"))
 tunnel_id := env_var_or_default("TLDW_TUNNEL_ID", "")
 mcp_http_command := env_var_or_default("TLDW_MCP_HTTP_COMMAND", "tldw mcp --transport=http")
 mcp_http_host := env_var_or_default("TLDW_MCP_HTTP_HOST", "127.0.0.1")
@@ -59,13 +60,20 @@ tunnel-init:
     "{{tunnel_client}}" init \
         --sample sample_mcp_with_dcr \
         --profile "{{tunnel_profile}}" \
+        --profile-dir "{{tunnel_profile_dir}}" \
         --tunnel-id "{{tunnel_id}}" \
         --mcp-server-url "{{mcp_server_url}}" \
         --health-listen-addr "{{tunnel_health_addr}}"
 
 tunnel-doctor:
     command -v "{{tunnel_client}}" > /dev/null || { echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"; exit 1; }
-    "{{tunnel_client}}" doctor --profile "{{tunnel_profile}}" --explain
+    "{{tunnel_client}}" doctor --profile "{{tunnel_profile}}" --profile-dir "{{tunnel_profile_dir}}" --explain
+
+# Edit and validate the existing profile before restarting the background service.
+tunnel-update:
+    command -v "{{tunnel_client}}" > /dev/null || { echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"; exit 1; }
+    "{{tunnel_client}}" profiles edit "{{tunnel_profile}}" --profile-dir "{{tunnel_profile_dir}}"
+    just --justfile "{{justfile_dir}}/Justfile" tunnel-launchd-install
 
 tunnel-run:
     #!/usr/bin/env bash
@@ -97,7 +105,7 @@ tunnel-run:
     {{mcp_http_command}} --host "{{mcp_http_host}}" --port "{{mcp_http_port}}" &
     mcp_pid="$!"
     wait_for_mcp
-    "{{tunnel_client}}" run --profile "{{tunnel_profile}}"
+    "{{tunnel_client}}" run --profile "{{tunnel_profile}}" --profile-dir "{{tunnel_profile_dir}}"
 
 tunnel-launchd-install:
     /bin/bash "{{justfile_dir}}/scripts/tunnel-launchd" install \
@@ -108,7 +116,8 @@ tunnel-launchd-install:
         "{{justfile_dir}}" \
         "{{mcp_http_command}}" \
         "{{mcp_http_host}}" \
-        "{{mcp_http_port}}"
+        "{{mcp_http_port}}" \
+        "{{tunnel_profile_dir}}"
 
 tunnel-launchd-uninstall:
     /bin/bash "{{justfile_dir}}/scripts/tunnel-launchd" uninstall "{{launchd_label}}"
