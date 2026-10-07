@@ -324,9 +324,15 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return s.mcpServer
 		}, nil)
+		// Route only MCP endpoints to the protocol handler. In particular,
+		// unsupported OAuth discovery URLs must return 404 so tunnel clients
+		// recognize this as a plain MCP server, not malformed OAuth metadata.
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", handler)
+		mux.Handle("/{$}", handler) // Preserve the legacy root endpoint.
 		httpServer := &http.Server{
 			Addr:    addr,
-			Handler: handler,
+			Handler: mux,
 		}
 		errCh := make(chan error, 1)
 		go func() {

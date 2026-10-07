@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -418,6 +419,46 @@ func TestMCPHTTPTransportServesTools(t *testing.T) {
 		t.Fatalf("client Connect(%s) error = %v", endpoint, err)
 	}
 	t.Cleanup(func() { _ = clientSession.Close() })
+
+	// Plain MCP servers do not advertise OAuth metadata. Discovery must see
+	// 404, not a protocol error from the Streamable HTTP handler.
+	for _, path := range []string{
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/mcp",
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/openid-configuration",
+		"/unknown",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Accept", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("GET %s status = %d, want 404", path, resp.StatusCode)
+			}
+		})
+	}
+
+	// Keep the legacy root endpoint working alongside the documented /mcp.
+	mcpSession, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint:             endpoint + "/mcp",
+		DisableStandaloneSSE: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("client Connect(/mcp) error = %v", err)
+	}
+	t.Cleanup(func() { _ = mcpSession.Close() })
+	mcpTools, err := mcpSession.ListTools(ctx, nil)
+	if err != nil || len(mcpTools.Tools) != 3 {
+		t.Fatalf("ListTools(/mcp) = %v, error = %v; want 3 tools", mcpTools, err)
+	}
 
 	res, err := clientSession.ListTools(ctx, nil)
 	if err != nil {
