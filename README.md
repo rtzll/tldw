@@ -163,6 +163,11 @@ Summaries are shown as markdown and rendered in the terminal.
 
 ## Configuration
 
+Summaries default to `gpt-6-luna`. Existing configuration files and environment
+variables keep their explicit model selection. Deprecated model IDs are no
+longer accepted; update those selections to `gpt-6-luna` or another supported
+model shown by the validation error.
+
 Either edit the config file or use environment variables.
 
 ### Config file
@@ -177,7 +182,7 @@ tldw paths  # Shows config, data, and cache directories
 
 ```toml
 openai_api_key = "your-key"
-tldr_model = "gpt-5.4-mini"
+tldr_model = "gpt-6-luna"
 prompt = "tldr: {{.Transcript}}"
 ```
 
@@ -188,6 +193,6 @@ summary prompt.
 
 ```bash
 export OPENAI_API_KEY="your-key"
-export TLDW_TLDR_MODEL="gpt-5.4-mini"
+export TLDW_TLDR_MODEL="gpt-6-luna"
 export TLDW_PROMPT="tldr: {{.Transcript}}"
 ```

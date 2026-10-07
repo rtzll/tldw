@@ -19,10 +19,10 @@ func ValidateModel(model string) error {
 		return fmt.Errorf("invalid model format: %s (allowed: lowercase letters, digits, dot, underscore, hyphen)", model)
 	}
 	supported := []openai.ChatModel{
-		openai.ChatModelO1, openai.ChatModelO1Mini, openai.ChatModelO3, openai.ChatModelO3Mini,
-		openai.ChatModelO4Mini, openai.ChatModelGPT4o, openai.ChatModelGPT4oMini,
-		openai.ChatModelGPT4_1, openai.ChatModelGPT4_1Mini, openai.ChatModelGPT4_1Nano,
-		openai.ChatModelGPT5, openai.ChatModelGPT5_4Mini, openai.ChatModelGPT5Mini, openai.ChatModelGPT5Nano,
+		openai.ChatModelGPT6Luna,
+		openai.ChatModelGPT5_4Mini,
+		openai.ChatModelGPT4_1, openai.ChatModelGPT4_1Mini,
+		openai.ChatModelGPT4o, openai.ChatModelGPT4oMini,
 	}
 	if slices.Contains(supported, openai.ChatModel(model)) {
 		return nil
