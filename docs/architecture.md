@@ -1,8 +1,8 @@
 # tldw architecture
 
 `tldw` is a CLI and MCP server built around one transport-neutral application
-module. Dependencies point inward: transports compose the application, while
-the application knows only domain interfaces.
+module. Dependencies point inward: transports compose the application, while the
+application knows only domain interfaces.
 
 ## Package map
 
@@ -89,6 +89,6 @@ cache directory and are managed by external adapters.
   through the CLI, starts HTTP MCP, calls `get_youtube_transcript`, and requires
   the timestamped MCP result to match the CLI result exactly.
 
-The smoke test is opt-in because it requires `yt-dlp` and network access.
-Pull requests and pushes to `main` run module tidiness, tests, race tests, and
-lint in CI; the external smoke remains a deliberate local/release gate.
+The smoke test is opt-in because it requires `yt-dlp` and network access. Pull
+requests and pushes to `main` run module tidiness, tests, race tests, and lint
+in CI; the external smoke remains a deliberate local/release gate.

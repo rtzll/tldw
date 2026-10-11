@@ -64,15 +64,15 @@ The ChatGPT tunnel setup uses local HTTP MCP by default:
 - `tldw mcp --transport=http` listens on `127.0.0.1:8765`
 - `tunnel-client` keeps its own health/UI listener on `127.0.0.1:8080`
 
-Override the MCP host or port with `TLDW_MCP_HTTP_HOST` or
-`TLDW_MCP_HTTP_PORT` before `just tunnel-init`. For an existing profile, use
-`just tunnel-update` to edit its MCP URL and health address in `$VISUAL` or
-`$EDITOR`; the client validates the profile before the background service is
-reinstalled. Existing settings are not force-replaced.
+Override the MCP host or port with `TLDW_MCP_HTTP_HOST` or `TLDW_MCP_HTTP_PORT`
+before `just tunnel-init`. For an existing profile, use `just tunnel-update` to
+edit its MCP URL and health address in `$VISUAL` or `$EDITOR`; the client
+validates the profile before the background service is reinstalled. Existing
+settings are not force-replaced.
 
 Profiles use `TLDW_TUNNEL_PROFILE_DIR`, then `TUNNEL_CLIENT_PROFILE_DIR`, then
-`$XDG_CONFIG_HOME/tunnel-client` (or `~/.config/tunnel-client`). The same directory
-is used by the foreground commands and launchd.
+`$XDG_CONFIG_HOME/tunnel-client` (or `~/.config/tunnel-client`). The same
+directory is used by the foreground commands and launchd.
 
 Then open ChatGPT > Settings > Connectors > Create, choose **Tunnel**, and
 select or paste the tunnel ID. Keep `just tunnel-run` running while using the
@@ -81,8 +81,8 @@ connector.
 Optional: `just tunnel-launchd-install` stores the runtime key in Keychain and
 starts both the local HTTP MCP server and the tunnel at login. After upgrading
 `tldw` or running `brew upgrade openai/tools/tunnel-client`, run
-`just tunnel-launchd-restart` so launchd starts the new binary.
-Set `TLDW_TUNNEL_CLIENT` only when using a non-Homebrew tunnel-client binary.
+`just tunnel-launchd-restart` so launchd starts the new binary. Set
+`TLDW_TUNNEL_CLIENT` only when using a non-Homebrew tunnel-client binary.
 
 Tip: Put recurring summary prompts in a ChatGPT Project, then enable the `tldw`
 connector in chats from that Project.
@@ -121,14 +121,15 @@ tldw stats --period month --group-by day
 tldw stats --period week --json
 ```
 
-`tldw stats` reports the runtime of unique videos in the local metadata
-library. Supported periods are `today`, `week`, `month`, and `all`; grouped
-reports can use `day`, `week`, or `month`.
+`tldw stats` reports the runtime of unique videos in the local metadata library.
+Supported periods are `today`, `week`, `month`, and `all`; grouped reports can
+use `day`, `week`, or `month`.
 
 Caption downloads prefer original English automatic captions, then manual
-English captions, then a direct track in another language. Each download requests
-one track; automatically translated captions are excluded. A rate-limit error
-stops the request without trying other languages or starting paid transcription.
+English captions, then a direct track in another language. Each download
+requests one track; automatically translated captions are excluded. A rate-limit
+error stops the request without trying other languages or starting paid
+transcription.
 
 Negative caption metadata expires after 15 minutes. Before automatic paid
 Whisper fallback, cached negative metadata is always checked again. A failed
