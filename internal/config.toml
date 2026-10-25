@@ -2,7 +2,7 @@
 # Set your API key here or use OPENAI_API_KEY environment variable
 openai_api_key = ""
 
-# Model used for generating summaries
+# Model used for generating summaries (default: GPT-6 Luna)
 tldr_model = "gpt-6-luna"
 
 # Custom transcripts directory (optional)

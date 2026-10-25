@@ -14,7 +14,7 @@ func addTranscriptionFlags(cmd *cobra.Command) {
 }
 
 func addOpenAIFlags(cmd *cobra.Command) {
-	cmd.Flags().StringP("model", "m", "", "OpenAI model to use for summaries")
+	cmd.Flags().StringP("model", "m", "", "OpenAI model for summaries (default: "+internal.DefaultTLDRModel+")")
 	cmd.Flags().StringP("prompt", "p", "", "Custom prompt (string or file path)")
 }
 

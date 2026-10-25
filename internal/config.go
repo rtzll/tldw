@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/adrg/xdg"
@@ -33,6 +34,9 @@ type Config struct {
 
 //go:embed config.toml prompt.txt
 var defaultFS embed.FS
+
+// DefaultTLDRModel is used for summaries when no model is configured.
+const DefaultTLDRModel = "gpt-6-luna"
 
 // WhisperLimit is the maximum file size accepted by OpenAI's Whisper API (25 MiB)
 const WhisperLimit int64 = 25 << 20
@@ -95,7 +99,7 @@ func InitConfig(configFile string) (*Config, error) {
 	v := viper.New()
 
 	// Set default values for configurable settings.
-	v.SetDefault("tldr_model", "gpt-6-luna")
+	v.SetDefault("tldr_model", DefaultTLDRModel)
 	v.SetDefault("transcripts_dir", transcriptsDir)
 	v.SetDefault("summary_timeout", 2*time.Minute)
 	v.SetDefault("whisper_timeout", 10*time.Minute)
@@ -133,10 +137,15 @@ func InitConfig(configFile string) (*Config, error) {
 		}
 	}
 
+	model := v.GetString("tldr_model")
+	if strings.TrimSpace(model) == "" {
+		model = DefaultTLDRModel
+	}
+
 	// Create config struct from viper
 	config := &Config{
 		// User configurable settings.
-		TLDRModel:      v.GetString("tldr_model"),
+		TLDRModel:      model,
 		TranscriptsDir: v.GetString("transcripts_dir"),
 		SummaryTimeout: v.GetDuration("summary_timeout"),
 		WhisperTimeout: v.GetDuration("whisper_timeout"),

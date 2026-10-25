@@ -26,7 +26,7 @@ var rootCmd = &cobra.Command{
 It extracts transcripts directly from YouTube when available,
 or processes the audio with Whisper when transcripts are unavailable.
 
-The summary is generated using OpenAI's language models.
+Summaries use GPT-6 Luna (gpt-6-luna) by default.
 
 Configuration can be provided via environment variables (e.g. OPENAI_API_KEY, TLDW_TLDR_MODEL, TLDW_PROMPT)
 or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
@@ -38,8 +38,8 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   tldw "https://www.youtube.com/playlist?list=PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq"
   tldw PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq
 
-  # Use a specific OpenAI model
-  tldw "https://youtu.be/tAP1eZYEuKA" --model gpt-4o
+  # Explicitly select the default summary model
+  tldw "https://youtu.be/tAP1eZYEuKA" --model gpt-6-luna
 
   # Use custom prompt for summary
   tldw tAP1eZYEuKA --prompt "tldr: {{.Transcript}}"

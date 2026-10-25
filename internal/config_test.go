@@ -67,3 +67,43 @@ summary_timeout = "45s"
 		t.Errorf("SummaryTimeout = %v, want 45s", config.SummaryTimeout)
 	}
 }
+
+func TestInitConfigModelSelection(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   string
+		env      string
+		unsetEnv bool
+		want     string
+	}{
+		{name: "missing model", unsetEnv: true, want: "gpt-6-luna"},
+		{name: "empty config", config: `tldr_model = ""`, want: "gpt-6-luna"},
+		{name: "whitespace config", config: `tldr_model = "  \t "`, want: "gpt-6-luna"},
+		{name: "whitespace environment", config: `tldr_model = "gpt-5.4-mini"`, env: " \t ", want: "gpt-6-luna"},
+		{name: "empty environment preserves config", config: `tldr_model = "gpt-5.4-mini"`, want: "gpt-5.4-mini"},
+		{name: "environment overrides config", config: `tldr_model = "gpt-6-luna"`, env: "gpt-5.4-mini", want: "gpt-5.4-mini"},
+		{name: "unsupported config remains explicit", config: `tldr_model = "gpt-4o"`, want: "gpt-4o"},
+		{name: "unsupported environment remains explicit", config: `tldr_model = "gpt-6-luna"`, env: "unknown-model", want: "unknown-model"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TLDW_TLDR_MODEL", tt.env)
+			if tt.unsetEnv {
+				if err := os.Unsetenv("TLDW_TLDR_MODEL"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			configPath := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(configPath, []byte(tt.config), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			config, err := InitConfig(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if config.TLDRModel != tt.want {
+				t.Fatalf("TLDRModel = %q, want %q", config.TLDRModel, tt.want)
+			}
+		})
+	}
+}

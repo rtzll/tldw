@@ -1,8 +1,8 @@
 # tldw - too long; didn't watch
 
-Transform YouTube videos and playlists into concise summaries using AI. Works
-with existing captions (free) or Whisper transcription (paid). Includes MCP
-server for Claude and other AI assistants and CLI.
+Transform YouTube videos and playlists into concise summaries using GPT-6 Luna
+by default. Works with existing captions (free) or Whisper transcription (paid).
+Includes an MCP server for Claude and other AI assistants and a CLI.
 
 See [docs/architecture.md](docs/architecture.md) for the project structure and
 dependency direction.
@@ -104,9 +104,9 @@ tldw transcribe tAP1eZYEuKA --fallback-whisper # Use Whisper if video has no cap
 tldw cp "https://youtu.be/tAP1eZYEuKA"
 tldw cp tAP1eZYEuKA --fallback-whisper        # Whisper fallback supported
 
-# Generate summary (requires API key)
+# Generate summary with GPT-6 Luna (requires API key)
 tldw "https://youtu.be/tAP1eZYEuKA"
-tldw tAP1eZYEuKA -m gpt-4o-mini -p "tldr: {{.Transcript}}"
+tldw tAP1eZYEuKA -m gpt-6-luna -p "tldr: {{.Transcript}}"
 
 # Get video metadata
 tldw metadata "https://youtu.be/tAP1eZYEuKA"
@@ -171,6 +171,11 @@ Summaries are shown as markdown and rendered in the terminal.
 ## Configuration
 
 Either edit the config file or use environment variables.
+
+GPT-6 Luna (`gpt-6-luna`) is the default summary model. Missing or blank model
+settings use this default. To select a supported model explicitly, use `--model`,
+`TLDW_TLDR_MODEL`, or `tldr_model` in the config file, in that order of precedence.
+Unsupported explicit model selections produce an error.
 
 ### Config file
 
