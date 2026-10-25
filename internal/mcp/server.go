@@ -323,7 +323,11 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return s.mcpServer
-		}, nil)
+		}, &mcp.StreamableHTTPOptions{
+			// MCP 2026-07-28 requires stateless HTTP. These tools do not
+			// need persistent sessions or server-initiated client requests.
+			Stateless: true,
+		})
 		// Route only MCP endpoints to the protocol handler. In particular,
 		// unsupported OAuth discovery URLs must return 404 so tunnel clients
 		// recognize this as a plain MCP server, not malformed OAuth metadata.
