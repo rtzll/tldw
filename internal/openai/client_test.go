@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -19,6 +20,7 @@ type mockOpenAIClient struct {
 	err            error
 	checkContext   bool
 	transcriptions int
+	uploadSizes    []int64
 }
 
 func TestNewAIRejectsInvalidConfiguration(t *testing.T) {
@@ -46,6 +48,11 @@ func TestNewAIRejectsInvalidConfiguration(t *testing.T) {
 
 func (m *mockOpenAIClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
 	m.transcriptions++
+	info, err := file.Stat()
+	if err != nil {
+		return "", err
+	}
+	m.uploadSizes = append(m.uploadSizes, info.Size())
 	if m.checkContext && ctx.Err() != nil {
 		return "", ctx.Err()
 	}
@@ -81,7 +88,46 @@ func (chunkingRunner) Run(_ context.Context, name string, args ...string) ([]byt
 	if name != "ffmpeg" || len(args) == 0 {
 		return nil, fmt.Errorf("unexpected command: %s", name)
 	}
-	return nil, os.WriteFile(args[len(args)-1], []byte("chunk"), 0o644)
+	return nil, os.WriteFile(args[len(args)-1], []byte("ok"), 0o644)
+}
+
+type oversizedChunkRunner struct{}
+
+func (oversizedChunkRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	if name == "ffprobe" {
+		return []byte("4\n"), nil
+	}
+	out := args[len(args)-1]
+	data := []byte("xxx")
+	if strings.Count(filepath.Base(out), "_chunk_") > 1 {
+		data = []byte("x")
+	}
+	return nil, os.WriteFile(out, data, 0o644)
+}
+
+func TestAITranscribeResplitsOversizedChunks(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "audio.mp3")
+	if err := os.WriteFile(input, []byte("four"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ai, err := NewAIWithKey("test", NewAudio(oversizedChunkRunner{}, dir), Config{Model: "test", WhisperLimit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &mockOpenAIClient{transcription: "ok"}
+	ai.client = client
+	if _, err := ai.Transcribe(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.uploadSizes) != 4 {
+		t.Fatalf("uploaded chunks = %v", client.uploadSizes)
+	}
+	for _, size := range client.uploadSizes {
+		if size > 2 {
+			t.Fatalf("oversized upload: %d", size)
+		}
+	}
 }
 
 func TestAITranscribeSplitsLargeAudio(t *testing.T) {

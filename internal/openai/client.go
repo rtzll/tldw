@@ -171,12 +171,61 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 	if len(chunks) > 1 {
 		defer cleanupChunks(chunks)
 	}
+	chunks, cleanup, err := ai.fitAudioChunks(ctx, chunks)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
 
 	transcript, err := ai.processAudioChunks(ctx, chunks)
 	if err != nil {
 		return "", fmt.Errorf("transcribing audio: %w", err)
 	}
 	return transcript, nil
+}
+
+// fitAudioChunks checks actual output sizes; duration-based splitting alone
+// cannot guarantee a size limit for variable bitrate audio.
+func (ai *AI) fitAudioChunks(ctx context.Context, initial []string) ([]string, func(), error) {
+	var dirs [][]string
+	cleanup := func() {
+		for _, chunks := range dirs {
+			cleanupChunks(chunks)
+		}
+	}
+	var result []string
+	var fit func(string, int64) error
+	fit = func(path string, parentSize int64) error {
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("checking audio chunk: %w", err)
+		}
+		if info.Size() <= ai.whisperLimit {
+			result = append(result, path)
+			return nil
+		}
+		if parentSize > 0 && info.Size() >= parentSize {
+			return fmt.Errorf("audio chunk cannot be split below upload limit")
+		}
+		children, err := ai.audio.Split(ctx, path, 2)
+		if err != nil {
+			return fmt.Errorf("splitting oversized audio chunk: %w", err)
+		}
+		dirs = append(dirs, children)
+		for _, child := range children {
+			if err := fit(child, info.Size()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, chunk := range initial {
+		if err := fit(chunk, 0); err != nil {
+			cleanup()
+			return nil, func() {}, err
+		}
+	}
+	return result, cleanup, nil
 }
 
 func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
