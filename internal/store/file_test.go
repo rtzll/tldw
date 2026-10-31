@@ -247,3 +247,22 @@ func TestMetadataLoadPreservesFreshness(t *testing.T) {
 		}
 	}
 }
+
+func TestListMetadataReturnsHealthyEntriesAndWarning(t *testing.T) {
+	dir := t.TempDir()
+	adapter := store.NewFile(dir)
+	if err := adapter.SaveMetadata("dQw4w9WgXcQ", &tldw.VideoMetadata{Title: "Good", Duration: 12}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tAP1eZYEuKA.meta.json"), []byte("invalid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := adapter.ListMetadata()
+	var partial *tldw.PartialMetadataError
+	if !errors.As(err, &partial) || len(partial.Errors) != 1 {
+		t.Fatalf("warning = %v", err)
+	}
+	if len(entries) != 1 || entries[0].Metadata.Title != "Good" {
+		t.Fatalf("entries = %+v", entries)
+	}
+}

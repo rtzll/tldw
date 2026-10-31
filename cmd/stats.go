@@ -76,6 +76,11 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 			if err != nil {
 				return err
 			}
+			for _, warning := range report.Warnings {
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+					return err
+				}
+			}
 			jsonOutput, err := cmd.Flags().GetBool("json")
 			if err != nil {
 				return err

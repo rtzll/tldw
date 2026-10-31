@@ -115,6 +115,7 @@ func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
 		return nil, fmt.Errorf("listing metadata cache: %w", err)
 	}
 	entries := make([]tldw.StoredVideoMetadata, 0, len(files))
+	var skipped []error
 	for _, path := range files {
 		videoID := strings.TrimSuffix(filepath.Base(path), ".meta.json")
 		if !tldw.IsValidVideoID(videoID) {
@@ -122,19 +123,25 @@ func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
 		}
 		data, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
-			return nil, fmt.Errorf("reading metadata cache %s: %w", filepath.Base(path), err)
+			skipped = append(skipped, fmt.Errorf("reading metadata cache %s: %w", filepath.Base(path), err))
+			continue
 		}
 		var cached cachedMetadata
 		if err := json.Unmarshal(data, &cached); err != nil {
-			return nil, fmt.Errorf("parsing metadata cache %s: %w", filepath.Base(path), err)
+			skipped = append(skipped, fmt.Errorf("parsing metadata cache %s: %w", filepath.Base(path), err))
+			continue
 		}
 		firstSeenAt, err := cachedMetadataFirstSeenAt(path, cached)
 		if err != nil {
-			return nil, fmt.Errorf("reading metadata timestamp %s: %w", filepath.Base(path), err)
+			skipped = append(skipped, fmt.Errorf("reading metadata timestamp %s: %w", filepath.Base(path), err))
+			continue
 		}
 		entries = append(entries, tldw.StoredVideoMetadata{
 			VideoID: videoID, Metadata: metadataFromCached(cached), FirstSeenAt: firstSeenAt,
 		})
+	}
+	if len(skipped) > 0 {
+		return entries, &tldw.PartialMetadataError{Errors: skipped}
 	}
 	return entries, nil
 }
