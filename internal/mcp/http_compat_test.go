@@ -183,3 +183,56 @@ func requestCompatibilityMCP(t *testing.T, endpoint, version, method string, par
 		t.Fatalf("decoding %s result: %v", method, err)
 	}
 }
+
+type cancellationApp struct {
+	started  chan struct{}
+	canceled chan struct{}
+}
+
+func (a *cancellationApp) MetadataFor(ctx context.Context, _ tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
+	close(a.started)
+	<-ctx.Done()
+	close(a.canceled)
+	return nil, ctx.Err()
+}
+
+func (a *cancellationApp) Transcript(context.Context, tldw.YouTubeRef, tldw.TranscriptRequest) (*tldw.Transcript, error) {
+	return nil, errors.New("unexpected transcript request")
+}
+
+func TestHTTPDisconnectCancelsTool(t *testing.T) {
+	app := &cancellationApp{started: make(chan struct{}), canceled: make(chan struct{})}
+	endpoint := startCompatibilityHTTPServer(t, app) + "/mcp"
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_youtube_metadata","arguments":{"url":"https://youtu.be/dQw4w9WgXcQ"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	req.Header.Set("MCP-Method", "tools/call")
+	req.Header.Set("MCP-Name", "get_youtube_metadata")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	select {
+	case <-app.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("tool did not start")
+	}
+	cancel()
+	select {
+	case <-app.canceled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("tool context not canceled after disconnect")
+	}
+	<-done
+}

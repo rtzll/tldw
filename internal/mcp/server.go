@@ -326,7 +326,8 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		}, &mcp.StreamableHTTPOptions{
 			// MCP 2026-07-28 requires stateless HTTP. These tools do not
 			// need persistent sessions or server-initiated client requests.
-			Stateless: true,
+			Stateless:                    true,
+			PropagateRequestCancellation: true,
 		})
 		// Route only MCP endpoints to the protocol handler. In particular,
 		// unsupported OAuth discovery URLs must return 404 so tunnel clients
