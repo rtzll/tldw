@@ -125,6 +125,20 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return nil, err
 	}
 	defer release()
+	// Stores that share a filesystem may coordinate with other processes.
+	if locker, ok := app.store.(interface {
+		LockTranscript(context.Context, string) (func() error, error)
+	}); ok {
+		unlock, err := locker.LockTranscript(ctx, ref.ID())
+		if err != nil {
+			return nil, fmt.Errorf("locking transcript: %w", err)
+		}
+		defer func() {
+			if err := unlock(); err != nil {
+				app.log.Printf("Warning: unlocking transcript: %v\n", err)
+			}
+		}()
+	}
 	if transcript, err := app.store.LoadTranscript(ref.ID()); err == nil {
 		if cachedTranscriptAllowed(transcript, request) {
 			return transcript, nil

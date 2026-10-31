@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -88,4 +89,41 @@ func TestConcurrentTranscriptRequestsShareCacheAndAllowCancellation(t *testing.T
 			t.Fatalf("paid calls=%d, want one per video", ai.calls.Load())
 		}
 	})
+}
+
+func TestSeparateEnginesShareTranscriptAcquisition(t *testing.T) {
+	dir := t.TempDir()
+	video := &blockingVideo{started: make(chan string, 4), release: make(chan struct{})}
+	ai := &countingAI{}
+	makeEngine := func() *tldw.Engine {
+		engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: store.NewFile(dir), AI: ai, Prompts: &promptStub{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return engine
+	}
+	first, second := makeEngine(), makeEngine()
+	ref, _ := tldw.ParseVideoRef(testVideoID)
+	results := make(chan error, 2)
+	run := func(engine *tldw.Engine) {
+		_, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
+		results <- err
+	}
+	go run(first)
+	<-video.started
+	go run(second)
+	select {
+	case <-video.started:
+		t.Fatal("second engine started duplicate acquisition")
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(video.release)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ai.calls.Load() != 1 {
+		t.Fatalf("paid calls = %d, want 1", ai.calls.Load())
+	}
 }

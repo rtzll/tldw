@@ -2,6 +2,7 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
@@ -31,6 +33,27 @@ type File struct {
 
 func NewFile(dir string) *File {
 	return &File{dir: dir}
+}
+
+// LockTranscript coordinates acquisition across independent processes sharing
+// the same store. Lock files are retained so waiters always lock the same inode.
+func (s *File) LockTranscript(ctx context.Context, videoID string) (func() error, error) {
+	path, err := s.cachePath(videoID, ".lock")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return nil, err
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLockContext(ctx, 50*time.Millisecond)
+	if err != nil {
+		return nil, err
+	}
+	if !locked {
+		return nil, ctx.Err()
+	}
+	return lock.Unlock, nil
 }
 
 func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
