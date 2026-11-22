@@ -20,22 +20,22 @@ type videoStub struct {
 	audioCalls    int
 }
 
-func (stub *videoStub) FetchMetadata(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
+func (stub *videoStub) FetchMetadata(context.Context, tldw.ContentRef) (*tldw.VideoMetadata, error) {
 	stub.metadataCalls++
 	return stub.metadata, stub.metadataErr
 }
 
-func (stub *videoStub) FetchCaptions(context.Context, tldw.YouTubeRef, *tldw.VideoMetadata) (*tldw.Transcript, error) {
+func (stub *videoStub) FetchCaptions(context.Context, tldw.ContentRef, *tldw.VideoMetadata) (*tldw.Transcript, error) {
 	stub.captionCalls++
 	return stub.captions, stub.captionsErr
 }
 
-func (stub *videoStub) DownloadAudio(context.Context, tldw.YouTubeRef) (string, error) {
+func (stub *videoStub) DownloadAudio(context.Context, tldw.ContentRef) (string, error) {
 	stub.audioCalls++
 	return stub.audioPath, nil
 }
 
-func (stub *videoStub) FetchPlaylist(context.Context, tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
+func (stub *videoStub) FetchPlaylist(context.Context, tldw.ContentRef) (*tldw.PlaylistInfo, error) {
 	return stub.playlist, nil
 }
 

@@ -189,14 +189,14 @@ type cancellationApp struct {
 	canceled chan struct{}
 }
 
-func (a *cancellationApp) MetadataFor(ctx context.Context, _ tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
+func (a *cancellationApp) MetadataFor(ctx context.Context, _ tldw.ContentRef) (*tldw.VideoMetadata, error) {
 	close(a.started)
 	<-ctx.Done()
 	close(a.canceled)
 	return nil, ctx.Err()
 }
 
-func (a *cancellationApp) Transcript(context.Context, tldw.YouTubeRef, tldw.TranscriptRequest) (*tldw.Transcript, error) {
+func (a *cancellationApp) Transcript(context.Context, tldw.ContentRef, tldw.TranscriptRequest) (*tldw.Transcript, error) {
 	return nil, errors.New("unexpected transcript request")
 }
 

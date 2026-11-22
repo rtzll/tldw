@@ -8,6 +8,25 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
+func TestMetadataRejectsXPostsWithoutOneNativeVideo(t *testing.T) {
+	ref, err := tldw.ParseVideoRef("https://x.com/creatine_cycle/status/2123846497540489345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, payload := range []string{
+		`{"_type":"playlist","entries":[{"id":"111"},{"id":"222"}]}`,
+		`{"_type":"multi_video","entries":[{"id":"111"},{"id":"222"}]}`,
+		`{"display_id":"2123846497540489345","formats":[]}`,
+		`{"display_id":"123","formats":[{}]}`,
+	} {
+		yt := New(t.TempDir(), t.TempDir(), false, true)
+		yt.executor = &mockCommandRunner{output: []byte(payload)}
+		if _, err := yt.FetchMetadata(t.Context(), ref); err == nil {
+			t.Errorf("accepted X post metadata %s", payload)
+		}
+	}
+}
+
 func TestMetadataUsesChannelURL(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -28,7 +47,7 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+			yt := New(t.TempDir(), t.TempDir(), false, true)
 			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 			ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			if err != nil {
@@ -47,7 +66,7 @@ func TestMetadataUsesChannelURL(t *testing.T) {
 }
 
 func TestMetadataUsesUploadDateAsPublishedAt(t *testing.T) {
-	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	yt := New(t.TempDir(), t.TempDir(), false, true)
 	yt.executor = &mockCommandRunner{output: []byte(`{"title":"Test","upload_date":"20260629"}`)}
 	ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	if err != nil {
@@ -104,7 +123,7 @@ func TestMetadataFallsBackToUploaderWhenChannelMissing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+			yt := New(t.TempDir(), t.TempDir(), false, true)
 			yt.executor = &mockCommandRunner{output: []byte(tt.json)}
 			ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			if err != nil {

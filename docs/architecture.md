@@ -16,7 +16,7 @@ main.go
 internal/
 ├── tldw/                   Domain model and application workflows
 ├── store/                  Filesystem transcript/metadata adapter
-├── ytdlp/                  YouTube adapter
+├── ytdlp/                  Video adapter
 │   ├── client.go           Construction, public interface, shared command policy
 │   ├── metadata.go         Video metadata and caption-language discovery
 │   ├── captions.go         Caption selection, download, and cache lookup
@@ -54,7 +54,7 @@ logging. [cmd/build.go](../cmd/build.go) supplies the concrete implementations.
 
 ## Primary workflow
 
-1. A CLI command or MCP tool parses input into a validated `tldw.YouTubeRef`.
+1. A CLI command or MCP tool parses input into a validated `tldw.ContentRef`.
 2. The transport calls `tldw.Engine`.
 3. The engine checks the store through its persistence interface.
 4. On a miss, the engine asks yt-dlp for metadata, captions, or audio.
@@ -64,7 +64,7 @@ logging. [cmd/build.go](../cmd/build.go) supplies the concrete implementations.
 The same `Engine.Transcript` workflow serves CLI transcription, summaries,
 playlists, and MCP tools. This is the central behavior seam.
 
-The yt-dlp adapter keeps validated `YouTubeRef` values through its internal
+The yt-dlp adapter keeps validated `ContentRef` values through its internal
 capability paths; raw URLs are produced only when constructing yt-dlp commands.
 
 ## Persistence

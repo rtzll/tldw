@@ -24,30 +24,30 @@ type MCPServer struct {
 }
 
 type MCPApplication interface {
-	MetadataFor(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error)
-	Transcript(context.Context, tldw.YouTubeRef, tldw.TranscriptRequest) (*tldw.Transcript, error)
+	MetadataFor(context.Context, tldw.ContentRef) (*tldw.VideoMetadata, error)
+	Transcript(context.Context, tldw.ContentRef, tldw.TranscriptRequest) (*tldw.Transcript, error)
 }
 
 const (
 	mcpServerVersion  = "1.0.0"
 	mcpMethodCallTool = "tools/call"
 
-	mcpGetMetadataDescription   = "Extract video metadata including caption availability. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid)."
-	mcpGetTranscriptDescription = "Get existing YouTube captions/transcript (FREE). Only works if the video has captions - check metadata first. Fails if no captions available."
-	mcpWhisperDescription       = "Create transcript using OpenAI Whisper API (PAID). Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool."
+	mcpGetMetadataDescription   = "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid Whisper transcription."
+	mcpGetTranscriptDescription = "Get existing captions for a YouTube video or single-video X post (FREE)."
+	mcpWhisperDescription       = "Transcribe a YouTube video or single-video X post using OpenAI Whisper (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost."
 )
 
 type mcpGetMetadataInput struct {
-	URL string `json:"url" jsonschema:"YouTube video URL"`
+	URL string `json:"url" jsonschema:"YouTube video URL or single-video X post URL"`
 }
 
 type mcpGetTranscriptInput struct {
-	URL               string `json:"url" jsonschema:"YouTube video URL"`
+	URL               string `json:"url" jsonschema:"YouTube video URL or single-video X post URL"`
 	IncludeTimestamps bool   `json:"include_timestamps,omitempty" jsonschema:"When true, return transcript lines with timestamps if caption timing data is available."`
 }
 
 type mcpWhisperInput struct {
-	URL               string `json:"url" jsonschema:"YouTube video URL"`
+	URL               string `json:"url" jsonschema:"YouTube video URL or single-video X post URL"`
 	IncludeTimestamps bool   `json:"include_timestamps,omitempty" jsonschema:"Reserved for future use. Timestamped Whisper transcripts are not supported yet."`
 }
 
@@ -58,21 +58,21 @@ type mcpChapterOutput struct {
 }
 
 type mcpMetadataOutput struct {
-	Title            string             `json:"title" jsonschema:"YouTube video title"`
-	Channel          string             `json:"channel" jsonschema:"Main YouTube upload channel name"`
+	Title            string             `json:"title" jsonschema:"Video title"`
+	Channel          string             `json:"channel" jsonschema:"Upload channel or X account name"`
 	Creators         []string           `json:"creators,omitempty" jsonschema:"Creators or collaborators associated with the video"`
 	DurationSeconds  float64            `json:"duration_seconds" jsonschema:"Duration in seconds"`
-	Description      string             `json:"description" jsonschema:"YouTube description"`
+	Description      string             `json:"description" jsonschema:"Video description"`
 	Language         string             `json:"language,omitempty" jsonschema:"Detected video language"`
 	HasCaptions      bool               `json:"has_captions" jsonschema:"Whether captions are available"`
 	CaptionLanguages []string           `json:"caption_languages,omitempty" jsonschema:"Available caption language codes"`
-	Tags             []string           `json:"tags,omitempty" jsonschema:"YouTube video tags"`
-	Categories       []string           `json:"categories,omitempty" jsonschema:"YouTube video categories"`
+	Tags             []string           `json:"tags,omitempty" jsonschema:"Video tags"`
+	Categories       []string           `json:"categories,omitempty" jsonschema:"Video categories"`
 	Chapters         []mcpChapterOutput `json:"chapters,omitempty" jsonschema:"Video chapters"`
 }
 
 type mcpTranscriptOutput struct {
-	URL               string `json:"url" jsonschema:"Requested YouTube video URL"`
+	URL               string `json:"url" jsonschema:"Requested YouTube video URL or single-video X post URL"`
 	Transcript        string `json:"transcript" jsonschema:"Transcript text"`
 	Source            string `json:"source" jsonschema:"Transcript source"`
 	IncludeTimestamps bool   `json:"include_timestamps" jsonschema:"Whether timestamps were requested in the transcript text"`
@@ -161,12 +161,12 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_metadata - invalid URL: %v", err)
-		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
+		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
 	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
 
-	// Get metadata from YouTube
+	// Get video metadata
 	metadata, err := s.engine.MetadataFor(ctx, parsed)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_metadata failed - %v", err)
@@ -228,7 +228,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript - invalid URL: %v", err)
-		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
+		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
 	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
@@ -245,8 +245,8 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	})
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
-		if errors.Is(err, tldw.ErrCaptionsUnavailable) || errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
-			return nil, zero, fmt.Errorf("no captions available - use get_youtube_metadata to check caption availability, or consider transcribe_youtube_whisper (paid): %w", err)
+		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
+			return nil, zero, fmt.Errorf("%w. Offer transcribe_youtube_whisper for a plain-text transcript (paid) and ask for confirmation first", err)
 		}
 		return nil, zero, fmt.Errorf("getting transcript: %w", err)
 	}
@@ -274,7 +274,7 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - invalid URL: %v", err)
-		return nil, zero, fmt.Errorf("invalid YouTube video URL: %w", err)
+		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
 	MCPLogInfo("Tool: transcribe_youtube_whisper - URL: %s (PAID OPERATION)", url)

@@ -36,7 +36,7 @@ func TestProcessSRTTranscriptRemovesOnlyCacheFiles(t *testing.T) {
 				t.Fatalf("WriteFile() error = %v", err)
 			}
 
-			yt := NewYouTube(persistentDir, cacheDir, false, true)
+			yt := New(persistentDir, cacheDir, false, true)
 			if _, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}); err != nil {
 				t.Fatalf("processSrtTranscript() error = %v", err)
 			}
@@ -399,7 +399,7 @@ Goodbye
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	yt := NewYouTube(dir, filepath.Join(dir, "cache"), false, true)
+	yt := New(dir, filepath.Join(dir, "cache"), false, true)
 	got, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
 	if err != nil {
 		t.Fatal(err)
@@ -502,7 +502,7 @@ So, in this talk, I'll
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	yt := NewYouTube(dir, filepath.Join(dir, "cache"), false, true)
+	yt := New(dir, filepath.Join(dir, "cache"), false, true)
 	got, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
 	if err != nil {
 		t.Fatal(err)
@@ -573,7 +573,7 @@ func TestManualCaptionProcessingPreservesRollingLikeSpeech(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	yt := NewYouTube(dir, t.TempDir(), false, true)
+	yt := New(dir, t.TempDir(), false, true)
 	track := tldw.CaptionTrack{Language: "en", Direct: true}
 	got, err := yt.processSrtTranscript(path, track)
 	if err != nil {

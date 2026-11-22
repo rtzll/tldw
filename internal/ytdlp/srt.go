@@ -17,7 +17,7 @@ var (
 	htmlTagRegex        = regexp.MustCompile(`<[^>]+>`)
 )
 
-func (yt *YouTube) processSrtTranscript(filePath string, track tldw.CaptionTrack) (*tldw.Transcript, error) {
+func (yt *Client) processSrtTranscript(filePath string, track tldw.CaptionTrack) (*tldw.Transcript, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Processing SRT transcript: %s\n", filePath)
 	}
@@ -28,7 +28,8 @@ func (yt *YouTube) processSrtTranscript(filePath string, track tldw.CaptionTrack
 	}
 
 	// Extract video ID from filename
-	id, _, _ := strings.Cut(filepath.Base(filePath), ".")
+	base := strings.TrimSuffix(filepath.Base(filePath), ".srt")
+	id := strings.TrimSuffix(base, filepath.Ext(base))
 	segments := parseSRT(string(content))
 	if track.Automatic {
 		segments = condenseSubtitleSegments(segments)

@@ -14,22 +14,25 @@ import (
 
 // downloadCaptions requests exactly one language and one caption source.
 // Rebuilding arguments prevents fallback from modifying the conversion flag.
-func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, track tldw.CaptionTrack) (string, error) {
+func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, track tldw.CaptionTrack) (string, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
-	path := filepath.Join(yt.cacheDir, ref.ID()+"."+track.Language+".srt")
+	path := filepath.Join(yt.cacheDir, ref.CacheKey()+"."+track.Language+".srt")
 	args := []string{"--write-subs", "--no-write-auto-subs"}
 	if track.Automatic {
 		args = []string{"--no-write-subs", "--write-auto-subs"}
+	}
+	args = append(args, extractorArgs(ref)...)
+	if !ref.IsX() {
+		// Space out YouTube subtitle requests to reduce rate limiting.
+		args = append(args, "--sleep-subtitles", "5")
 	}
 	args = append(args,
 		"--sub-langs", track.Language,
 		"--convert-subs", "srt",
 		"--skip-download",
-		"--sleep-subtitles", "5",
-		"--extractor-args", youtubeExtractorPolicy,
-		"-o", filepath.Join(yt.cacheDir, "%(id)s"),
+		"-o", filepath.Join(yt.cacheDir, ref.CacheKey()),
 		ref.URL(),
 	)
 	if yt.verbose && !yt.quiet {
@@ -55,7 +58,7 @@ func (yt *YouTube) downloadCaptions(ctx context.Context, ref tldw.YouTubeRef, tr
 	return path, nil
 }
 
-func (yt *YouTube) runCaptionDownload(ctx context.Context, args []string, pattern string) ([]byte, []string, error) {
+func (yt *Client) runCaptionDownload(ctx context.Context, args []string, pattern string) ([]byte, []string, error) {
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if ctx.Err() != nil {
 		return output, nil, errors.Join(err, ctx.Err())
@@ -79,7 +82,7 @@ func (yt *YouTube) runCaptionDownload(ctx context.Context, args []string, patter
 	return output, nil, err
 }
 
-func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTubeRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
+func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
 	if metadata == nil {
 		return nil, tldw.ErrCaptionsUnavailable
 	}
@@ -90,7 +93,7 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTu
 	// An old plain-language SRT might be manual or automatically translated.
 	// Only an exact -orig filename establishes its source without a sidecar.
 	if track.Automatic && strings.HasSuffix(track.Language, "-orig") {
-		path, err := yt.findExistingTranscript(ref.ID(), track.Language)
+		path, err := yt.findExistingTranscript(ref.CacheKey(), track.Language)
 		if err != nil {
 			return nil, fmt.Errorf("searching existing captions: %w", err)
 		}
@@ -119,7 +122,7 @@ func (yt *YouTube) fetchStructuredTranscript(ctx context.Context, ref tldw.YouTu
 	return worker.processSrtTranscript(path, track)
 }
 
-func (yt *YouTube) findExistingTranscript(videoID, language string) (string, error) {
+func (yt *Client) findExistingTranscript(videoID, language string) (string, error) {
 	for _, dir := range []string{yt.cacheDir, yt.transcriptsDir} {
 		path := filepath.Join(dir, videoID+"."+language+".srt")
 		info, err := os.Stat(path)

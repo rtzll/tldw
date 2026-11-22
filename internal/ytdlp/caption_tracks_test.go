@@ -54,7 +54,7 @@ func TestSelectDirectCaptionTrack(t *testing.T) {
 }
 
 func TestMetadataRetainsCaptionOrigin(t *testing.T) {
-	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	yt := New(t.TempDir(), t.TempDir(), false, true)
 	yt.executor = &mockCommandRunner{output: []byte(`{
 		"language":"ar", "channel":"Channel",
 		"subtitles":{
@@ -113,10 +113,17 @@ func TestDirectCaptionFormatsRejectsUnknownOrTranslatedURLs(t *testing.T) {
 }
 
 func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
-	for _, automatic := range []bool{false, true} {
-		t.Run(map[bool]string{false: "manual", true: "automatic"}[automatic], func(t *testing.T) {
-			track := tldw.CaptionTrack{Language: "en", Automatic: automatic, Direct: true}
-			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	for _, tc := range []struct {
+		name, input, sleep, extractorPolicy string
+		automatic                           bool
+	}{
+		{"YouTube manual", "dQw4w9WgXcQ", "5", youtubeExtractorPolicy, false},
+		{"YouTube automatic", "dQw4w9WgXcQ", "5", youtubeExtractorPolicy, true},
+		{"X manual", "https://x.com/AmpCode/status/2123051353505443912", "", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			track := tldw.CaptionTrack{Language: "en", Automatic: tc.automatic, Direct: true}
+			yt := New(t.TempDir(), t.TempDir(), false, true)
 			calls := 0
 			yt.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
 				calls++
@@ -128,16 +135,19 @@ func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 						values[arg] = args[i+1]
 					}
 				}
-				if values["--sub-langs"] != "en" || values["--convert-subs"] != "srt" || values["--sleep-subtitles"] != "5" || values["--extractor-args"] != youtubeExtractorPolicy {
+				if values["--sub-langs"] != "en" || values["--convert-subs"] != "srt" || values["--sleep-subtitles"] != tc.sleep || values["--extractor-args"] != tc.extractorPolicy {
 					t.Fatalf("wrong exact download policy: %v", args)
 				}
-				if automatic != flags["--write-auto-subs"] || automatic != flags["--no-write-subs"] || automatic == flags["--write-subs"] || automatic == flags["--no-write-auto-subs"] {
+				if tc.automatic != flags["--write-auto-subs"] || tc.automatic != flags["--no-write-subs"] || tc.automatic == flags["--write-subs"] || tc.automatic == flags["--no-write-auto-subs"] {
 					t.Fatalf("caption sources mixed: %v", args)
 				}
 				path := strings.ReplaceAll(values["-o"], "%(id)s", "dQw4w9WgXcQ") + ".en.srt"
 				return nil, os.WriteFile(path, []byte("1\n00:00:00,000 --> 00:00:02,000\nHello\n"), 0o600)
 			})
-			ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
+			ref, err := tldw.ParseVideoRef(tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
 			got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{track}})
 			if err != nil || calls != 1 || got.CaptionTrack == nil || *got.CaptionTrack != track || got.Language != "en" {
 				t.Fatalf("got %+v, err %v, calls %d", got, err, calls)
@@ -147,7 +157,7 @@ func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 }
 
 func TestCaptionDownloadMissingExactTrackDoesNotBroaden(t *testing.T) {
-	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	yt := New(t.TempDir(), t.TempDir(), false, true)
 	calls := 0
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil })
 	track := tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}
@@ -168,7 +178,7 @@ func TestExistingSRTRespectsTrackAndPreservesUnrelatedFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	yt := NewYouTube(data, cache, false, true)
+	yt := New(data, cache, false, true)
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {
 		t.Fatal("unexpected download")
 		return nil, nil
@@ -192,7 +202,7 @@ func TestManualTrackDoesNotReuseAmbiguousSRT(t *testing.T) {
 	if err := os.WriteFile(old, contents, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	yt := NewYouTube(data, t.TempDir(), false, true)
+	yt := New(data, t.TempDir(), false, true)
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("download failed") })
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})

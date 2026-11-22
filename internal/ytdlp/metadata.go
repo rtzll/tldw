@@ -9,7 +9,7 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
+func (yt *Client) metadata(ctx context.Context, ref tldw.ContentRef) (*tldw.VideoMetadata, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting video metadata...\n")
 	}
@@ -20,7 +20,10 @@ func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.Vid
 		"--dump-single-json",
 		"--no-playlist",
 	}
-	args = append(args, youtubeLookupArgs()...)
+	if ref.IsX() {
+		args = append(args, "--flat-playlist")
+	}
+	args = append(args, lookupArgs(ref)...)
 	args = append(args, ref.URL())
 
 	// Run the command
@@ -36,6 +39,9 @@ func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.Vid
 	// Parse JSON once to populate metadata and caption availability
 	var raw struct {
 		tldw.VideoMetadata
+		Type              string             `json:"_type"`
+		DisplayID         string             `json:"display_id"`
+		Formats           []struct{}         `json:"formats"`
 		Uploader          string             `json:"uploader"`
 		UploaderURL       string             `json:"uploader_url"`
 		Creator           string             `json:"creator"`
@@ -49,6 +55,15 @@ func (yt *YouTube) metadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.Vid
 			yt.log.Printf("Failed to parse metadata JSON: %v\n", err)
 		}
 		return nil, fmt.Errorf("parsing video metadata: %w", err)
+	}
+
+	if ref.IsX() {
+		if raw.Type == "playlist" || raw.Type == "multi_video" {
+			return nil, fmt.Errorf("this X post contains multiple media items; supply a post with one video")
+		}
+		if raw.DisplayID != ref.ID() || len(raw.Formats) == 0 {
+			return nil, fmt.Errorf("this X post has no downloadable video of its own")
+		}
 	}
 
 	languages := extractCaptionLanguages(raw.Subtitles, raw.AutomaticCaptions)

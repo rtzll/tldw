@@ -24,9 +24,27 @@ func TestParseVideoRefNormalizesSupportedInputs(t *testing.T) {
 }
 
 func TestParseVideoRefRejectsNonVideoInput(t *testing.T) {
-	for _, input := range []string{"https://example.com/video", "https://youtu.be/short", "https://www.youtube.com/shorts/short", "../outside"} {
+	for _, input := range []string{
+		"https://example.com/video", "https://youtu.be/short", "https://www.youtube.com/shorts/short", "../outside",
+		"https://x.com/AmpCode", "https://x.com/AmpCode/status/invalid", "https://x.com/i/spaces/123",
+		"https://x.com.example.org/user/status/123", "https://x.com/user/status/123/video/2",
+	} {
 		if _, err := tldw.ParseVideoRef(input); err == nil {
 			t.Fatalf("ParseVideoRef(%q) succeeded", input)
+		}
+	}
+}
+
+func TestXPostAliasesShareCacheKey(t *testing.T) {
+	const id = "2123051353505443912"
+	for _, input := range []string{
+		"https://x.com/AmpCode/status/" + id,
+		"https://twitter.com/AmpCode/status/" + id + "/?s=20",
+	} {
+		ref, err := tldw.ParseVideoRef(input)
+		if err != nil || !ref.IsX() || ref.ID() != id || ref.CacheKey() != "x."+id ||
+			ref.URL() != "https://x.com/AmpCode/status/"+id || !tldw.IsValidVideoCacheKey(ref.CacheKey()) {
+			t.Fatalf("ParseVideoRef(%q) = %+v, %v", input, ref, err)
 		}
 	}
 }

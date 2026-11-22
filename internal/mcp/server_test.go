@@ -28,12 +28,12 @@ type applicationStub struct {
 	lastRequest     tldw.TranscriptRequest
 }
 
-func (stub *applicationStub) MetadataFor(context.Context, tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
+func (stub *applicationStub) MetadataFor(context.Context, tldw.ContentRef) (*tldw.VideoMetadata, error) {
 	stub.metadataCalls++
 	return stub.metadata, stub.metadataErr
 }
 
-func (stub *applicationStub) Transcript(_ context.Context, _ tldw.YouTubeRef, request tldw.TranscriptRequest) (*tldw.Transcript, error) {
+func (stub *applicationStub) Transcript(_ context.Context, _ tldw.ContentRef, request tldw.TranscriptRequest) (*tldw.Transcript, error) {
 	stub.transcriptCalls++
 	stub.lastRequest = request
 	return stub.transcript, stub.transcriptErr
@@ -64,9 +64,9 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 		readOnly      bool
 	}{
 		"get_youtube_metadata": {
-			description: "Extract video metadata including caption availability. Check 'Has Captions' field to determine which transcript tool to use: if true, use get_youtube_transcript (free); if false, consider transcribe_youtube_whisper (paid).",
+			description: "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid Whisper transcription.",
 			inputFields: map[string]string{
-				"url": "YouTube video URL",
+				"url": "YouTube video URL or single-video X post URL",
 			},
 			requiredInput: []string{"url"},
 			outputFields: []string{
@@ -80,9 +80,9 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			readOnly: true,
 		},
 		"get_youtube_transcript": {
-			description: "Get existing YouTube captions/transcript (FREE). Only works if the video has captions - check metadata first. Fails if no captions available.",
+			description: "Get existing captions for a YouTube video or single-video X post (FREE).",
 			inputFields: map[string]string{
-				"url":                "YouTube video URL",
+				"url":                "YouTube video URL or single-video X post URL",
 				"include_timestamps": "When true, return transcript lines with timestamps if caption timing data is available.",
 			},
 			requiredInput: []string{"url"},
@@ -95,9 +95,9 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			readOnly: true,
 		},
 		"transcribe_youtube_whisper": {
-			description: "Create transcript using OpenAI Whisper API (PAID). Requires OPENAI_API_KEY environment variable to be set. Use only when videos have no captions and user explicitly agrees to incur costs. Always ask user for confirmation before calling this tool.",
+			description: "Transcribe a YouTube video or single-video X post using OpenAI Whisper (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost.",
 			inputFields: map[string]string{
-				"url":                "YouTube video URL",
+				"url":                "YouTube video URL or single-video X post URL",
 				"include_timestamps": "Reserved for future use. Timestamped Whisper transcripts are not supported yet.",
 			},
 			requiredInput: []string{"url"},

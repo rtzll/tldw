@@ -33,7 +33,7 @@ func (p *summaryProgress) finish() {
 	p.bar.Finish()
 }
 
-func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.YouTubeRef, fallbackWhisper bool) error {
+func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, fallbackWhisper bool) error {
 	if ref.IsPlaylist() {
 		return runPlaylistSummary(ctx, engine, config, ref, fallbackWhisper)
 	}
@@ -47,7 +47,7 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	summary, err := engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: policy})
 	if errors.Is(err, tldw.ErrCaptionsUnavailable) && !fallbackWhisper {
 		progress.finish()
-		if !askUser("Do you want to transcribe it using OpenAI's whisper ($$$)?") {
+		if !askUser(fmt.Sprintf("%v. Use paid Whisper transcription?", err)) {
 			return fmt.Errorf("transcription declined by user")
 		}
 		progress = newSummaryProgress(config, "Transcribing with OpenAI Whisper...")
@@ -68,14 +68,14 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	return nil
 }
 
-func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.YouTubeRef, fallbackWhisper bool) error {
+func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, fallbackWhisper bool) error {
 	request := tldw.PlaylistSummaryRequest{
 		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
 	}
 	if fallbackWhisper {
 		request.Transcript.Policy = tldw.TranscriptPolicyCaptionsThenWhisper
 	} else {
-		request.ConfirmWhisper = func(video tldw.YouTubeRef, metadata *tldw.VideoMetadata) bool {
+		request.ConfirmWhisper = func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
 			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use Whisper ($$$)?", video.ID(), metadata.Title))
 		}
 	}

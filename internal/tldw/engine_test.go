@@ -9,6 +9,48 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
+func TestXWhisperRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
+	ref, err := tldw.ParseVideoRef("https://x.com/creatine_cycle/status/2123846497540489345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookupErr := errors.New("post does not contain one accessible video")
+	for _, tc := range []struct {
+		name    string
+		policy  tldw.TranscriptPolicy
+		video   videoStub
+		wantErr error
+	}{
+		{"free", tldw.TranscriptPolicyCaptionsOnly, videoStub{metadata: &tldw.VideoMetadata{}}, tldw.ErrCaptionsUnavailable},
+		{"opted in", tldw.TranscriptPolicyCaptionsThenWhisper, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
+		{"dedicated paid tool", tldw.TranscriptPolicyWhisperOnly, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
+		{"invalid post", tldw.TranscriptPolicyWhisperOnly, videoStub{metadataErr: lookupErr}, lookupErr},
+		{"failed lookup", tldw.TranscriptPolicyCaptionsThenWhisper, videoStub{metadataErr: lookupErr}, lookupErr},
+		{"caption access failure", tldw.TranscriptPolicyCaptionsThenWhisper, videoStub{
+			metadata: &tldw.VideoMetadata{HasCaptions: true}, captionsErr: lookupErr,
+		}, lookupErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ai := &aiStub{transcription: "spoken text"}
+			engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: &tc.video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := engine.Transcript(t.Context(), ref, tldw.TranscriptRequest{Policy: tc.policy})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("got %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr != nil {
+				if tc.video.audioCalls != 0 || ai.transcribeCalls != 0 {
+					t.Fatal("started paid transcription after an unsuccessful caption check")
+				}
+			} else if tc.video.audioCalls != 1 || ai.transcribeCalls != 1 || got.Source != tldw.TranscriptSourceWhisper || got.VideoID != ref.CacheKey() {
+				t.Fatalf("incorrect Whisper result %+v, audio calls %d, transcription calls %d", got, tc.video.audioCalls, ai.transcribeCalls)
+			}
+		})
+	}
+}
+
 func TestEngineWhisperOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
 	store := &memoryStore{transcript: &tldw.Transcript{
 		VideoID: testVideoID, Source: tldw.TranscriptSourceCaptions, Text: "cached captions",
@@ -295,7 +337,7 @@ func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
 	video := &videoStub{
 		metadata: &tldw.VideoMetadata{Title: "First", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}},
 		captions: &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "playlist transcript"},
-		playlist: &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.YouTubeRef{videoRef}},
+		playlist: &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.ContentRef{videoRef}},
 	}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: &memoryStore{}, AI: &aiStub{summary: "## Playlist summary"}, Prompts: &promptStub{prompt: "prompt"},
@@ -325,7 +367,7 @@ func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
 		t.Fatalf("ParseReference() error = %v", err)
 	}
 	video := &videoStub{
-		playlist:  &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.YouTubeRef{videoRef}},
+		playlist:  &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.ContentRef{videoRef}},
 		metadata:  &tldw.VideoMetadata{Title: "No captions", Channel: "Channel", HasCaptions: false},
 		audioPath: "audio.mp3",
 	}
@@ -340,7 +382,7 @@ func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
 
 	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistSummaryRequest{
 		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
-		ConfirmWhisper: func(ref tldw.YouTubeRef, metadata *tldw.VideoMetadata) bool {
+		ConfirmWhisper: func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
 			confirmed = ref.ID() == testVideoID && metadata.Title == "No captions"
 			return true
 		},

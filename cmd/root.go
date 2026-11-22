@@ -20,10 +20,10 @@ var (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "tldw [URL]",
-	Short: "Too Long; Didn't Watch - YouTube video summarizer",
-	Long: `tldw (Too Long; Didn't Watch) summarizes YouTube videos and playlists using AI.
+	Short: "Too Long; Didn't Watch - YouTube and X video summarizer",
+	Long: `tldw (Too Long; Didn't Watch) summarizes YouTube videos, YouTube playlists, and single-video X posts using AI.
 
-It extracts transcripts directly from YouTube when available,
+It uses existing captions when available,
 or processes the audio with Whisper when transcripts are unavailable.
 
 Summaries use GPT-6 Luna (gpt-6-luna) by default.
@@ -69,7 +69,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if suggestion, ok := commandSuggestion(args[0], cmd.Root().Commands()); ok {
-			return fmt.Errorf("%s doesn't look like YouTube content; %s", args[0], suggestion)
+			return fmt.Errorf("%s doesn't look like a YouTube reference or X post; %s", args[0], suggestion)
 		}
 		if err := validateOpenAIRequirements(cmd, config); err != nil {
 			return err

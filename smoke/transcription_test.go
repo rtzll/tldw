@@ -42,28 +42,7 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 		t.Fatalf("CLI transcript does not appear to contain timestamps: %.100q", cliTranscript)
 	}
 
-	port := unusedPort(t)
-	server := exec.Command(binary, "mcp", "--transport=http", "--host=127.0.0.1", fmt.Sprintf("--port=%d", port))
-	server.Env = append(os.Environ(), xdg...)
-	var serverLog bytes.Buffer
-	server.Stdout = &serverLog
-	server.Stderr = &serverLog
-	if err := server.Start(); err != nil {
-		t.Fatalf("start MCP server: %v", err)
-	}
-	serverResult := &processResult{done: make(chan struct{})}
-	go func() {
-		serverResult.err = server.Wait()
-		close(serverResult.done)
-	}()
-	t.Cleanup(func() { stopProcess(t, server, serverResult, &serverLog) })
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	client := mcp.NewClient(&mcp.Implementation{Name: "tldw-smoke-test", Version: "1"}, nil)
-	endpoint := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
-	session := connectMCP(t, ctx, client, endpoint, serverResult, &serverLog)
-	defer session.Close()
+	ctx, session := startSmokeMCP(t, binary, xdg)
 
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
@@ -92,6 +71,83 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 		t.Fatalf("CLI and MCP transcripts differ\nCLI: %d bytes\nMCP: %d bytes", len(cliTranscript), len(mcpTranscript))
 	}
 	t.Logf("CLI and MCP returned the same timestamped transcript (%d bytes)", len(cliTranscript))
+}
+
+// This live check exercises only metadata and free captions, with a cold cache per transport.
+func TestSingleVideoXPostsThroughCLIAndMCP(t *testing.T) {
+	root := repositoryRoot(t)
+	binary := filepath.Join(t.TempDir(), "tldw")
+	run(t, root, nil, "go", "build", "-o", binary, ".")
+	cliEnv := isolatedXDG(t, "cli")
+	ctx, session := startSmokeMCP(t, binary, isolatedXDG(t, "mcp"))
+	for _, tc := range []struct {
+		name, url string
+		captions  bool
+	}{
+		{"captioned", "https://x.com/AmpCode/status/2123051353505443912", true},
+		{"uncaptioned", "https://x.com/creatine_cycle/status/2123846497540489345", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.CommandContext(ctx, binary, "transcribe", tc.url, "--quiet")
+			cmd.Env = append(os.Environ(), cliEnv...)
+			var cliText, cliError bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &cliText, &cliError
+			start := time.Now()
+			cliErr := cmd.Run()
+			cliTime := time.Since(start)
+			start = time.Now()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{
+				Name: "get_youtube_transcript", Arguments: map[string]any{"url": tc.url},
+			})
+			mcpTime := time.Since(start)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mcpText := textContent(result)
+			if tc.captions {
+				if cliErr != nil || result.IsError {
+					t.Fatalf("CLI: %v %s; MCP: %.300s", cliErr, cliError.String(), mcpText)
+				}
+				if mcpText == "" || strings.TrimSpace(cliText.String()) != strings.TrimSpace(mcpText) {
+					t.Fatal("expected matching, nonempty CLI and MCP transcripts")
+				}
+				t.Logf("Fetched %d bytes of captions in %v via CLI and %v via MCP", len(mcpText), cliTime.Round(time.Millisecond), mcpTime.Round(time.Millisecond))
+			} else {
+				if cliErr == nil || !strings.Contains(cliError.String(), "--fallback-whisper") ||
+					!result.IsError || !strings.Contains(mcpText, "transcribe_youtube_whisper") {
+					t.Fatalf("expected paid opt-in offers. CLI: %v %.300s; MCP: %.300s", cliErr, cliError.String(), mcpText)
+				}
+				t.Logf("MCP returned %s", mcpText)
+			}
+		})
+	}
+}
+
+func startSmokeMCP(t *testing.T, binary string, xdg []string) (context.Context, *mcp.ClientSession) {
+	t.Helper()
+	port := unusedPort(t)
+	server := exec.Command(binary, "mcp", "--transport=http", "--host=127.0.0.1", fmt.Sprintf("--port=%d", port))
+	server.Env = append(os.Environ(), xdg...)
+	var serverLog bytes.Buffer
+	server.Stdout = &serverLog
+	server.Stderr = &serverLog
+	if err := server.Start(); err != nil {
+		t.Fatalf("start MCP server: %v", err)
+	}
+	serverResult := &processResult{done: make(chan struct{})}
+	go func() {
+		serverResult.err = server.Wait()
+		close(serverResult.done)
+	}()
+	t.Cleanup(func() { stopProcess(t, server, serverResult, &serverLog) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
+	client := mcp.NewClient(&mcp.Implementation{Name: "tldw-smoke-test", Version: "1"}, nil)
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
+	session := connectMCP(t, ctx, client, endpoint, serverResult, &serverLog)
+	t.Cleanup(func() { _ = session.Close() })
+	return ctx, session
 }
 
 func repositoryRoot(t *testing.T) string {

@@ -15,7 +15,7 @@ func TestFindExistingTranscriptReturnsDirectoryErrors(t *testing.T) {
 	if err := os.WriteFile(cachePath, []byte("not a directory"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	yt := NewYouTube(t.TempDir(), cachePath, false, true)
+	yt := New(t.TempDir(), cachePath, false, true)
 
 	if _, err := yt.findExistingTranscript("dQw4w9WgXcQ", "en-orig"); err == nil {
 		t.Fatal("findExistingTranscript() ignored an unreadable cache directory")
@@ -67,7 +67,7 @@ func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
 		{name: "rate limit on stdout", cause: errors.New("exit status 1"), stdout: "HTTP Error 429", want: tldw.ErrRateLimited},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+			yt := New(t.TempDir(), t.TempDir(), false, true)
 			calls := 0
 			commandErr := &process.CommandError{Name: "yt-dlp", Stderr: tt.stderr, Err: tt.cause}
 			yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {
@@ -88,7 +88,7 @@ func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
 }
 
 func TestCaptionDownloadPreservesErrorChain(t *testing.T) {
-	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	yt := New(t.TempDir(), t.TempDir(), false, true)
 	calls := 0
 	cause := errors.New("network failure")
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, cause })
@@ -101,7 +101,7 @@ func TestCaptionDownloadPreservesErrorChain(t *testing.T) {
 
 func TestCanceledDownloadDoesNotAcceptPartialFiles(t *testing.T) {
 	dir := t.TempDir()
-	yt := NewYouTube(t.TempDir(), dir, false, true)
+	yt := New(t.TempDir(), dir, false, true)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {

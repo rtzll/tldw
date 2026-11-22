@@ -18,7 +18,7 @@ type blockingVideo struct {
 	release chan struct{}
 }
 
-func (v *blockingVideo) DownloadAudio(ctx context.Context, ref tldw.YouTubeRef) (string, error) {
+func (v *blockingVideo) DownloadAudio(ctx context.Context, ref tldw.ContentRef) (string, error) {
 	v.started <- ref.ID()
 	select {
 	case <-v.release:
@@ -50,7 +50,7 @@ func TestConcurrentTranscriptRequestsShareCacheAndAllowCancellation(t *testing.T
 		first, _ := tldw.ParseVideoRef(testVideoID)
 		other, _ := tldw.ParseVideoRef("tAP1eZYEuKA")
 		results := make(chan error, 3)
-		run := func(ref tldw.YouTubeRef) {
+		run := func(ref tldw.ContentRef) {
 			_, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
 			results <- err
 		}

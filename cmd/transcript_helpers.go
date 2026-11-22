@@ -25,29 +25,24 @@ func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, 
 		return "", err
 	}
 	format := requestedTranscriptFormat(cmd)
-
+	timestamps := format == tldw.TranscriptRenderFormatTimestamps
 	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-	if format == tldw.TranscriptRenderFormatTimestamps {
-		transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{
-			Policy:            tldw.TranscriptPolicyCaptionsOnly,
-			RequireTimestamps: true,
-		})
-		if err != nil {
-			if fallbackWhisper && (errors.Is(err, tldw.ErrCaptionsUnavailable) || errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable)) {
-				return "", fmt.Errorf("timestamps are not supported with Whisper fallback yet")
-			}
-			return "", err
-		}
-		return transcript.Render(format)
-	}
-
 	policy := tldw.TranscriptPolicyCaptionsOnly
-	if fallbackWhisper {
+	if fallbackWhisper && !timestamps {
 		policy = tldw.TranscriptPolicyCaptionsThenWhisper
 	}
-	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy})
+	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy, RequireTimestamps: timestamps})
 	if err != nil {
+		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
+			if timestamps {
+				return "", fmt.Errorf("%w. For paid plain-text transcription, rerun with --fallback-whisper and omit --timestamps", err)
+			}
+			return "", fmt.Errorf("%w. For paid Whisper transcription, rerun with --fallback-whisper", err)
+		}
+		if fallbackWhisper && errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
+			return "", fmt.Errorf("%w. Whisper fallback produces plain text", err)
+		}
 		return "", err
 	}
-	return transcript.Render(tldw.TranscriptRenderFormatPlain)
+	return transcript.Render(format)
 }

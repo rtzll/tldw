@@ -58,13 +58,13 @@ var ErrStoreNotFound = errors.New("store entry not found")
 // ErrStoreStale indicates that a cache entry exists but must be refreshed.
 var ErrStoreStale = errors.New("store entry is stale")
 
-// VideoAdapter is the seam between application workflows and YouTube access.
+// VideoAdapter is the seam between application workflows and video access.
 // Production uses yt-dlp; tests can provide a local adapter.
 type VideoAdapter interface {
-	FetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error)
-	FetchCaptions(ctx context.Context, ref YouTubeRef, metadata *VideoMetadata) (*Transcript, error)
-	DownloadAudio(ctx context.Context, ref YouTubeRef) (string, error)
-	FetchPlaylist(ctx context.Context, ref YouTubeRef) (*PlaylistInfo, error)
+	FetchMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error)
+	FetchCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata) (*Transcript, error)
+	DownloadAudio(ctx context.Context, ref ContentRef) (string, error)
+	FetchPlaylist(ctx context.Context, ref ContentRef) (*PlaylistInfo, error)
 }
 
 // AIAdapter is the seam for paid transcription and summary generation.
@@ -99,7 +99,7 @@ type Summary struct {
 
 type PlaylistSummaryRequest struct {
 	Transcript     TranscriptRequest
-	ConfirmWhisper func(ref YouTubeRef, metadata *VideoMetadata) bool
+	ConfirmWhisper func(ref ContentRef, metadata *VideoMetadata) bool
 }
 
 type PlaylistSummaryResult struct {
@@ -112,7 +112,7 @@ type PlaylistSummaryResult struct {
 
 // Transcript acquires a canonical transcript through one workflow shared by
 // CLI, MCP, summaries, and playlists.
-func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request TranscriptRequest) (*Transcript, error) {
+func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request TranscriptRequest) (*Transcript, error) {
 	if err := validateTranscriptRequest(request); err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
 	// Recheck the cache after acquiring the video gate; another request may have filled it.
-	release, err := app.transcriptWork.acquire(ctx, ref.ID())
+	release, err := app.transcriptWork.acquire(ctx, ref.CacheKey())
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	if locker, ok := app.store.(interface {
 		LockTranscript(context.Context, string) (func() error, error)
 	}); ok {
-		unlock, err := locker.LockTranscript(ctx, ref.ID())
+		unlock, err := locker.LockTranscript(ctx, ref.CacheKey())
 		if err != nil {
 			return nil, fmt.Errorf("locking transcript: %w", err)
 		}
@@ -139,7 +139,7 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 			}
 		}()
 	}
-	if transcript, err := app.store.LoadTranscript(ref.ID()); err == nil {
+	if transcript, err := app.store.LoadTranscript(ref.CacheKey()); err == nil {
 		if cachedTranscriptAllowed(transcript, request) {
 			return transcript, nil
 		}
@@ -147,6 +147,12 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return nil, fmt.Errorf("loading cached transcript: %w", err)
 	}
 	if request.Policy == TranscriptPolicyWhisperOnly {
+		// An X post URL alone cannot establish whether it contains one video.
+		if ref.IsX() {
+			if _, err := app.resolveMetadata(ctx, ref); err != nil {
+				return nil, fmt.Errorf("checking X post: %w", err)
+			}
+		}
 		return app.transcribeVideo(ctx, ref)
 	}
 
@@ -155,11 +161,15 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 		return nil, fmt.Errorf("checking video metadata: %w", err)
 	}
 	if !metadata.HasCaptions {
-		if request.RequireTimestamps {
-			return nil, ErrTranscriptTimestampsUnavailable
-		}
-		if request.Policy == TranscriptPolicyCaptionsOnly {
-			return nil, fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.ID())
+		if request.Policy == TranscriptPolicyCaptionsOnly || request.RequireTimestamps {
+			err := fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.URL())
+			if metadata.Duration > 0 {
+				err = fmt.Errorf("%w (duration %s)", err, time.Duration(metadata.Duration)*time.Second)
+			}
+			if request.RequireTimestamps {
+				return nil, fmt.Errorf("%w: %w", ErrTranscriptTimestampsUnavailable, err)
+			}
+			return nil, err
 		}
 		return app.transcribeVideo(ctx, ref)
 	}
@@ -200,20 +210,22 @@ func (app *Engine) Transcript(ctx context.Context, ref YouTubeRef, request Trans
 	if terminalTranscriptError(err) {
 		return nil, err
 	}
-	if (err != nil || transcript == nil) && request.Policy == TranscriptPolicyCaptionsThenWhisper && !request.RequireTimestamps {
+	// On X, a failed caption download does not establish that captions are absent.
+	allowFallback := !ref.IsX() || errors.Is(err, ErrCaptionsUnavailable)
+	if (err != nil || transcript == nil) && allowFallback && request.Policy == TranscriptPolicyCaptionsThenWhisper && !request.RequireTimestamps {
 		return app.transcribeVideo(ctx, ref)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("fetching captions: %w", err)
 	}
 	if transcript == nil {
-		return nil, fmt.Errorf("no transcript available for %s", ref.ID())
+		return nil, fmt.Errorf("no transcript available for %s", ref.CacheKey())
 	}
 	if request.RequireTimestamps && !transcript.HasTimestamps() {
 		return nil, ErrTranscriptTimestampsUnavailable
 	}
 
-	transcript.VideoID = ref.ID()
+	transcript.VideoID = ref.CacheKey()
 	if err := app.persistTranscript(transcript); err != nil {
 		app.log.Printf("Warning: %v\n", err)
 	}
@@ -236,7 +248,7 @@ func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) 
 
 // SummarizeVideo acquires a transcript and returns raw Markdown without
 // transport-specific rendering or output.
-func (app *Engine) SummarizeVideo(ctx context.Context, ref YouTubeRef, request TranscriptRequest) (Summary, error) {
+func (app *Engine) SummarizeVideo(ctx context.Context, ref ContentRef, request TranscriptRequest) (Summary, error) {
 	transcript, err := app.Transcript(ctx, ref, request)
 	if err != nil {
 		return Summary{}, err
@@ -264,7 +276,7 @@ func (app *Engine) SummarizeVideo(ctx context.Context, ref YouTubeRef, request T
 // CreatePlaylistSummary owns playlist traversal and transcript acquisition but
 // returns transport-neutral output. A caller may provide a consent callback;
 // the application module never prompts or prints directly.
-func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref YouTubeRef, request PlaylistSummaryRequest) (PlaylistSummaryResult, error) {
+func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, request PlaylistSummaryRequest) (PlaylistSummaryResult, error) {
 	if err := validateTranscriptRequest(request.Transcript); err != nil {
 		return PlaylistSummaryResult{}, err
 	}
@@ -343,24 +355,24 @@ func validateTranscriptRequest(request TranscriptRequest) error {
 	return nil
 }
 
-func (app *Engine) resolveMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+func (app *Engine) resolveMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error) {
 	return app.resolveMetadataWithPolicy(ctx, ref, false)
 }
 
-func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref YouTubeRef, refreshNegative bool) (*VideoMetadata, error) {
-	release, err := app.metadataWork.acquire(ctx, ref.ID())
+func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref ContentRef, refreshNegative bool) (*VideoMetadata, error) {
+	release, err := app.metadataWork.acquire(ctx, ref.CacheKey())
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	if cached, ok := app.getCachedMetadata(ref.ID()); ok {
+	if cached, ok := app.getCachedMetadata(ref.CacheKey()); ok {
 		return app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
 	}
 
-	if cached, err := app.store.LoadMetadata(ref.ID()); err == nil {
+	if cached, err := app.store.LoadMetadata(ref.CacheKey()); err == nil {
 		resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
 		if refreshErr == nil {
-			app.setCachedMetadata(ref.ID(), resolved)
+			app.setCachedMetadata(ref.CacheKey(), resolved)
 		}
 		return resolved, refreshErr
 	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
@@ -370,7 +382,7 @@ func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref YouTubeRef
 	return app.fetchMetadata(ctx, ref)
 }
 
-func (app *Engine) fetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+func (app *Engine) fetchMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error) {
 	metadata, err := app.video.FetchMetadata(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -378,11 +390,11 @@ func (app *Engine) fetchMetadata(ctx context.Context, ref YouTubeRef) (*VideoMet
 	if metadata == nil {
 		return nil, fmt.Errorf("video adapter returned no metadata")
 	}
-	app.cacheMetadata(ref.ID(), metadata)
+	app.cacheMetadata(ref.CacheKey(), metadata)
 	return metadata, nil
 }
 
-func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref YouTubeRef, cached *VideoMetadata, refreshNegative bool) (*VideoMetadata, error) {
+func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref ContentRef, cached *VideoMetadata, refreshNegative bool) (*VideoMetadata, error) {
 	if !metadataNeedsRefresh(cached) && (!refreshNegative || cached.HasCaptions) {
 		return cached, nil
 	}
@@ -406,7 +418,7 @@ func (app *Engine) cacheMetadata(videoID string, metadata *VideoMetadata) {
 	app.setCachedMetadata(videoID, metadata)
 }
 
-func (app *Engine) transcribeVideo(ctx context.Context, ref YouTubeRef) (*Transcript, error) {
+func (app *Engine) transcribeVideo(ctx context.Context, ref ContentRef) (*Transcript, error) {
 	audioFile, err := app.video.DownloadAudio(ctx, ref)
 	if err != nil {
 		return nil, fmt.Errorf("downloading audio: %w", err)
@@ -415,7 +427,7 @@ func (app *Engine) transcribeVideo(ctx context.Context, ref YouTubeRef) (*Transc
 	if err != nil {
 		return nil, err
 	}
-	transcript.VideoID = ref.ID()
+	transcript.VideoID = ref.CacheKey()
 	if err := app.persistTranscript(transcript); err != nil {
 		app.log.Printf("Warning: %v\n", err)
 	}

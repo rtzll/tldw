@@ -13,8 +13,8 @@ type discardLogSink struct{}
 
 func (discardLogSink) Printf(string, ...any) {}
 
-// YouTube implements video access through yt-dlp.
-type YouTube struct {
+// Client implements video access through yt-dlp.
+type Client struct {
 	transcriptsDir string
 	cacheDir       string
 	verbose        bool
@@ -23,9 +23,9 @@ type YouTube struct {
 	executor       process.Runner
 }
 
-// NewYouTube creates a YouTube downloader with explicit storage paths.
-func NewYouTube(transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouTube {
-	return &YouTube{
+// New creates a yt-dlp client with explicit storage paths.
+func New(transcriptsDir, cacheDir string, verbose bool, quiet bool) *Client {
+	return &Client{
 		transcriptsDir: transcriptsDir,
 		cacheDir:       cacheDir,
 		verbose:        verbose,
@@ -35,31 +35,34 @@ func NewYouTube(transcriptsDir, cacheDir string, verbose bool, quiet bool) *YouT
 	}
 }
 
-func (yt *YouTube) SetLogSink(log tldw.LogSink) {
+func (yt *Client) SetLogSink(log tldw.LogSink) {
 	yt.log = log
 }
 
-func (yt *YouTube) FetchMetadata(ctx context.Context, ref tldw.YouTubeRef) (*tldw.VideoMetadata, error) {
+func (yt *Client) FetchMetadata(ctx context.Context, ref tldw.ContentRef) (*tldw.VideoMetadata, error) {
 	return yt.metadata(ctx, ref)
 }
 
-func (yt *YouTube) FetchCaptions(ctx context.Context, ref tldw.YouTubeRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
+func (yt *Client) FetchCaptions(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
 	return yt.fetchStructuredTranscript(ctx, ref, metadata)
 }
 
-func (yt *YouTube) DownloadAudio(ctx context.Context, ref tldw.YouTubeRef) (string, error) {
+func (yt *Client) DownloadAudio(ctx context.Context, ref tldw.ContentRef) (string, error) {
 	return yt.audio(ctx, ref)
 }
 
-func (yt *YouTube) FetchPlaylist(ctx context.Context, ref tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
+func (yt *Client) FetchPlaylist(ctx context.Context, ref tldw.ContentRef) (*tldw.PlaylistInfo, error) {
 	return yt.playlistVideoURLs(ctx, ref)
 }
 
-func youtubeLookupArgs() []string {
-	return []string{
-		"--sleep-interval", "1",
-		"--max-sleep-interval", "3",
-		"--extractor-args", youtubeExtractorPolicy,
-		"-q",
+func extractorArgs(ref tldw.ContentRef) []string {
+	if ref.IsX() {
+		// A text-only post can link to an external page. Only resolve X videos.
+		return []string{"--use-extractors", "twitter"}
 	}
+	return []string{"--extractor-args", youtubeExtractorPolicy}
+}
+
+func lookupArgs(ref tldw.ContentRef) []string {
+	return append([]string{"--sleep-interval", "1", "--max-sleep-interval", "3", "-q"}, extractorArgs(ref)...)
 }

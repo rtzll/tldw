@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,29 +12,34 @@ import (
 )
 
 func TestAudioUsesConfiguredCacheDir(t *testing.T) {
-	cacheDir := filepath.Join(t.TempDir(), "cache")
-	yt := NewYouTube(t.TempDir(), cacheDir, false, true)
-	yt.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		for i, arg := range args {
-			if arg == "-o" {
-				path := strings.ReplaceAll(strings.ReplaceAll(args[i+1], "%(id)s", "dQw4w9WgXcQ"), "%(ext)s", "mp3")
-				return nil, os.WriteFile(path, []byte("audio"), 0644)
+	for _, tc := range []struct {
+		url, mediaID, cacheKey, format string
+	}{
+		{"dQw4w9WgXcQ", "dQw4w9WgXcQ", "dQw4w9WgXcQ", "bestaudio"},
+		{"https://x.com/creatine_cycle/status/2123846497540489345", "2123844682560290816", "x.2123846497540489345", "bestaudio/best"},
+	} {
+		t.Run(tc.cacheKey, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			yt := New(t.TempDir(), cacheDir, false, true)
+			yt.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
+				if i := slices.Index(args, "-f"); i < 0 || args[i+1] != tc.format {
+					t.Fatalf("unexpected audio format in %v", args)
+				}
+				i := slices.Index(args, "-o")
+				if i < 0 {
+					t.Fatal("missing output template")
+				}
+				path := strings.NewReplacer("%(id)s", tc.mediaID, "%(ext)s", "mp3").Replace(args[i+1])
+				return nil, os.WriteFile(path, []byte("audio"), 0o600)
+			})
+			ref, err := tldw.ParseVideoRef(tc.url)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-		return nil, nil
-	})
-	ref, err := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	if err != nil {
-		t.Fatalf("ParseVideoRef() error = %v", err)
-	}
-
-	got, err := yt.DownloadAudio(context.Background(), ref)
-	if err != nil {
-		t.Fatalf("DownloadAudio() error = %v", err)
-	}
-
-	want := filepath.Join(cacheDir, "dQw4w9WgXcQ.mp3")
-	if got != want {
-		t.Fatalf("DownloadAudio() = %q, want %q", got, want)
+			got, err := yt.DownloadAudio(t.Context(), ref)
+			if err != nil || got != filepath.Join(cacheDir, tc.cacheKey+".mp3") {
+				t.Fatalf("DownloadAudio() = %q, %v", got, err)
+			}
+		})
 	}
 }

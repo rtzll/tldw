@@ -118,7 +118,7 @@ func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
 	var skipped []error
 	for _, path := range files {
 		videoID := strings.TrimSuffix(filepath.Base(path), ".meta.json")
-		if !tldw.IsValidVideoID(videoID) {
+		if !tldw.IsValidVideoCacheKey(videoID) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Clean(path))
@@ -209,8 +209,8 @@ func cachedMetadataFirstSeenAt(path string, cached cachedMetadata) (time.Time, e
 }
 
 func (s *File) cachePath(videoID, suffix string) (string, error) {
-	if !tldw.IsValidVideoID(videoID) {
-		return "", fmt.Errorf("invalid YouTube video ID: %q", videoID)
+	if !tldw.IsValidVideoCacheKey(videoID) {
+		return "", fmt.Errorf("invalid video cache key: %q", videoID)
 	}
 	return filepath.Join(s.dir, videoID+suffix), nil
 }

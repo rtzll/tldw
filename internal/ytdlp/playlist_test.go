@@ -8,7 +8,7 @@ import (
 )
 
 func TestPlaylistVideoURLsSkipsInvalidVideoIDs(t *testing.T) {
-	yt := NewYouTube(t.TempDir(), t.TempDir(), false, true)
+	yt := New(t.TempDir(), t.TempDir(), false, true)
 	yt.executor = &mockCommandRunner{output: []byte(`{
 		"title":"Playlist",
 		"entries":[

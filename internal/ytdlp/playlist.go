@@ -17,7 +17,7 @@ type playlistMetadata struct {
 	Entries []playlistEntry `json:"entries"`
 }
 
-func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref tldw.YouTubeRef) (*tldw.PlaylistInfo, error) {
+func (yt *Client) playlistVideoURLs(ctx context.Context, ref tldw.ContentRef) (*tldw.PlaylistInfo, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Extracting playlist video URLs...\n")
 	}
@@ -27,7 +27,7 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref tldw.YouTubeRef) (
 		"--flat-playlist",
 		"--dump-single-json",
 	}
-	args = append(args, youtubeLookupArgs()...)
+	args = append(args, lookupArgs(ref)...)
 	args = append(args, ref.URL())
 
 	// Run the command
@@ -50,7 +50,7 @@ func (yt *YouTube) playlistVideoURLs(ctx context.Context, ref tldw.YouTubeRef) (
 	}
 
 	// Extract video URLs
-	var videos []tldw.YouTubeRef
+	var videos []tldw.ContentRef
 	for _, entry := range playlist.Entries {
 		if tldw.IsValidVideoID(entry.ID) {
 			ref, err := tldw.ParseVideoRef(entry.ID)

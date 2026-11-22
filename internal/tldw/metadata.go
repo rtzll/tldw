@@ -2,7 +2,7 @@ package tldw
 
 import "time"
 
-// VideoMetadata contains transport-neutral YouTube video information.
+// VideoMetadata contains transport-neutral video information.
 type VideoMetadata struct {
 	// CheckedAt records when metadata was fetched; it is not part of the public JSON.
 	CheckedAt        time.Time      `json:"-"`
@@ -23,7 +23,7 @@ type VideoMetadata struct {
 }
 
 // CaptionTrack identifies a caption language and its origin without retaining
-// YouTube's signed download URLs. Direct excludes automatic translations.
+// signed download URLs. Direct excludes automatic translations.
 type CaptionTrack struct {
 	Language  string `json:"language"`
 	Automatic bool   `json:"automatic"`

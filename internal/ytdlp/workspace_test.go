@@ -20,7 +20,7 @@ func TestConcurrentDownloadsUsePrivateWorkspaces(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				started := make(chan string, 2)
 				release := make(chan struct{})
-				yt := NewYouTube(data, root, false, true)
+				yt := New(data, root, false, true)
 				yt.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
 					for i, arg := range args {
 						if arg != "-o" {

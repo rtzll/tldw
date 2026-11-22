@@ -104,7 +104,7 @@ func metadataNeedsRefresh(metadata *VideoMetadata) bool {
 }
 
 // MetadataFor resolves metadata for an already validated video reference.
-func (app *Engine) MetadataFor(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+func (app *Engine) MetadataFor(ctx context.Context, ref ContentRef) (*VideoMetadata, error) {
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("metadata requires a valid video reference")
 	}
@@ -149,11 +149,11 @@ func (app *Engine) buildPlaylistTranscript(playlistTitle string, videos []VideoT
 }
 
 // RefreshMetadata bypasses both metadata caches for an explicit fresh lookup.
-func (app *Engine) RefreshMetadata(ctx context.Context, ref YouTubeRef) (*VideoMetadata, error) {
+func (app *Engine) RefreshMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error) {
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("metadata requires a valid video reference")
 	}
-	release, err := app.metadataWork.acquire(ctx, ref.ID())
+	release, err := app.metadataWork.acquire(ctx, ref.CacheKey())
 	if err != nil {
 		return nil, err
 	}

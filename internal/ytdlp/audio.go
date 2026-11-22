@@ -9,8 +9,8 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-// Audio gets mp3 audio from a YouTube video
-func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, error) {
+// audio downloads and caches the video's audio as MP3.
+func (yt *Client) audio(ctx context.Context, ref tldw.ContentRef) (string, error) {
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading audio...\n")
 	}
@@ -21,7 +21,7 @@ func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, erro
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	outputFile := filepath.Join(cacheDir, ref.ID()+".mp3")
+	outputFile := filepath.Join(cacheDir, ref.CacheKey()+".mp3")
 	if info, err := os.Stat(outputFile); err == nil && info.Mode().IsRegular() && info.Size() > 0 {
 		return outputFile, nil
 	}
@@ -34,17 +34,23 @@ func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, erro
 			yt.log.Printf("Warning: failed to clean download workspace: %v\n", err)
 		}
 	}()
-	outputPath := filepath.Join(workDir, "%(id)s.%(ext)s")
+	outputPath := filepath.Join(workDir, ref.CacheKey()+".%(ext)s")
 
 	// Build arguments for yt-dlp command
-	args := []string{
-		"-f", "bestaudio", // Select best audio format
+	format := "bestaudio"
+	var args []string
+	if ref.IsX() {
+		format = "bestaudio/best"
+		args = append(args, extractorArgs(ref)...)
+	}
+	args = append(args,
+		"-f", format,
 		"--extract-audio",       // Extract audio from video
 		"--audio-format", "mp3", // Convert to MP3 format
 		"--audio-quality", "10", // Set audio quality (0 is best, 10 is worst)
 		"-o", outputPath, // Output to XDG cache directory
-		ref.URL(), // The YouTube URL
-	}
+		ref.URL(),
+	)
 
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if err != nil {
@@ -59,7 +65,7 @@ func (yt *YouTube) audio(ctx context.Context, ref tldw.YouTubeRef) (string, erro
 	}
 
 	// Return the full path to the downloaded file
-	downloaded := filepath.Join(workDir, ref.ID()+".mp3")
+	downloaded := filepath.Join(workDir, ref.CacheKey()+".mp3")
 	if info, err := os.Stat(downloaded); err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
 		return "", fmt.Errorf("audio download produced no usable file")
 	}
