@@ -14,8 +14,8 @@ type TranscriptPolicy int
 
 const (
 	TranscriptPolicyCaptionsOnly TranscriptPolicy = iota
-	TranscriptPolicyCaptionsThenWhisper
-	TranscriptPolicyWhisperOnly
+	TranscriptPolicyCaptionsThenPaidTranscription
+	TranscriptPolicyPaidTranscriptionOnly
 )
 
 // TranscriptRequest describes transcript acquisition without presentation
@@ -98,8 +98,8 @@ type Summary struct {
 }
 
 type PlaylistSummaryRequest struct {
-	Transcript     TranscriptRequest
-	ConfirmWhisper func(ref ContentRef, metadata *VideoMetadata) bool
+	Transcript               TranscriptRequest
+	ConfirmPaidTranscription func(ref ContentRef, metadata *VideoMetadata) bool
 }
 
 type PlaylistSummaryResult struct {
@@ -146,7 +146,7 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
 		return nil, fmt.Errorf("loading cached transcript: %w", err)
 	}
-	if request.Policy == TranscriptPolicyWhisperOnly {
+	if request.Policy == TranscriptPolicyPaidTranscriptionOnly {
 		// An X post URL alone cannot establish whether it contains one video.
 		if ref.IsX() {
 			if _, err := app.resolveMetadata(ctx, ref); err != nil {
@@ -156,7 +156,7 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 		return app.transcribeVideo(ctx, ref)
 	}
 
-	metadata, err := app.resolveMetadataWithPolicy(ctx, ref, request.Policy == TranscriptPolicyCaptionsThenWhisper)
+	metadata, err := app.resolveMetadataWithPolicy(ctx, ref, request.Policy == TranscriptPolicyCaptionsThenPaidTranscription)
 	if err != nil {
 		return nil, fmt.Errorf("checking video metadata: %w", err)
 	}
@@ -212,7 +212,7 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 	}
 	// On X, a failed caption download does not establish that captions are absent.
 	allowFallback := !ref.IsX() || errors.Is(err, ErrCaptionsUnavailable)
-	if (err != nil || transcript == nil) && allowFallback && request.Policy == TranscriptPolicyCaptionsThenWhisper && !request.RequireTimestamps {
+	if (err != nil || transcript == nil) && allowFallback && request.Policy == TranscriptPolicyCaptionsThenPaidTranscription && !request.RequireTimestamps {
 		return app.transcribeVideo(ctx, ref)
 	}
 	if err != nil {
@@ -239,8 +239,8 @@ func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) 
 	switch request.Policy {
 	case TranscriptPolicyCaptionsOnly:
 		return transcript.Source == TranscriptSourceCaptions
-	case TranscriptPolicyWhisperOnly:
-		return transcript.Source == TranscriptSourceWhisper
+	case TranscriptPolicyPaidTranscriptionOnly:
+		return transcript.Source == TranscriptSourcePaidTranscription
 	default:
 		return true
 	}
@@ -302,8 +302,8 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 		if metadataErr != nil {
 			metadata = &VideoMetadata{Title: fmt.Sprintf("Video %d", i+1), Channel: "Unknown", Description: "Metadata fetch failed"}
 		}
-		if errors.Is(transcriptErr, ErrCaptionsUnavailable) && request.ConfirmWhisper != nil && request.ConfirmWhisper(videoRef, metadata) {
-			transcript, transcriptErr = app.Transcript(ctx, videoRef, TranscriptRequest{Policy: TranscriptPolicyWhisperOnly})
+		if errors.Is(transcriptErr, ErrCaptionsUnavailable) && request.ConfirmPaidTranscription != nil && request.ConfirmPaidTranscription(videoRef, metadata) {
+			transcript, transcriptErr = app.Transcript(ctx, videoRef, TranscriptRequest{Policy: TranscriptPolicyPaidTranscriptionOnly})
 		}
 		if transcriptErr != nil {
 			result.Skipped = append(result.Skipped, fmt.Sprintf("Video %d: %s (transcript error)", i+1, metadata.Title))
@@ -345,11 +345,11 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 
 func validateTranscriptRequest(request TranscriptRequest) error {
 	switch request.Policy {
-	case TranscriptPolicyCaptionsOnly, TranscriptPolicyCaptionsThenWhisper, TranscriptPolicyWhisperOnly:
+	case TranscriptPolicyCaptionsOnly, TranscriptPolicyCaptionsThenPaidTranscription, TranscriptPolicyPaidTranscriptionOnly:
 	default:
 		return fmt.Errorf("%w: %d", ErrInvalidTranscriptPolicy, request.Policy)
 	}
-	if request.RequireTimestamps && request.Policy == TranscriptPolicyWhisperOnly {
+	if request.RequireTimestamps && request.Policy == TranscriptPolicyPaidTranscriptionOnly {
 		return ErrTranscriptTimestampsUnavailable
 	}
 	return nil
@@ -435,16 +435,16 @@ func (app *Engine) transcribeVideo(ctx context.Context, ref ContentRef) (*Transc
 }
 
 func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Transcript, error) {
-	if app.config.WhisperTimeout > 0 {
+	if app.config.TranscriptionTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, app.config.WhisperTimeout)
+		ctx, cancel = context.WithTimeout(ctx, app.config.TranscriptionTimeout)
 		defer cancel()
 	}
 	text, err := app.ai.Transcribe(ctx, audioFile)
 	if err != nil {
 		return nil, err
 	}
-	return &Transcript{Source: TranscriptSourceWhisper, Text: strings.TrimSpace(text)}, nil
+	return &Transcript{Source: TranscriptSourcePaidTranscription, Text: strings.TrimSpace(text)}, nil
 }
 
 func (app *Engine) persistTranscript(transcript *Transcript) error {

@@ -28,15 +28,15 @@ func TestNewEngineRejectsInvalidDependenciesAndConfig(t *testing.T) {
 			}
 		})
 	}
-	if _, err := tldw.NewEngine(tldw.Config{WhisperTimeout: -time.Second}, valid); err == nil {
-		t.Fatal("NewEngine() accepted a negative Whisper timeout")
+	if _, err := tldw.NewEngine(tldw.Config{TranscriptionTimeout: -time.Second}, valid); err == nil {
+		t.Fatal("NewEngine() accepted a negative transcription timeout")
 	}
 }
 
-func TestEngineAppliesWhisperTimeout(t *testing.T) {
+func TestEngineAppliesTranscriptionTimeout(t *testing.T) {
 	video := &videoStub{audioPath: "audio.mp3"}
 	ai := &aiStub{transcription: "transcript"}
-	engine, err := tldw.NewEngine(tldw.Config{WhisperTimeout: time.Minute}, tldw.Dependencies{
+	engine, err := tldw.NewEngine(tldw.Config{TranscriptionTimeout: time.Minute}, tldw.Dependencies{
 		Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{},
 	})
 	if err != nil {
@@ -48,7 +48,7 @@ func TestEngineAppliesWhisperTimeout(t *testing.T) {
 	}
 
 	if _, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyWhisperOnly,
+		Policy: tldw.TranscriptPolicyPaidTranscriptionOnly,
 	}); err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
@@ -158,7 +158,7 @@ func TestNegativeCaptionCacheRefresh(t *testing.T) {
 			ref, _ := tldw.ParseVideoRef(testVideoID)
 			policy := tldw.TranscriptPolicyCaptionsOnly
 			if tt.paid {
-				policy = tldw.TranscriptPolicyCaptionsThenWhisper
+				policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
 			}
 			result, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: policy})
 			if tt.fail {

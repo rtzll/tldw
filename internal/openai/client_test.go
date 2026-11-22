@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const WhisperLimit int64 = 25 << 20
+const TranscriptionUploadLimit int64 = 25 << 20
 
 func TestSDKClientTranscriptionModel(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ type mockOpenAIClient struct {
 
 func TestNewAIRejectsInvalidConfiguration(t *testing.T) {
 	audio := NewAudio(&mockCommandRunner{}, t.TempDir())
-	valid := Config{Model: "gpt-6-luna", WhisperLimit: WhisperLimit}
+	valid := Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit}
 
 	tests := []struct {
 		name   string
@@ -67,9 +67,9 @@ func TestNewAIRejectsInvalidConfiguration(t *testing.T) {
 		config Config
 	}{
 		{name: "audio", config: valid},
-		{name: "model", audio: audio, config: Config{WhisperLimit: WhisperLimit}},
-		{name: "whisper limit", audio: audio, config: Config{Model: "gpt-6-luna"}},
-		{name: "timeout", audio: audio, config: Config{Model: "gpt-6-luna", WhisperLimit: WhisperLimit, Timeout: -time.Second}},
+		{name: "model", audio: audio, config: Config{TranscriptionUploadLimit: TranscriptionUploadLimit}},
+		{name: "transcription upload limit", audio: audio, config: Config{Model: "gpt-6-luna"}},
+		{name: "timeout", audio: audio, config: Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit, Timeout: -time.Second}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -103,7 +103,7 @@ func (m *mockOpenAIClient) CreateChatCompletion(ctx context.Context, model, prom
 
 func TestAIWithKeyRequiresKeyWhenUsed(t *testing.T) {
 	ai, err := NewAIWithKey("", NewAudio(&mockCommandRunner{}, t.TempDir()), Config{
-		Model: "gpt-6-luna", WhisperLimit: WhisperLimit,
+		Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit,
 	})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
@@ -145,7 +145,7 @@ func TestAITranscribeResplitsOversizedChunks(t *testing.T) {
 	if err := os.WriteFile(input, []byte("four"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ai, err := NewAIWithKey("test", NewAudio(oversizedChunkRunner{}, dir), Config{Model: "test", WhisperLimit: 2})
+	ai, err := NewAIWithKey("test", NewAudio(oversizedChunkRunner{}, dir), Config{Model: "test", TranscriptionUploadLimit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestAITranscribeSplitsLargeAudio(t *testing.T) {
 	}
 	client := &mockOpenAIClient{transcription: "chunk transcript"}
 	ai, err := NewAIWithKey("test-key", NewAudio(chunkingRunner{}, tempDir), Config{
-		Model: "gpt-6-luna", WhisperLimit: 2,
+		Model: "gpt-6-luna", TranscriptionUploadLimit: 2,
 	})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
@@ -194,7 +194,7 @@ func TestAITranscribeReturnsClientError(t *testing.T) {
 		t.Fatalf("writing audio input: %v", err)
 	}
 	ai, err := NewAIWithKey("test-key", NewAudio(&mockCommandRunner{}, t.TempDir()), Config{
-		Model: "gpt-6-luna", WhisperLimit: WhisperLimit,
+		Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit,
 	})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
@@ -210,7 +210,7 @@ func TestAISummary(t *testing.T) {
 	client := &mockOpenAIClient{chatResponse: "A summary", checkContext: true}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir())
-	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", WhisperLimit: WhisperLimit})
+	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestAISummary(t *testing.T) {
 func TestAITranscribePreservesCallerAudioFile(t *testing.T) {
 	client := &mockOpenAIClient{transcription: "A transcript"}
 	audio := NewAudio(&mockCommandRunner{}, t.TempDir())
-	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", WhisperLimit: WhisperLimit})
+	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
@@ -257,7 +257,7 @@ func TestAISummaryError(t *testing.T) {
 	client := &mockOpenAIClient{err: fmt.Errorf("API error")}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir())
-	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", WhisperLimit: WhisperLimit})
+	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}

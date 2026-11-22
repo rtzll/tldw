@@ -33,25 +33,25 @@ func (p *summaryProgress) finish() {
 	p.bar.Finish()
 }
 
-func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, fallbackWhisper bool) error {
+func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool) error {
 	if ref.IsPlaylist() {
-		return runPlaylistSummary(ctx, engine, config, ref, fallbackWhisper)
+		return runPlaylistSummary(ctx, engine, config, ref, allowPaidTranscription)
 	}
 
 	progress := newSummaryProgress(config, "Processing video...")
 	policy := tldw.TranscriptPolicyCaptionsOnly
-	if fallbackWhisper {
-		policy = tldw.TranscriptPolicyCaptionsThenWhisper
+	if allowPaidTranscription {
+		policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
 	}
 	progress.update("Generating summary with OpenAI...")
 	summary, err := engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: policy})
-	if errors.Is(err, tldw.ErrCaptionsUnavailable) && !fallbackWhisper {
+	if errors.Is(err, tldw.ErrCaptionsUnavailable) && !allowPaidTranscription {
 		progress.finish()
 		if !askUser(fmt.Sprintf("%v. Use paid OpenAI transcription?", err)) {
 			return fmt.Errorf("transcription declined by user")
 		}
 		progress = newSummaryProgress(config, "Transcribing with OpenAI...")
-		summary, err = engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
+		summary, err = engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyPaidTranscriptionOnly})
 	}
 	if err != nil {
 		progress.finish()
@@ -68,14 +68,14 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	return nil
 }
 
-func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, fallbackWhisper bool) error {
+func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool) error {
 	request := tldw.PlaylistSummaryRequest{
 		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
 	}
-	if fallbackWhisper {
-		request.Transcript.Policy = tldw.TranscriptPolicyCaptionsThenWhisper
+	if allowPaidTranscription {
+		request.Transcript.Policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
 	} else {
-		request.ConfirmWhisper = func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
+		request.ConfirmPaidTranscription = func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
 			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use paid OpenAI transcription?", video.ID(), metadata.Title))
 		}
 	}

@@ -34,7 +34,7 @@ func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error
 	audio := openaiadapter.NewAudio(runner, config.TempDir)
 	video := ytdlpadapter.New(config.TranscriptsDir, config.CacheDir, config.Verbose, config.Quiet)
 	ai, err := openaiadapter.NewAIWithKey(config.OpenAIAPIKey, audio, openaiadapter.Config{
-		Model: config.TLDRModel, WhisperLimit: internal.WhisperLimit, Timeout: config.SummaryTimeout,
+		Model: config.TLDRModel, TranscriptionUploadLimit: internal.TranscriptionUploadLimit, Timeout: config.SummaryTimeout,
 		Verbose: config.Verbose, Quiet: config.Quiet,
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error
 	ai.SetLogSink(log)
 	return tldw.NewEngine(
 		tldw.Config{
-			WhisperTimeout: config.WhisperTimeout,
+			TranscriptionTimeout: config.TranscriptionTimeout,
 		},
 		tldw.Dependencies{
 			Video:   video,

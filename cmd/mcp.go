@@ -22,7 +22,7 @@ var mcpCmd = &cobra.Command{
 The MCP server provides three video tools:
 - get_youtube_metadata: Extract video metadata as formatted text
 - get_youtube_transcript: Fetch built-in captions
-- transcribe_youtube_whisper: Transcribe audio with OpenAI (paid)
+- transcribe_video_paid: Transcribe audio with OpenAI (paid)
 
 This allows AI assistants to use TL;DW capabilities through the MCP protocol.
 

@@ -26,20 +26,20 @@ func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, 
 	}
 	format := requestedTranscriptFormat(cmd)
 	timestamps := format == tldw.TranscriptRenderFormatTimestamps
-	fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
+	allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")
 	policy := tldw.TranscriptPolicyCaptionsOnly
-	if fallbackWhisper && !timestamps {
-		policy = tldw.TranscriptPolicyCaptionsThenWhisper
+	if allowPaidTranscription && !timestamps {
+		policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
 	}
 	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy, RequireTimestamps: timestamps})
 	if err != nil {
 		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
 			if timestamps {
-				return "", fmt.Errorf("%w. For paid plain-text transcription, rerun with --fallback-whisper and omit --timestamps", err)
+				return "", fmt.Errorf("%w. For paid plain-text transcription, rerun with --allow-paid-transcription and omit --timestamps", err)
 			}
-			return "", fmt.Errorf("%w. For paid OpenAI transcription, rerun with --fallback-whisper", err)
+			return "", fmt.Errorf("%w. For paid OpenAI transcription, rerun with --allow-paid-transcription", err)
 		}
-		if fallbackWhisper && errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
+		if allowPaidTranscription && errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
 			return "", fmt.Errorf("%w. paid transcription produces plain text", err)
 		}
 		return "", err

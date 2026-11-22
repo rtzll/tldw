@@ -15,15 +15,15 @@ import (
 // Config holds application settings
 type Config struct {
 	// User configurable settings
-	TLDRModel      string
-	TranscriptsDir string
-	SummaryTimeout time.Duration
-	WhisperTimeout time.Duration
-	Verbose        bool
-	Quiet          bool
-	OpenAIAPIKey   string
-	Prompt         string
-	MCPLogEnabled  bool
+	TLDRModel            string
+	TranscriptsDir       string
+	SummaryTimeout       time.Duration
+	TranscriptionTimeout time.Duration
+	Verbose              bool
+	Quiet                bool
+	OpenAIAPIKey         string
+	Prompt               string
+	MCPLogEnabled        bool
 
 	// Fixed XDG paths (not configurable)
 	ConfigDir string
@@ -38,8 +38,8 @@ var defaultFS embed.FS
 // DefaultTLDRModel is used for summaries when no model is configured.
 const DefaultTLDRModel = "gpt-6-luna"
 
-// WhisperLimit is the maximum file size accepted by the OpenAI audio transcriptions API (25 MiB)
-const WhisperLimit int64 = 25 << 20
+// TranscriptionUploadLimit is the maximum file size accepted by the OpenAI audio transcriptions API (25 MiB)
+const TranscriptionUploadLimit int64 = 25 << 20
 
 // ensureDefaultFile checks if a file exists in the specified directory
 // and creates it from the embedded default if it doesn't exist
@@ -102,7 +102,7 @@ func InitConfig(configFile string) (*Config, error) {
 	v.SetDefault("tldr_model", DefaultTLDRModel)
 	v.SetDefault("transcripts_dir", transcriptsDir)
 	v.SetDefault("summary_timeout", 2*time.Minute)
-	v.SetDefault("whisper_timeout", 10*time.Minute)
+	v.SetDefault("transcription_timeout", 10*time.Minute)
 	v.SetDefault("verbose", false)
 	v.SetDefault("quiet", false)
 	v.SetDefault("prompt", "") // empty => use default prompt template
@@ -145,15 +145,15 @@ func InitConfig(configFile string) (*Config, error) {
 	// Create config struct from viper
 	config := &Config{
 		// User configurable settings.
-		TLDRModel:      model,
-		TranscriptsDir: v.GetString("transcripts_dir"),
-		SummaryTimeout: v.GetDuration("summary_timeout"),
-		WhisperTimeout: v.GetDuration("whisper_timeout"),
-		Verbose:        v.GetBool("verbose"),
-		Quiet:          v.GetBool("quiet"),
-		OpenAIAPIKey:   v.GetString("openai_api_key"),
-		Prompt:         v.GetString("prompt"),
-		MCPLogEnabled:  v.GetBool("mcp_log_enabled"),
+		TLDRModel:            model,
+		TranscriptsDir:       v.GetString("transcripts_dir"),
+		SummaryTimeout:       v.GetDuration("summary_timeout"),
+		TranscriptionTimeout: v.GetDuration("transcription_timeout"),
+		Verbose:              v.GetBool("verbose"),
+		Quiet:                v.GetBool("quiet"),
+		OpenAIAPIKey:         v.GetString("openai_api_key"),
+		Prompt:               v.GetString("prompt"),
+		MCPLogEnabled:        v.GetBool("mcp_log_enabled"),
 
 		// Fixed XDG paths.
 		ConfigDir: configDir,

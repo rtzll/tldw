@@ -9,7 +9,7 @@ import (
 )
 
 type Config struct {
-	WhisperTimeout time.Duration
+	TranscriptionTimeout time.Duration
 }
 
 type PromptBuilder interface {
@@ -53,8 +53,8 @@ func NewEngine(config Config, dependencies Dependencies) (*Engine, error) {
 	if dependencies.Prompts == nil {
 		return nil, fmt.Errorf("prompt builder is required")
 	}
-	if config.WhisperTimeout < 0 {
-		return nil, fmt.Errorf("whisper timeout must not be negative")
+	if config.TranscriptionTimeout < 0 {
+		return nil, fmt.Errorf("transcription timeout must not be negative")
 	}
 	log := dependencies.Log
 	if log == nil {

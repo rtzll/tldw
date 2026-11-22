@@ -9,7 +9,7 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-func TestXWhisperRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
+func TestXPaidTranscriptionRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 	ref, err := tldw.ParseVideoRef("https://x.com/creatine_cycle/status/2123846497540489345")
 	if err != nil {
 		t.Fatal(err)
@@ -22,11 +22,11 @@ func TestXWhisperRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 		wantErr error
 	}{
 		{"free", tldw.TranscriptPolicyCaptionsOnly, videoStub{metadata: &tldw.VideoMetadata{}}, tldw.ErrCaptionsUnavailable},
-		{"opted in", tldw.TranscriptPolicyCaptionsThenWhisper, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
-		{"dedicated paid tool", tldw.TranscriptPolicyWhisperOnly, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
-		{"invalid post", tldw.TranscriptPolicyWhisperOnly, videoStub{metadataErr: lookupErr}, lookupErr},
-		{"failed lookup", tldw.TranscriptPolicyCaptionsThenWhisper, videoStub{metadataErr: lookupErr}, lookupErr},
-		{"caption access failure", tldw.TranscriptPolicyCaptionsThenWhisper, videoStub{
+		{"opted in", tldw.TranscriptPolicyCaptionsThenPaidTranscription, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
+		{"dedicated paid tool", tldw.TranscriptPolicyPaidTranscriptionOnly, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
+		{"invalid post", tldw.TranscriptPolicyPaidTranscriptionOnly, videoStub{metadataErr: lookupErr}, lookupErr},
+		{"failed lookup", tldw.TranscriptPolicyCaptionsThenPaidTranscription, videoStub{metadataErr: lookupErr}, lookupErr},
+		{"caption access failure", tldw.TranscriptPolicyCaptionsThenPaidTranscription, videoStub{
 			metadata: &tldw.VideoMetadata{HasCaptions: true}, captionsErr: lookupErr,
 		}, lookupErr},
 	} {
@@ -44,19 +44,19 @@ func TestXWhisperRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 				if tc.video.audioCalls != 0 || ai.transcribeCalls != 0 {
 					t.Fatal("started paid transcription after an unsuccessful caption check")
 				}
-			} else if tc.video.audioCalls != 1 || ai.transcribeCalls != 1 || got.Source != tldw.TranscriptSourceWhisper || got.VideoID != ref.CacheKey() {
-				t.Fatalf("incorrect Whisper result %+v, audio calls %d, transcription calls %d", got, tc.video.audioCalls, ai.transcribeCalls)
+			} else if tc.video.audioCalls != 1 || ai.transcribeCalls != 1 || got.Source != tldw.TranscriptSourcePaidTranscription || got.VideoID != ref.CacheKey() {
+				t.Fatalf("incorrect paid transcription result %+v, audio calls %d, transcription calls %d", got, tc.video.audioCalls, ai.transcribeCalls)
 			}
 		})
 	}
 }
 
-func TestEngineWhisperOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
+func TestEnginePaidTranscriptionOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
 	store := &memoryStore{transcript: &tldw.Transcript{
 		VideoID: testVideoID, Source: tldw.TranscriptSourceCaptions, Text: "cached captions",
 	}}
 	video := &videoStub{audioPath: "audio.mp3"}
-	ai := &aiStub{transcription: "whisper transcript"}
+	ai := &aiStub{transcription: "paid transcript"}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: store, AI: ai, Prompts: &promptStub{},
 	})
@@ -69,18 +69,18 @@ func TestEngineWhisperOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
 	}
 
 	got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyWhisperOnly,
+		Policy: tldw.TranscriptPolicyPaidTranscriptionOnly,
 	})
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got.Source != tldw.TranscriptSourceWhisper || got.PlainText() != "whisper transcript" {
+	if got.Source != tldw.TranscriptSourcePaidTranscription || got.PlainText() != "paid transcript" {
 		t.Fatalf("Transcript() = %+v", got)
 	}
 	if video.captionCalls != 0 || video.audioCalls != 1 || ai.transcribeCalls != 1 {
 		t.Fatalf("calls: captions=%d audio=%d transcribe=%d", video.captionCalls, video.audioCalls, ai.transcribeCalls)
 	}
-	if store.transcriptSaves != 1 || store.transcript.Source != tldw.TranscriptSourceWhisper {
+	if store.transcriptSaves != 1 || store.transcript.Source != tldw.TranscriptSourcePaidTranscription {
 		t.Fatalf("saved transcript = %+v, saves = %d", store.transcript, store.transcriptSaves)
 	}
 }
@@ -107,7 +107,7 @@ func TestEngineRejectsUnknownTranscriptPolicyBeforeUsingDependencies(t *testing.
 	}
 }
 
-func TestEngineDoesNotUseWhisperForTimestampRequest(t *testing.T) {
+func TestEngineDoesNotUsePaidTranscriptionForTimestampRequest(t *testing.T) {
 	video := &videoStub{metadata: &tldw.VideoMetadata{HasCaptions: false}}
 	ai := &aiStub{}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
@@ -122,18 +122,18 @@ func TestEngineDoesNotUseWhisperForTimestampRequest(t *testing.T) {
 	}
 
 	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsThenWhisper, RequireTimestamps: true,
+		Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription, RequireTimestamps: true,
 	})
 	if !errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
 		t.Fatalf("Transcript() error = %v, want ErrTranscriptTimestampsUnavailable", err)
 	}
 	if video.audioCalls != 0 || ai.transcribeCalls != 0 {
-		t.Fatalf("Whisper path used: audio=%d transcribe=%d", video.audioCalls, ai.transcribeCalls)
+		t.Fatalf("paid transcription path used: audio=%d transcribe=%d", video.audioCalls, ai.transcribeCalls)
 	}
 }
 
-func TestEngineCaptionsOnlyRejectsCachedWhisper(t *testing.T) {
-	store := &memoryStore{transcript: &tldw.Transcript{VideoID: testVideoID, Source: tldw.TranscriptSourceWhisper, Text: "paid transcript"}}
+func TestEngineCaptionsOnlyRejectsCachedPaidTranscription(t *testing.T) {
+	store := &memoryStore{transcript: &tldw.Transcript{VideoID: testVideoID, Source: tldw.TranscriptSourcePaidTranscription, Text: "paid transcript"}}
 	video := &videoStub{metadata: &tldw.VideoMetadata{HasCaptions: false}}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: store, AI: &aiStub{}, Prompts: &promptStub{},
@@ -245,9 +245,9 @@ func TestEngineReturnsUnexpectedStoreFailure(t *testing.T) {
 	}
 }
 
-func TestEngineFallsBackToWhisperWhenCaptionsAreUnavailable(t *testing.T) {
+func TestEngineFallsBackToPaidTranscriptionWhenCaptionsAreUnavailable(t *testing.T) {
 	video := &videoStub{metadata: &tldw.VideoMetadata{HasCaptions: false}, audioPath: "audio.mp3"}
-	ai := &aiStub{transcription: "whisper transcript"}
+	ai := &aiStub{transcription: "paid transcript"}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{},
 	})
@@ -260,17 +260,17 @@ func TestEngineFallsBackToWhisperWhenCaptionsAreUnavailable(t *testing.T) {
 	}
 
 	got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsThenWhisper,
+		Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription,
 	})
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got.Source != tldw.TranscriptSourceWhisper || video.audioCalls != 1 || ai.transcribeCalls != 1 {
+	if got.Source != tldw.TranscriptSourcePaidTranscription || video.audioCalls != 1 || ai.transcribeCalls != 1 {
 		t.Fatalf("Transcript() = %+v, audio=%d transcribe=%d", got, video.audioCalls, ai.transcribeCalls)
 	}
 }
 
-func TestEngineDoesNotFallBackToWhisperAfterCaptionCancellation(t *testing.T) {
+func TestEngineDoesNotFallBackToPaidTranscriptionAfterCaptionCancellation(t *testing.T) {
 	video := &videoStub{
 		metadata:    &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
 		captionsErr: context.Canceled,
@@ -287,13 +287,13 @@ func TestEngineDoesNotFallBackToWhisperAfterCaptionCancellation(t *testing.T) {
 	}
 
 	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsThenWhisper,
+		Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription,
 	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Transcript() error = %v, want context.Canceled", err)
 	}
 	if video.audioCalls != 0 {
-		t.Fatalf("Whisper fallback downloaded audio %d times after cancellation", video.audioCalls)
+		t.Fatalf("paid fallback downloaded audio %d times after cancellation", video.audioCalls)
 	}
 }
 
@@ -357,7 +357,7 @@ func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
 	}
 }
 
-func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
+func TestEngineSummarizePlaylistUsesPaidTranscriptionAfterConsent(t *testing.T) {
 	videoRef, err := tldw.ParseVideoRef(testVideoID)
 	if err != nil {
 		t.Fatalf("ParseVideoRef() error = %v", err)
@@ -371,7 +371,7 @@ func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
 		metadata:  &tldw.VideoMetadata{Title: "No captions", Channel: "Channel", HasCaptions: false},
 		audioPath: "audio.mp3",
 	}
-	ai := &aiStub{transcription: "whisper transcript", summary: "playlist summary"}
+	ai := &aiStub{transcription: "paid transcript", summary: "playlist summary"}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{prompt: "prompt"},
 	})
@@ -382,7 +382,7 @@ func TestEngineSummarizePlaylistUsesWhisperAfterConsent(t *testing.T) {
 
 	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistSummaryRequest{
 		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
-		ConfirmWhisper: func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
+		ConfirmPaidTranscription: func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
 			confirmed = ref.ID() == testVideoID && metadata.Title == "No captions"
 			return true
 		},
@@ -405,7 +405,7 @@ func TestEngineDoesNotRetryOrSpendOnTerminalCaptionErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			ref, _ := tldw.ParseVideoRef(testVideoID)
-			_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenWhisper})
+			_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription})
 			if !errors.Is(err, cause) || video.captionCalls != 1 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
 				t.Fatalf("err=%v caption=%d audio=%d paid=%d", err, video.captionCalls, video.audioCalls, ai.transcribeCalls)
 			}

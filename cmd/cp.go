@@ -16,7 +16,7 @@ var cpCmd = &cobra.Command{
   tldw cp tAP1eZYEuKA
 
   # Use paid OpenAI transcription if captions are unavailable
-  tldw cp tAP1eZYEuKA --fallback-whisper`,
+  tldw cp tAP1eZYEuKA --allow-paid-transcription`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := newEngine(config)

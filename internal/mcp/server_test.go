@@ -94,7 +94,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			},
 			readOnly: true,
 		},
-		"transcribe_youtube_whisper": {
+		"transcribe_video_paid": {
 			description: "Transcribe a YouTube video or single-video X post using OpenAI's gpt-transcribe model (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost.",
 			inputFields: map[string]string{
 				"url":                "YouTube video URL or single-video X post URL",
@@ -293,15 +293,15 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	}
 }
 
-func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
+func TestMCPPaidTranscriptionReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
-	app.transcript = &tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: tldw.TranscriptSourceWhisper, Text: "whisper transcript"}
+	app.transcript = &tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: tldw.TranscriptSourcePaidTranscription, Text: "paid transcript"}
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
-		Name: "transcribe_youtube_whisper",
+		Name: "transcribe_video_paid",
 		Arguments: map[string]any{
 			"url": "https://youtu.be/dQw4w9WgXcQ",
 		},
@@ -312,36 +312,36 @@ func TestMCPWhisperReturnsTextAndStructuredContent(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("CallTool() returned tool error: %s", textContent(t, result))
 	}
-	if got := textContent(t, result); got != "whisper transcript" {
-		t.Fatalf("text content = %q, want whisper transcript", got)
+	if got := textContent(t, result); got != "paid transcript" {
+		t.Fatalf("text content = %q, want paid transcript", got)
 	}
 
 	output := structuredContent[mcpTranscriptOutput](t, result)
 	if output.URL != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
 		t.Errorf("structured URL = %q, want normalized URL", output.URL)
 	}
-	if output.Transcript != "whisper transcript" {
-		t.Errorf("structured transcript = %q, want whisper transcript", output.Transcript)
+	if output.Transcript != "paid transcript" {
+		t.Errorf("structured transcript = %q, want paid transcript", output.Transcript)
 	}
-	if output.Source != string(tldw.TranscriptSourceWhisper) {
-		t.Errorf("structured source = %q, want whisper", output.Source)
+	if output.Source != string(tldw.TranscriptSourcePaidTranscription) {
+		t.Errorf("structured source = %q, want paid_transcription", output.Source)
 	}
 	if output.IncludeTimestamps {
 		t.Error("structured include_timestamps = true, want false")
 	}
-	if app.transcriptCalls != 1 || app.lastRequest.Policy != tldw.TranscriptPolicyWhisperOnly {
+	if app.transcriptCalls != 1 || app.lastRequest.Policy != tldw.TranscriptPolicyPaidTranscriptionOnly {
 		t.Fatalf("Transcript() calls = %d, policy = %v", app.transcriptCalls, app.lastRequest.Policy)
 	}
 }
 
-func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
+func TestMCPPaidTranscriptionRejectsTimestampsBeforeDownload(t *testing.T) {
 	app := &applicationStub{}
 
 	server := NewMCPServer(app)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
-		Name: "transcribe_youtube_whisper",
+		Name: "transcribe_video_paid",
 		Arguments: map[string]any{
 			"url":                "https://youtu.be/dQw4w9WgXcQ",
 			"include_timestamps": true,

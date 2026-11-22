@@ -44,7 +44,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   tldw tAP1eZYEuKA --prompt "tldr: {{.Transcript}}"
 
   # Use paid OpenAI transcription if captions are unavailable
-  tldw "https://youtu.be/tAP1eZYEuKA" --fallback-whisper
+  tldw "https://youtu.be/tAP1eZYEuKA" --allow-paid-transcription
 
   # Run quietly without progress bars or extra output
   tldw "https://youtu.be/tAP1eZYEuKA" --quiet`,
@@ -86,8 +86,8 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		if err != nil {
 			return fmt.Errorf("invalid input %q: %w", args[0], err)
 		}
-		fallbackWhisper, _ := cmd.Flags().GetBool("fallback-whisper")
-		return runSummary(cmd.Context(), app, config, ref, fallbackWhisper)
+		allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")
+		return runSummary(cmd.Context(), app, config, ref, allowPaidTranscription)
 	},
 }
 

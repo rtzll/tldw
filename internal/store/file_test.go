@@ -167,7 +167,7 @@ func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
 func TestFileRefreshesOldCaptionsOnly(t *testing.T) {
 	for _, version := range []int{0, 1, 2} {
 		t.Run(fmt.Sprintf("version %d", version), func(t *testing.T) {
-			for _, source := range []tldw.TranscriptSource{tldw.TranscriptSourceCaptions, tldw.TranscriptSourceWhisper, ""} {
+			for _, source := range []tldw.TranscriptSource{tldw.TranscriptSourceCaptions, tldw.TranscriptSourcePaidTranscription, ""} {
 				t.Run(string(source), func(t *testing.T) {
 					dir := t.TempDir()
 					transcript := tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: source, Text: "old transcript"}

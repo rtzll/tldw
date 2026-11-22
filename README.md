@@ -20,7 +20,7 @@ export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & paid t
 
 - **`get_youtube_metadata`**: Video metadata and captions status
 - **`get_youtube_transcript`**: Free video captions transcript
-- **`transcribe_youtube_whisper`**: Paid OpenAI transcription
+- **`transcribe_video_paid`**: Paid OpenAI transcription
 
 `get_youtube_transcript` accepts `include_timestamps=true` to return caption
 lines with timestamps when timing data is available.
@@ -99,11 +99,11 @@ tldw transcribe "https://youtu.be/tAP1eZYEuKA"
 tldw transcribe "https://x.com/AmpCode/status/2123051353505443912"
 tldw transcribe tAP1eZYEuKA -o transcript.txt  # Save to file
 tldw transcribe tAP1eZYEuKA --timestamps       # Include caption timestamps
-tldw transcribe tAP1eZYEuKA --fallback-whisper # Use paid transcription if captions are unavailable
+tldw transcribe tAP1eZYEuKA --allow-paid-transcription # Use paid transcription if captions are unavailable
 
 # Copy transcript to clipboard
 tldw cp "https://youtu.be/tAP1eZYEuKA"
-tldw cp tAP1eZYEuKA --fallback-whisper        # Copy the transcript with the same paid fallback
+tldw cp tAP1eZYEuKA --allow-paid-transcription        # Copy the transcript with the same paid fallback
 
 # Generate summary with GPT-6 Luna (requires API key)
 tldw "https://youtu.be/tAP1eZYEuKA"
@@ -191,6 +191,7 @@ tldw paths  # Shows config, data, and cache directories
 ```toml
 openai_api_key = "your-key"
 tldr_model = "gpt-6-luna"
+transcription_timeout = "10m"
 prompt = "tldr: {{.Transcript}}"
 ```
 

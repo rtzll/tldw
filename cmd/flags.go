@@ -9,7 +9,7 @@ import (
 )
 
 func addTranscriptionFlags(cmd *cobra.Command) {
-	cmd.Flags().Bool("fallback-whisper", false, "Use paid OpenAI transcription if captions are unavailable")
+	cmd.Flags().Bool("allow-paid-transcription", false, "Use paid OpenAI transcription if captions are unavailable")
 	cmd.Flags().Bool("timestamps", false, "Include timestamps in transcript output when caption timing data is available")
 }
 

@@ -11,9 +11,8 @@ import (
 type TranscriptSource string
 
 const (
-	TranscriptSourceCaptions TranscriptSource = "captions"
-	// TranscriptSourceWhisper is the legacy cache and MCP identifier for paid transcription.
-	TranscriptSourceWhisper TranscriptSource = "whisper"
+	TranscriptSourceCaptions          TranscriptSource = "captions"
+	TranscriptSourcePaidTranscription TranscriptSource = "paid_transcription"
 )
 
 // TranscriptRenderFormat controls how transcript content is rendered for output.

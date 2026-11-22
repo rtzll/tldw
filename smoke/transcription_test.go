@@ -113,8 +113,8 @@ func TestSingleVideoXPostsThroughCLIAndMCP(t *testing.T) {
 				}
 				t.Logf("Fetched %d bytes of captions in %v via CLI and %v via MCP", len(mcpText), cliTime.Round(time.Millisecond), mcpTime.Round(time.Millisecond))
 			} else {
-				if cliErr == nil || !strings.Contains(cliError.String(), "--fallback-whisper") ||
-					!result.IsError || !strings.Contains(mcpText, "transcribe_youtube_whisper") {
+				if cliErr == nil || !strings.Contains(cliError.String(), "--allow-paid-transcription") ||
+					!result.IsError || !strings.Contains(mcpText, "transcribe_video_paid") {
 					t.Fatalf("expected paid opt-in offers. CLI: %v %.300s; MCP: %.300s", cliErr, cliError.String(), mcpText)
 				}
 				t.Logf("MCP returned %s", mcpText)

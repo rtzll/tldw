@@ -62,26 +62,26 @@ func (c *sdkClient) CreateChatCompletion(ctx context.Context, model, prompt stri
 
 // AI handles OpenAI API interactions for transcription and summarization
 type AI struct {
-	client       client
-	audio        *Audio
-	model        string
-	whisperLimit int64
-	timeout      time.Duration
-	verbose      bool
-	quiet        bool
-	apiKey       string
-	clientOnce   sync.Once
-	clientErr    error
-	log          tldw.LogSink
+	client                   client
+	audio                    *Audio
+	model                    string
+	transcriptionUploadLimit int64
+	timeout                  time.Duration
+	verbose                  bool
+	quiet                    bool
+	apiKey                   string
+	clientOnce               sync.Once
+	clientErr                error
+	log                      tldw.LogSink
 }
 
 // Config contains the validated operational settings for AI requests.
 type Config struct {
-	Model        string
-	WhisperLimit int64
-	Timeout      time.Duration
-	Verbose      bool
-	Quiet        bool
+	Model                    string
+	TranscriptionUploadLimit int64
+	Timeout                  time.Duration
+	Verbose                  bool
+	Quiet                    bool
 }
 
 // NewAIWithKey creates a new AI processor with lazy client initialization.
@@ -101,20 +101,20 @@ func newAI(audio *Audio, config Config) (*AI, error) {
 	if strings.TrimSpace(config.Model) == "" {
 		return nil, fmt.Errorf("model is required")
 	}
-	if config.WhisperLimit <= 0 {
-		return nil, fmt.Errorf("whisper limit must be positive")
+	if config.TranscriptionUploadLimit <= 0 {
+		return nil, fmt.Errorf("transcription upload limit must be positive")
 	}
 	if config.Timeout < 0 {
 		return nil, fmt.Errorf("timeout must not be negative")
 	}
 	return &AI{
-		audio:        audio,
-		model:        config.Model,
-		whisperLimit: config.WhisperLimit,
-		timeout:      config.Timeout,
-		verbose:      config.Verbose,
-		quiet:        config.Quiet,
-		log:          discardLogSink{},
+		audio:                    audio,
+		model:                    config.Model,
+		transcriptionUploadLimit: config.TranscriptionUploadLimit,
+		timeout:                  config.Timeout,
+		verbose:                  config.Verbose,
+		quiet:                    config.Quiet,
+		log:                      discardLogSink{},
 	}, nil
 }
 
@@ -153,8 +153,8 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 		return "", fmt.Errorf("getting audio file info: %w", err)
 	}
 
-	numChunks := int(info.Size() / ai.whisperLimit)
-	if info.Size()%ai.whisperLimit != 0 {
+	numChunks := int(info.Size() / ai.transcriptionUploadLimit)
+	if info.Size()%ai.transcriptionUploadLimit != 0 {
 		numChunks++
 	}
 
@@ -200,7 +200,7 @@ func (ai *AI) fitAudioChunks(ctx context.Context, initial []string) ([]string, f
 		if err != nil {
 			return fmt.Errorf("checking audio chunk: %w", err)
 		}
-		if info.Size() <= ai.whisperLimit {
+		if info.Size() <= ai.transcriptionUploadLimit {
 			result = append(result, path)
 			return nil
 		}
