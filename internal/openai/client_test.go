@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,38 @@ import (
 )
 
 const WhisperLimit int64 = 25 << 20
+
+func TestSDKClientTranscriptionModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/transcriptions" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.FormValue("model"); got != "gpt-transcribe" {
+			t.Errorf("transcription model = %q, want gpt-transcribe", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"test transcript"}`))
+	}))
+	defer server.Close()
+	t.Setenv("OPENAI_BASE_URL", server.URL+"/v1")
+
+	file, err := os.CreateTemp(t.TempDir(), "*.mp3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := file.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	got, err := newSDKClient("test-key").CreateTranscription(t.Context(), file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "test transcript" {
+		t.Errorf("transcript = %q, want test transcript", got)
+	}
+}
 
 type mockOpenAIClient struct {
 	transcription  string

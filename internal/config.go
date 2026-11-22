@@ -38,7 +38,7 @@ var defaultFS embed.FS
 // DefaultTLDRModel is used for summaries when no model is configured.
 const DefaultTLDRModel = "gpt-6-luna"
 
-// WhisperLimit is the maximum file size accepted by OpenAI's Whisper API (25 MiB)
+// WhisperLimit is the maximum file size accepted by the OpenAI audio transcriptions API (25 MiB)
 const WhisperLimit int64 = 25 << 20
 
 // ensureDefaultFile checks if a file exists in the specified directory

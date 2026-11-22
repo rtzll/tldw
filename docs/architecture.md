@@ -23,7 +23,7 @@ internal/
 │   ├── srt.go              Deterministic subtitle parsing and normalization
 │   ├── audio.go            Audio download and cache placement
 │   └── playlist.go         Playlist decoding and video-reference validation
-├── openai/                 OpenAI/Whisper and ffmpeg audio preparation
+├── openai/                 OpenAI summaries, transcription and ffmpeg audio preparation
 ├── mcp/                    MCP tools and HTTP/stdio transports
 ├── process/                External command execution and error reporting
 ├── config.go               XDG configuration used by CLI composition

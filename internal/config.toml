@@ -11,7 +11,7 @@ tldr_model = "gpt-6-luna"
 
 # Timeouts
 summary_timeout = "2m"  # Timeout for summary generation
-whisper_timeout = "10m" # Timeout for Whisper transcription
+whisper_timeout = "10m" # Timeout for paid transcription
 
 # Verbose mode (enables additional logging)
 verbose = false

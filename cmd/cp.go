@@ -15,7 +15,7 @@ var cpCmd = &cobra.Command{
   tldw cp "https://www.youtube.com/watch?v=tAP1eZYEuKA"
   tldw cp tAP1eZYEuKA
 
-  # Use Whisper if no captions available (costs money)
+  # Use paid OpenAI transcription if captions are unavailable
   tldw cp tAP1eZYEuKA --fallback-whisper`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

@@ -47,10 +47,10 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	summary, err := engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: policy})
 	if errors.Is(err, tldw.ErrCaptionsUnavailable) && !fallbackWhisper {
 		progress.finish()
-		if !askUser(fmt.Sprintf("%v. Use paid Whisper transcription?", err)) {
+		if !askUser(fmt.Sprintf("%v. Use paid OpenAI transcription?", err)) {
 			return fmt.Errorf("transcription declined by user")
 		}
-		progress = newSummaryProgress(config, "Transcribing with OpenAI Whisper...")
+		progress = newSummaryProgress(config, "Transcribing with OpenAI...")
 		summary, err = engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
 	}
 	if err != nil {
@@ -76,7 +76,7 @@ func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *intern
 		request.Transcript.Policy = tldw.TranscriptPolicyCaptionsThenWhisper
 	} else {
 		request.ConfirmWhisper = func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
-			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use Whisper ($$$)?", video.ID(), metadata.Title))
+			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use paid OpenAI transcription?", video.ID(), metadata.Title))
 		}
 	}
 

@@ -23,8 +23,7 @@ var rootCmd = &cobra.Command{
 	Short: "Too Long; Didn't Watch - YouTube and X video summarizer",
 	Long: `tldw (Too Long; Didn't Watch) summarizes YouTube videos, YouTube playlists, and single-video X posts using AI.
 
-It uses existing captions when available,
-or processes the audio with Whisper when transcripts are unavailable.
+It uses existing captions first and offers paid OpenAI transcription when captions are unavailable.
 
 Summaries use GPT-6 Luna (gpt-6-luna) by default.
 
@@ -44,7 +43,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   # Use custom prompt for summary
   tldw tAP1eZYEuKA --prompt "tldr: {{.Transcript}}"
 
-  # Fallback to Whisper if no captions available (costs money)
+  # Use paid OpenAI transcription if captions are unavailable
   tldw "https://youtu.be/tAP1eZYEuKA" --fallback-whisper
 
   # Run quietly without progress bars or extra output

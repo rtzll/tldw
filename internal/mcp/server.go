@@ -32,9 +32,9 @@ const (
 	mcpServerVersion  = "1.0.0"
 	mcpMethodCallTool = "tools/call"
 
-	mcpGetMetadataDescription   = "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid Whisper transcription."
+	mcpGetMetadataDescription   = "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid OpenAI transcription."
 	mcpGetTranscriptDescription = "Get existing captions for a YouTube video or single-video X post (FREE)."
-	mcpWhisperDescription       = "Transcribe a YouTube video or single-video X post using OpenAI Whisper (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost."
+	mcpWhisperDescription       = "Transcribe a YouTube video or single-video X post using OpenAI's gpt-transcribe model (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost."
 )
 
 type mcpGetMetadataInput struct {
@@ -48,7 +48,7 @@ type mcpGetTranscriptInput struct {
 
 type mcpWhisperInput struct {
 	URL               string `json:"url" jsonschema:"YouTube video URL or single-video X post URL"`
-	IncludeTimestamps bool   `json:"include_timestamps,omitempty" jsonschema:"Reserved for future use. Timestamped Whisper transcripts are not supported yet."`
+	IncludeTimestamps bool   `json:"include_timestamps,omitempty" jsonschema:"Omit or set to false. Paid transcription returns plain text."`
 }
 
 type mcpChapterOutput struct {
@@ -74,7 +74,7 @@ type mcpMetadataOutput struct {
 type mcpTranscriptOutput struct {
 	URL               string `json:"url" jsonschema:"Requested YouTube video URL or single-video X post URL"`
 	Transcript        string `json:"transcript" jsonschema:"Transcript text"`
-	Source            string `json:"source" jsonschema:"Transcript source"`
+	Source            string `json:"source" jsonschema:"Transcript source (captions for existing captions or whisper for paid OpenAI transcription)"`
 	IncludeTimestamps bool   `json:"include_timestamps" jsonschema:"Whether timestamps were requested in the transcript text"`
 }
 
@@ -267,7 +267,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	return mcpTextResult(transcript), output, nil
 }
 
-// handleWhisperTranscribe implements the transcribe_youtube_whisper tool (paid Whisper transcription)
+// handleWhisperTranscribe implements the transcribe_youtube_whisper tool (paid OpenAI transcription)
 func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallToolRequest, input mcpWhisperInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
 	url := input.URL
@@ -279,7 +279,7 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 	url = parsed.URL()
 	MCPLogInfo("Tool: transcribe_youtube_whisper - URL: %s (PAID OPERATION)", url)
 	if input.IncludeTimestamps {
-		err := fmt.Errorf("timestamped Whisper transcripts are not supported yet")
+		err := fmt.Errorf("paid transcription returns plain text without timestamps")
 		MCPLogError("Tool: transcribe_youtube_whisper failed - %v", err)
 		return nil, zero, err
 	}
@@ -287,7 +287,7 @@ func (s *MCPServer) handleWhisperTranscribe(ctx context.Context, _ *mcp.CallTool
 	structured, err := s.engine.Transcript(ctx, parsed, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyWhisperOnly})
 	if err != nil {
 		MCPLogError("Tool: transcribe_youtube_whisper - transcription failed: %v", err)
-		return nil, zero, fmt.Errorf("failed to transcribe audio with Whisper: %w", err)
+		return nil, zero, fmt.Errorf("failed to transcribe audio with OpenAI: %w", err)
 	}
 	transcript, err := structured.Render(tldw.TranscriptRenderFormatPlain)
 	if err != nil {

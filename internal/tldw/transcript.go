@@ -12,7 +12,8 @@ type TranscriptSource string
 
 const (
 	TranscriptSourceCaptions TranscriptSource = "captions"
-	TranscriptSourceWhisper  TranscriptSource = "whisper"
+	// TranscriptSourceWhisper is the legacy cache and MCP identifier for paid transcription.
+	TranscriptSourceWhisper TranscriptSource = "whisper"
 )
 
 // TranscriptRenderFormat controls how transcript content is rendered for output.

@@ -18,7 +18,7 @@ func requestedTranscriptFormat(cmd *cobra.Command) tldw.TranscriptRenderFormat {
 	return tldw.TranscriptRenderFormatPlain
 }
 
-// fetchTranscript retrieves a transcript for the given argument and optionally falls back to Whisper.
+// fetchTranscript retrieves a transcript for the given argument and optionally falls back to paid transcription.
 func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, error) {
 	parsed, err := tldw.ParseVideoRef(arg)
 	if err != nil {
@@ -37,10 +37,10 @@ func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, 
 			if timestamps {
 				return "", fmt.Errorf("%w. For paid plain-text transcription, rerun with --fallback-whisper and omit --timestamps", err)
 			}
-			return "", fmt.Errorf("%w. For paid Whisper transcription, rerun with --fallback-whisper", err)
+			return "", fmt.Errorf("%w. For paid OpenAI transcription, rerun with --fallback-whisper", err)
 		}
 		if fallbackWhisper && errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
-			return "", fmt.Errorf("%w. Whisper fallback produces plain text", err)
+			return "", fmt.Errorf("%w. paid transcription produces plain text", err)
 		}
 		return "", err
 	}

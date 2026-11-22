@@ -21,7 +21,7 @@ var transcribeCmd = &cobra.Command{
   # Include timestamps when caption timing data is available
   tldw transcribe tAP1eZYEuKA --timestamps
 
-  # Use Whisper if no captions available (costs money)
+  # Use paid OpenAI transcription if captions are unavailable
   tldw transcribe tAP1eZYEuKA --fallback-whisper`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

@@ -9,7 +9,7 @@ import (
 )
 
 // TranscriptPolicy controls whether transcript acquisition may use paid
-// Whisper transcription when captions are unavailable.
+// transcription when captions are unavailable.
 type TranscriptPolicy int
 
 const (
@@ -28,7 +28,7 @@ type TranscriptRequest struct {
 }
 
 // ErrCaptionsUnavailable is returned when captions are unavailable and the
-// request does not permit Whisper transcription.
+// request does not permit paid transcription.
 var ErrCaptionsUnavailable = errors.New("captions are unavailable")
 
 // CaptionTrackUnavailableError allows a fresh lookup to exclude a missing
@@ -400,7 +400,7 @@ func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref ContentRef, cac
 	}
 	refreshed, err := app.fetchMetadata(ctx, ref)
 	if err != nil {
-		// A failed lookup must not turn stale absence into a decision to charge for Whisper.
+		// A failed lookup must not turn stale absence into a decision to charge for transcription.
 		if !cached.HasCaptions || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, err
 		}

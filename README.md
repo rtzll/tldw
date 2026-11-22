@@ -1,7 +1,7 @@
 # tldw - too long; didn't watch
 
 Summarize YouTube videos and playlists or public X posts containing one video using GPT-6 Luna
-by default. Works with existing captions (free) or Whisper transcription (paid).
+by default. Works with existing captions (free) or paid OpenAI transcription (`gpt-transcribe`).
 Includes an MCP server for Claude and other AI assistants and a CLI.
 
 See [docs/architecture.md](docs/architecture.md) for the project structure and
@@ -11,7 +11,7 @@ dependency direction.
 
 ```bash
 brew install rtzll/tap/tldw
-export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & Whisper
+export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & paid transcription
 ```
 
 ## MCP
@@ -20,7 +20,7 @@ export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & Whispe
 
 - **`get_youtube_metadata`**: Video metadata and captions status
 - **`get_youtube_transcript`**: Free video captions transcript
-- **`transcribe_youtube_whisper`**: Paid video Whisper transcription
+- **`transcribe_youtube_whisper`**: Paid OpenAI transcription
 
 `get_youtube_transcript` accepts `include_timestamps=true` to return caption
 lines with timestamps when timing data is available.
@@ -99,11 +99,11 @@ tldw transcribe "https://youtu.be/tAP1eZYEuKA"
 tldw transcribe "https://x.com/AmpCode/status/2123051353505443912"
 tldw transcribe tAP1eZYEuKA -o transcript.txt  # Save to file
 tldw transcribe tAP1eZYEuKA --timestamps       # Include caption timestamps
-tldw transcribe tAP1eZYEuKA --fallback-whisper # Use Whisper if video has no captions
+tldw transcribe tAP1eZYEuKA --fallback-whisper # Use paid transcription if captions are unavailable
 
 # Copy transcript to clipboard
 tldw cp "https://youtu.be/tAP1eZYEuKA"
-tldw cp tAP1eZYEuKA --fallback-whisper        # Whisper fallback supported
+tldw cp tAP1eZYEuKA --fallback-whisper        # Copy the transcript with the same paid fallback
 
 # Generate summary with GPT-6 Luna (requires API key)
 tldw "https://youtu.be/tAP1eZYEuKA"
@@ -132,8 +132,8 @@ requests one track; automatically translated captions are excluded. A rate-limit
 error stops the request without trying other languages or starting paid
 transcription.
 
-Negative caption metadata expires after 15 minutes. Before automatic paid
-Whisper fallback, cached negative metadata is always checked again. A failed
+Negative caption metadata expires after 15 minutes. Before falling back to paid
+transcription, tldw checks cached negative metadata again. A failed
 recheck returns an error instead of starting paid transcription.
 
 ### Transcription smoke test

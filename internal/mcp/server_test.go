@@ -64,7 +64,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 		readOnly      bool
 	}{
 		"get_youtube_metadata": {
-			description: "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid Whisper transcription.",
+			description: "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid OpenAI transcription.",
 			inputFields: map[string]string{
 				"url": "YouTube video URL or single-video X post URL",
 			},
@@ -95,10 +95,10 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			readOnly: true,
 		},
 		"transcribe_youtube_whisper": {
-			description: "Transcribe a YouTube video or single-video X post using OpenAI Whisper (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost.",
+			description: "Transcribe a YouTube video or single-video X post using OpenAI's gpt-transcribe model (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost.",
 			inputFields: map[string]string{
 				"url":                "YouTube video URL or single-video X post URL",
-				"include_timestamps": "Reserved for future use. Timestamped Whisper transcripts are not supported yet.",
+				"include_timestamps": "Omit or set to false. Paid transcription returns plain text.",
 			},
 			requiredInput: []string{"url"},
 			outputFields: []string{
@@ -353,7 +353,7 @@ func TestMCPWhisperRejectsTimestampsBeforeDownload(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("CallTool() succeeded, want timestamp support error")
 	}
-	if got := textContent(t, result); !strings.Contains(got, "timestamped Whisper transcripts are not supported yet") {
+	if got := textContent(t, result); !strings.Contains(got, "paid transcription returns plain text without timestamps") {
 		t.Fatalf("tool error text = %q, want timestamp unsupported message", got)
 	}
 	if app.transcriptCalls != 0 {

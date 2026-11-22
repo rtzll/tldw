@@ -34,7 +34,7 @@ func newSDKClient(apiKey string) *sdkClient {
 func (c *sdkClient) CreateTranscription(ctx context.Context, file *os.File) (string, error) {
 	resp, err := c.client.Audio.Transcriptions.New(ctx, openaisdk.AudioTranscriptionNewParams{
 		File:  file,
-		Model: openaisdk.AudioModelWhisper1,
+		Model: openaisdk.AudioModelGPTTranscribe,
 	})
 	if err != nil {
 		return "", err
@@ -138,7 +138,7 @@ func (ai *AI) ensureClient() error {
 	return ai.clientErr
 }
 
-// Transcribe transcribes audio using OpenAI's Whisper API
+// Transcribe transcribes audio using the OpenAI audio transcriptions API.
 func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) {
 	if err := ai.ensureClient(); err != nil {
 		return "", err
