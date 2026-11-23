@@ -23,7 +23,7 @@ var transcribeCmd = &cobra.Command{
 
   # Use paid OpenAI transcription if captions are unavailable
   tldw transcribe tAP1eZYEuKA --allow-paid-transcription`,
-	Args: cobra.ExactArgs(1),
+	Args: arguments(cobra.ExactArgs(1)),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {

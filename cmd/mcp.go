@@ -48,6 +48,12 @@ Transport options:
 		transport, _ := cmd.Flags().GetString("transport")
 		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetInt("port")
+		if transport != "http" && transport != "stdio" {
+			return usageError{fmt.Errorf("invalid transport %q: use stdio or http", transport)}
+		}
+		if transport == "http" && (port < 0 || port > 65535) {
+			return usageError{fmt.Errorf("invalid port %d: use 0 through 65535", port)}
+		}
 		if host == "" {
 			host = "127.0.0.1"
 		}

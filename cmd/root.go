@@ -64,11 +64,11 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		}
 		return applyOutputFlags(cmd, config)
 	},
-	Args: cobra.ExactArgs(1),
+	Args: arguments(cobra.ExactArgs(1)),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ref, err := parseSummaryReference(args[0], cmd.Root().Commands())
 		if err != nil {
-			return err
+			return usageError{err}
 		}
 		if err := validateOpenAIRequirements(cmd, config); err != nil {
 			return err
@@ -87,26 +87,35 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	rootCmd.SetContext(ctx)
-	err := rootCmd.Execute()
-	if ctx.Err() == nil || config == nil {
-		return err
+// Execute handles process signals and translates the command outcome to an exit code.
+func Execute() int {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+	go func() {
+		select {
+		case sig := <-signals:
+			signal.Stop(signals) // A second signal uses the process default.
+			cancel(signalError{sig.(syscall.Signal)})
+		case <-ctx.Done():
+		}
+	}()
+	cmd, err := rootCmd.ExecuteContextC(ctx)
+	if interrupted := context.Cause(ctx); interrupted != nil {
+		err = interrupted
 	}
-
-	fmt.Fprintln(os.Stderr, "\nReceived interrupt signal. Cleaning up and shutting down...")
-	// Each operation cleans up its own workspace; other CLI/server processes
-	// may still be using the shared cache directory.
-	return err
+	if err != nil {
+		return reportFailure(cmd, err)
+	}
+	return 0
 }
 
 func init() {
 	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	rootCmd.SetFlagErrorFunc(flagError)
 	addTranscriptionFlags(rootCmd)
 	addOpenAIFlags(rootCmd)
 	rootCmd.PersistentFlags().Bool("non-interactive", false, "Disable interactive prompts")

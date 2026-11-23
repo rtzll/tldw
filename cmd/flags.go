@@ -59,7 +59,7 @@ func validateOpenAIRequirements(cmd *cobra.Command, config *internal.Config) err
 	}
 	if modelFlag != "" {
 		if err := internal.ValidateModel(modelFlag); err != nil {
-			return err
+			return usageError{err}
 		}
 		config.TLDRModel = modelFlag
 		return nil

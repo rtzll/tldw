@@ -47,7 +47,7 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 
   # Return machine-readable output
   tldw stats --period week --json`,
-		Args: cobra.NoArgs,
+		Args: arguments(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			currentTime := now()
 			periodName, err := cmd.Flags().GetString("period")
@@ -56,7 +56,7 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 			}
 			period, err := resolveStatsPeriod(periodName, currentTime)
 			if err != nil {
-				return err
+				return usageError{err}
 			}
 			groupName, err := cmd.Flags().GetString("group-by")
 			if err != nil {
@@ -64,7 +64,7 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 			}
 			group, err := parseStatsGroup(groupName)
 			if err != nil {
-				return err
+				return usageError{err}
 			}
 			app, err := build()
 			if err != nil {

@@ -71,7 +71,6 @@ func ensureDefaultFile(configDir, embedFilename, description string) error {
 		return fmt.Errorf("writing default %s: %w", description, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Created default %s at %s\n", description, filePath)
 	return nil
 }
 
@@ -136,7 +135,7 @@ func InitConfig(configFile string) (*Config, error) {
 			return nil, fmt.Errorf("reading config file %q: %w", configFile, err)
 		}
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			fmt.Fprintf(os.Stderr, "Warning: Error reading config file: %v\n", err)
+			return nil, fmt.Errorf("reading config file %q: %w", v.ConfigFileUsed(), err)
 		}
 	}
 
@@ -163,10 +162,6 @@ func InitConfig(configFile string) (*Config, error) {
 		DataDir:   dataDir,
 		CacheDir:  cacheDir,
 		TempDir:   tempDir,
-	}
-
-	if config.Verbose {
-		fmt.Fprintf(os.Stderr, "Using config file: %s\n", v.ConfigFileUsed())
 	}
 
 	return config, nil

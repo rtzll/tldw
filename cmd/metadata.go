@@ -23,7 +23,7 @@ var metadataCmd = &cobra.Command{
 
   # Format output as pretty JSON
   tldw metadata tAP1eZYEuKA --pretty`,
-	Args: cobra.ExactArgs(1),
+	Args: arguments(cobra.ExactArgs(1)),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {
@@ -31,7 +31,7 @@ var metadataCmd = &cobra.Command{
 		}
 		parsed, err := tldw.ParseVideoRef(args[0])
 		if err != nil {
-			return err
+			return usageError{err}
 		}
 		// Get metadata for the video
 		var metadata *tldw.VideoMetadata

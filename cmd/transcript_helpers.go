@@ -22,7 +22,7 @@ func requestedTranscriptFormat(cmd *cobra.Command) tldw.TranscriptRenderFormat {
 func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, error) {
 	parsed, err := tldw.ParseVideoRef(arg)
 	if err != nil {
-		return "", err
+		return "", usageError{err}
 	}
 	format := requestedTranscriptFormat(cmd)
 	timestamps := format == tldw.TranscriptRenderFormatTimestamps
