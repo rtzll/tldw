@@ -239,10 +239,11 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 		format = tldw.TranscriptRenderFormatTimestamps
 	}
 
-	structured, err := s.engine.Transcript(ctx, parsed, tldw.TranscriptRequest{
-		Policy:            tldw.TranscriptPolicyCaptionsOnly,
-		RequireTimestamps: includeTimestamps,
-	})
+	request := tldw.CaptionsOnly
+	if includeTimestamps {
+		request = tldw.TimestampedCaptions
+	}
+	structured, err := s.engine.Transcript(ctx, parsed, request)
 	if err != nil {
 		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
 		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
@@ -284,7 +285,7 @@ func (s *MCPServer) handlePaidTranscription(ctx context.Context, _ *mcp.CallTool
 		return nil, zero, err
 	}
 
-	structured, err := s.engine.Transcript(ctx, parsed, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyPaidTranscriptionOnly})
+	structured, err := s.engine.Transcript(ctx, parsed, tldw.PaidOnly)
 	if err != nil {
 		MCPLogError("Tool: transcribe_video_paid - transcription failed: %v", err)
 		return nil, zero, fmt.Errorf("failed to transcribe audio with OpenAI: %w", err)

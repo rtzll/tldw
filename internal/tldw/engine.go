@@ -8,23 +8,21 @@ import (
 	"time"
 )
 
-// TranscriptPolicy controls whether transcript acquisition may use paid
-// transcription when captions are unavailable.
-type TranscriptPolicy int
+// TranscriptRequest describes one acquisition intent. Its zero value only uses captions.
+type TranscriptRequest uint8
 
 const (
-	TranscriptPolicyCaptionsOnly TranscriptPolicy = iota
-	TranscriptPolicyCaptionsThenPaidTranscription
-	TranscriptPolicyPaidTranscriptionOnly
+	CaptionsOnly TranscriptRequest = iota
+	TimestampedCaptions
+	CaptionsThenPaid
+	PaidOnly
+	// TimestampedTranscript accepts any timed cache entry and rechecks negative
+	// metadata on a miss. Like TimestampedCaptions it never starts paid work.
+	TimestampedTranscript
 )
 
-// TranscriptRequest describes transcript acquisition without presentation
-// concerns. Timestamp rendering is kept outside the acquisition module, but
-// RequireTimestamps prevents a plain-text-only cache entry from satisfying the
-// request.
-type TranscriptRequest struct {
-	Policy            TranscriptPolicy
-	RequireTimestamps bool
+func (r TranscriptRequest) needsTimestamps() bool {
+	return r == TimestampedCaptions || r == TimestampedTranscript
 }
 
 // ErrCaptionsUnavailable is returned when captions are unavailable and the
@@ -98,8 +96,19 @@ type Summary struct {
 }
 
 type PlaylistSummaryRequest struct {
-	Transcript               TranscriptRequest
-	ConfirmPaidTranscription func(ref ContentRef, metadata *VideoMetadata) bool
+	transcript  TranscriptRequest
+	confirmPaid func(ContentRef, *VideoMetadata) bool
+}
+
+// PlaylistTranscripts applies one acquisition intent to every item.
+func PlaylistTranscripts(request TranscriptRequest) PlaylistSummaryRequest {
+	return PlaylistSummaryRequest{transcript: request}
+}
+
+// PlaylistWithConsent starts each item with free captions. Approval applies
+// only to the item for which the callback was invoked.
+func PlaylistWithConsent(confirm func(ContentRef, *VideoMetadata) bool) PlaylistSummaryRequest {
+	return PlaylistSummaryRequest{transcript: CaptionsOnly, confirmPaid: confirm}
 }
 
 type PlaylistSummaryResult struct {
@@ -146,7 +155,7 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
 		return nil, fmt.Errorf("loading cached transcript: %w", err)
 	}
-	if request.Policy == TranscriptPolicyPaidTranscriptionOnly {
+	if request == PaidOnly {
 		// An X post URL alone cannot establish whether it contains one video.
 		if ref.IsX() {
 			if _, err := app.resolveMetadata(ctx, ref); err != nil {
@@ -159,73 +168,17 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 	if !ref.IsX() {
 		ctx = withYouTubeReadBudget(ctx)
 	}
-	metadata, err := app.resolveMetadataWithPolicy(ctx, ref, request.Policy == TranscriptPolicyCaptionsThenPaidTranscription)
+	metadata, err := app.resolveMetadataWithPolicy(ctx, ref, request == CaptionsThenPaid || request == TimestampedTranscript)
 	if err != nil {
 		return nil, fmt.Errorf("checking video metadata: %w", err)
 	}
-	if !metadata.HasCaptions {
-		if request.Policy == TranscriptPolicyCaptionsOnly || request.RequireTimestamps {
-			err := fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.URL())
-			if metadata.Duration > 0 {
-				err = fmt.Errorf("%w (duration %s)", err, time.Duration(metadata.Duration)*time.Second)
-			}
-			if request.RequireTimestamps {
-				return nil, fmt.Errorf("%w: %w", ErrTranscriptTimestampsUnavailable, err)
-			}
-			return nil, err
-		}
-		return app.transcribeVideo(ctx, ref)
-	}
-
-	transcript, err := app.video.FetchCaptions(ctx, ref, metadata)
-	if terminalTranscriptError(err) {
-		return nil, err
-	}
-	if errors.Is(err, ErrCaptionsUnavailable) {
-		var missing *CaptionTrackUnavailableError
-		errors.As(err, &missing)
-		fresh, refreshErr := app.RefreshMetadata(ctx, ref)
-		if refreshErr != nil {
-			return nil, fmt.Errorf("refreshing caption availability: %w", refreshErr)
-		}
-		// Do not mutate metadata shared with concurrent readers or cache a
-		// temporary exclusion of a track that may return on a later request.
-		retryMetadata := *fresh
-		if missing != nil {
-			retryMetadata.CaptionTracks = nil
-			for _, track := range fresh.CaptionTracks {
-				if track.Language != missing.Track.Language || track.Automatic != missing.Track.Automatic {
-					retryMetadata.CaptionTracks = append(retryMetadata.CaptionTracks, track)
-				}
-			}
-		}
-		if fresh.HasCaptions {
-			transcript, err = app.video.FetchCaptions(ctx, ref, &retryMetadata)
-		} else {
-			transcript, err = nil, ErrCaptionsUnavailable
-		}
-	} else if errors.Is(err, ErrDownloadFailed) {
-		if waitErr := sleepWithContext(ctx, time.Second); waitErr != nil {
-			return nil, waitErr
-		}
-		transcript, err = app.video.FetchCaptions(ctx, ref, metadata)
-	}
-	if terminalTranscriptError(err) {
-		return nil, err
-	}
-	// On X, a failed caption download does not establish that captions are absent.
-	allowFallback := !ref.IsX() || errors.Is(err, ErrCaptionsUnavailable)
-	if (err != nil || transcript == nil) && allowFallback && request.Policy == TranscriptPolicyCaptionsThenPaidTranscription && !request.RequireTimestamps {
-		return app.transcribeVideo(ctx, ref)
-	}
+	transcript, err := readCaptions(ctx, ref, metadata, request.needsTimestamps(), app.video.FetchCaptions, app.RefreshMetadata)
 	if err != nil {
-		return nil, fmt.Errorf("fetching captions: %w", err)
-	}
-	if transcript == nil {
-		return nil, fmt.Errorf("no transcript available for %s", ref.CacheKey())
-	}
-	if request.RequireTimestamps && !transcript.HasTimestamps() {
-		return nil, ErrTranscriptTimestampsUnavailable
+		var eligible *paidFallbackError
+		if request == CaptionsThenPaid && errors.As(err, &eligible) {
+			return app.transcribeVideo(ctx, ref)
+		}
+		return nil, err
 	}
 
 	transcript.VideoID = ref.CacheKey()
@@ -236,13 +189,13 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 }
 
 func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) bool {
-	if transcript == nil || (request.RequireTimestamps && !transcript.HasTimestamps()) {
+	if transcript == nil || (request.needsTimestamps() && !transcript.HasTimestamps()) {
 		return false
 	}
-	switch request.Policy {
-	case TranscriptPolicyCaptionsOnly:
+	switch request {
+	case CaptionsOnly, TimestampedCaptions:
 		return transcript.Source == TranscriptSourceCaptions
-	case TranscriptPolicyPaidTranscriptionOnly:
+	case PaidOnly:
 		return transcript.Source == TranscriptSourcePaidTranscription
 	default:
 		return true
@@ -280,7 +233,7 @@ func (app *Engine) SummarizeVideo(ctx context.Context, ref ContentRef, request T
 // returns transport-neutral output. A caller may provide a consent callback;
 // the application module never prompts or prints directly.
 func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, request PlaylistSummaryRequest) (PlaylistSummaryResult, error) {
-	if err := validateTranscriptRequest(request.Transcript); err != nil {
+	if err := validateTranscriptRequest(request.transcript); err != nil {
 		return PlaylistSummaryResult{}, err
 	}
 	if !ref.IsPlaylist() {
@@ -300,13 +253,16 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 	result := PlaylistSummaryResult{Title: playlist.Title, Total: len(playlist.Videos)}
 	var videos []VideoTranscript
 	for i, videoRef := range playlist.Videos {
-		transcript, transcriptErr := app.Transcript(ctx, videoRef, request.Transcript)
+		transcript, transcriptErr := app.Transcript(ctx, videoRef, request.transcript)
 		metadata, metadataErr := app.resolveMetadata(ctx, videoRef)
 		if metadataErr != nil {
 			metadata = &VideoMetadata{Title: fmt.Sprintf("Video %d", i+1), Channel: "Unknown", Description: "Metadata fetch failed"}
 		}
-		if errors.Is(transcriptErr, ErrCaptionsUnavailable) && request.ConfirmPaidTranscription != nil && request.ConfirmPaidTranscription(videoRef, metadata) {
-			transcript, transcriptErr = app.Transcript(ctx, videoRef, TranscriptRequest{Policy: TranscriptPolicyPaidTranscriptionOnly})
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		if request.confirmPaid != nil && CanOfferPaidTranscription(transcriptErr) && request.confirmPaid(videoRef, metadata) {
+			transcript, transcriptErr = app.Transcript(ctx, videoRef, PaidOnly)
 		}
 		if transcriptErr != nil {
 			result.Skipped = append(result.Skipped, fmt.Sprintf("Video %d: %s (transcript error)", i+1, metadata.Title))
@@ -329,7 +285,8 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 			Transcript:  plain,
 		})
 	}
-	if len(videos) == 0 {
+	result.Processed = len(videos)
+	if result.Processed == 0 {
 		return result, fmt.Errorf("no video transcripts could be obtained")
 	}
 
@@ -342,18 +299,12 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 	if err != nil {
 		return result, fmt.Errorf("generating playlist summary: %w", err)
 	}
-	result.Processed = len(videos)
 	return result, nil
 }
 
 func validateTranscriptRequest(request TranscriptRequest) error {
-	switch request.Policy {
-	case TranscriptPolicyCaptionsOnly, TranscriptPolicyCaptionsThenPaidTranscription, TranscriptPolicyPaidTranscriptionOnly:
-	default:
-		return fmt.Errorf("%w: %d", ErrInvalidTranscriptPolicy, request.Policy)
-	}
-	if request.RequireTimestamps && request.Policy == TranscriptPolicyPaidTranscriptionOnly {
-		return ErrTranscriptTimestampsUnavailable
+	if request > TimestampedTranscript {
+		return fmt.Errorf("%w: %d", ErrInvalidTranscriptPolicy, request)
 	}
 	return nil
 }

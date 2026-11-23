@@ -47,9 +47,7 @@ func TestEngineAppliesTranscriptionTimeout(t *testing.T) {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	if _, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyPaidTranscriptionOnly,
-	}); err != nil {
+	if _, err := engine.Transcript(context.Background(), ref, tldw.PaidOnly); err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
 	if !ai.sawDeadline {
@@ -69,7 +67,7 @@ func TestEngineVideoOnlyMethodsRejectPlaylist(t *testing.T) {
 		t.Fatalf("ParseReference() error = %v", err)
 	}
 
-	if _, err := engine.Transcript(context.Background(), playlist, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly}); err == nil {
+	if _, err := engine.Transcript(context.Background(), playlist, tldw.CaptionsOnly); err == nil {
 		t.Fatal("Transcript() accepted a playlist")
 	}
 	if _, err := engine.MetadataFor(context.Background(), playlist); err == nil {
@@ -123,9 +121,7 @@ func TestEngineRejectsEmptyAdapterResults(t *testing.T) {
 	if _, err := engine.MetadataFor(context.Background(), videoRef); err == nil {
 		t.Fatal("MetadataFor() accepted nil metadata from the video adapter")
 	}
-	if _, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistSummaryRequest{
-		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
-	}); err == nil {
+	if _, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistTranscripts(tldw.CaptionsOnly)); err == nil {
 		t.Fatal("CreatePlaylistSummary() accepted nil playlist data from the video adapter")
 	}
 }
@@ -156,11 +152,11 @@ func TestNegativeCaptionCacheRefresh(t *testing.T) {
 				t.Fatal(err)
 			}
 			ref, _ := tldw.ParseVideoRef(testVideoID)
-			policy := tldw.TranscriptPolicyCaptionsOnly
+			policy := tldw.CaptionsOnly
 			if tt.paid {
-				policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
+				policy = tldw.CaptionsThenPaid
 			}
-			result, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: policy})
+			result, err := engine.Transcript(context.Background(), ref, policy)
 			if tt.fail {
 				if !errors.Is(err, lookupErr) {
 					t.Fatalf("error=%v", err)

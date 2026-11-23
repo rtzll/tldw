@@ -17,16 +17,16 @@ func TestXPaidTranscriptionRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 	lookupErr := errors.New("post does not contain one accessible video")
 	for _, tc := range []struct {
 		name    string
-		policy  tldw.TranscriptPolicy
+		policy  tldw.TranscriptRequest
 		video   videoStub
 		wantErr error
 	}{
-		{"free", tldw.TranscriptPolicyCaptionsOnly, videoStub{metadata: &tldw.VideoMetadata{}}, tldw.ErrCaptionsUnavailable},
-		{"opted in", tldw.TranscriptPolicyCaptionsThenPaidTranscription, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
-		{"dedicated paid tool", tldw.TranscriptPolicyPaidTranscriptionOnly, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
-		{"invalid post", tldw.TranscriptPolicyPaidTranscriptionOnly, videoStub{metadataErr: lookupErr}, lookupErr},
-		{"failed lookup", tldw.TranscriptPolicyCaptionsThenPaidTranscription, videoStub{metadataErr: lookupErr}, lookupErr},
-		{"caption access failure", tldw.TranscriptPolicyCaptionsThenPaidTranscription, videoStub{
+		{"free", tldw.CaptionsOnly, videoStub{metadata: &tldw.VideoMetadata{}}, tldw.ErrCaptionsUnavailable},
+		{"opted in", tldw.CaptionsThenPaid, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
+		{"dedicated paid tool", tldw.PaidOnly, videoStub{metadata: &tldw.VideoMetadata{}}, nil},
+		{"invalid post", tldw.PaidOnly, videoStub{metadataErr: lookupErr}, lookupErr},
+		{"failed lookup", tldw.CaptionsThenPaid, videoStub{metadataErr: lookupErr}, lookupErr},
+		{"caption access failure", tldw.CaptionsThenPaid, videoStub{
 			metadata: &tldw.VideoMetadata{HasCaptions: true}, captionsErr: lookupErr,
 		}, lookupErr},
 	} {
@@ -36,7 +36,7 @@ func TestXPaidTranscriptionRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := engine.Transcript(t.Context(), ref, tldw.TranscriptRequest{Policy: tc.policy})
+			got, err := engine.Transcript(t.Context(), ref, tc.policy)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("got %v, want %v", err, tc.wantErr)
 			}
@@ -68,9 +68,7 @@ func TestEnginePaidTranscriptionOnlySkipsCaptionsAndReplacesCaptionCache(t *test
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyPaidTranscriptionOnly,
-	})
+	got, err := engine.Transcript(context.Background(), ref, tldw.PaidOnly)
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
@@ -98,7 +96,7 @@ func TestEngineRejectsUnknownTranscriptPolicyBeforeUsingDependencies(t *testing.
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicy(99)})
+	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest(99))
 	if !errors.Is(err, tldw.ErrInvalidTranscriptPolicy) {
 		t.Fatalf("Transcript() error = %v, want ErrInvalidTranscriptPolicy", err)
 	}
@@ -121,9 +119,7 @@ func TestEngineDoesNotUsePaidTranscriptionForTimestampRequest(t *testing.T) {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription, RequireTimestamps: true,
-	})
+	_, err = engine.Transcript(context.Background(), ref, tldw.TimestampedTranscript)
 	if !errors.Is(err, tldw.ErrTranscriptTimestampsUnavailable) {
 		t.Fatalf("Transcript() error = %v, want ErrTranscriptTimestampsUnavailable", err)
 	}
@@ -146,9 +142,7 @@ func TestEngineCaptionsOnlyRejectsCachedPaidTranscription(t *testing.T) {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsOnly,
-	})
+	_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if !errors.Is(err, tldw.ErrCaptionsUnavailable) {
 		t.Fatalf("Transcript() error = %v, want ErrCaptionsUnavailable", err)
 	}
@@ -171,9 +165,7 @@ func TestEngineCaptionsOnlyDoesNotInventUnknownCacheSource(t *testing.T) {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsOnly,
-	})
+	got, err := engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
@@ -201,7 +193,7 @@ func TestEngineCachesCaptionTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
-	request := tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly}
+	request := tldw.CaptionsOnly
 
 	first, err := engine.Transcript(context.Background(), ref, request)
 	if err != nil {
@@ -234,9 +226,7 @@ func TestEngineReturnsUnexpectedStoreFailure(t *testing.T) {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsOnly,
-	})
+	_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if err == nil || !errors.Is(err, store.transcriptErr) {
 		t.Fatalf("Transcript() error = %v, want cache failure", err)
 	}
@@ -259,9 +249,7 @@ func TestEngineFallsBackToPaidTranscriptionWhenCaptionsAreUnavailable(t *testing
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription,
-	})
+	got, err := engine.Transcript(context.Background(), ref, tldw.CaptionsThenPaid)
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
@@ -286,9 +274,7 @@ func TestEngineDoesNotFallBackToPaidTranscriptionAfterCaptionCancellation(t *tes
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription,
-	})
+	_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsThenPaid)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Transcript() error = %v, want context.Canceled", err)
 	}
@@ -314,9 +300,7 @@ func TestEngineSummarizeVideoReturnsTransportNeutralMarkdown(t *testing.T) {
 		t.Fatalf("ParseVideoRef() error = %v", err)
 	}
 
-	summary, err := engine.SummarizeVideo(context.Background(), ref, tldw.TranscriptRequest{
-		Policy: tldw.TranscriptPolicyCaptionsOnly,
-	})
+	summary, err := engine.SummarizeVideo(context.Background(), ref, tldw.CaptionsOnly)
 	if err != nil {
 		t.Fatalf("SummarizeVideo() error = %v", err)
 	}
@@ -346,9 +330,7 @@ func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
 
-	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistSummaryRequest{
-		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
-	})
+	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistTranscripts(tldw.CaptionsOnly))
 	if err != nil {
 		t.Fatalf("CreatePlaylistSummary() error = %v", err)
 	}
@@ -380,13 +362,10 @@ func TestEngineSummarizePlaylistUsesPaidTranscriptionAfterConsent(t *testing.T) 
 	}
 	confirmed := false
 
-	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistSummaryRequest{
-		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
-		ConfirmPaidTranscription: func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
-			confirmed = ref.ID() == testVideoID && metadata.Title == "No captions"
-			return true
-		},
-	})
+	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistWithConsent(func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
+		confirmed = ref.ID() == testVideoID && metadata.Title == "No captions"
+		return true
+	}))
 	if err != nil {
 		t.Fatalf("CreatePlaylistSummary() error = %v", err)
 	}
@@ -405,10 +384,27 @@ func TestEngineDoesNotRetryOrSpendOnTerminalCaptionErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			ref, _ := tldw.ParseVideoRef(testVideoID)
-			_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription})
+			_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsThenPaid)
 			if !errors.Is(err, cause) || video.captionCalls != 1 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
 				t.Fatalf("err=%v caption=%d audio=%d paid=%d", err, video.captionCalls, video.audioCalls, ai.transcribeCalls)
 			}
 		})
+	}
+}
+
+func TestTimestampedPlaylistsSkipMissingCaptionsWithoutPaidWork(t *testing.T) {
+	ref, _ := tldw.ParseVideoRef(testVideoID)
+	playlist, _ := tldw.ParseReference("PLSE8ODhjZXjYDBpQnSymaectKjxCy6BYq")
+	for _, intent := range []tldw.TranscriptRequest{tldw.TimestampedCaptions, tldw.TimestampedTranscript} {
+		video := &videoStub{metadata: &tldw.VideoMetadata{Channel: "c"}, playlist: &tldw.PlaylistInfo{Videos: []tldw.ContentRef{ref}}}
+		ai := &aiStub{}
+		app, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := app.CreatePlaylistSummary(t.Context(), playlist, tldw.PlaylistTranscripts(intent))
+		if err == nil || len(result.Skipped) != 1 || result.Processed != 0 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
+			t.Fatalf("intent=%v result=%+v err=%v audio=%d paid=%d", intent, result, err, video.audioCalls, ai.transcribeCalls)
+		}
 	}
 }

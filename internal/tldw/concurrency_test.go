@@ -51,7 +51,7 @@ func TestConcurrentTranscriptRequestsShareCacheAndAllowCancellation(t *testing.T
 		other, _ := tldw.ParseVideoRef("tAP1eZYEuKA")
 		results := make(chan error, 3)
 		run := func(ref tldw.ContentRef) {
-			_, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyPaidTranscriptionOnly})
+			_, err := engine.Transcript(context.Background(), ref, tldw.PaidOnly)
 			results <- err
 		}
 		go run(first)
@@ -62,7 +62,7 @@ func TestConcurrentTranscriptRequestsShareCacheAndAllowCancellation(t *testing.T
 		canceled := make(chan error, 1)
 		ctx, cancel := context.WithCancel(context.Background())
 		go func() {
-			_, err := engine.Transcript(ctx, first, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyPaidTranscriptionOnly})
+			_, err := engine.Transcript(ctx, first, tldw.PaidOnly)
 			canceled <- err
 		}()
 		synctest.Wait()
@@ -106,7 +106,7 @@ func TestSeparateEnginesShareTranscriptAcquisition(t *testing.T) {
 	ref, _ := tldw.ParseVideoRef(testVideoID)
 	results := make(chan error, 2)
 	run := func(engine *tldw.Engine) {
-		_, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyPaidTranscriptionOnly})
+		_, err := engine.Transcript(context.Background(), ref, tldw.PaidOnly)
 		results <- err
 	}
 	go run(first)

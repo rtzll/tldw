@@ -288,7 +288,7 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	if !output.IncludeTimestamps {
 		t.Error("structured include_timestamps = false, want true")
 	}
-	if app.transcriptCalls != 1 || app.lastRequest.Policy != tldw.TranscriptPolicyCaptionsOnly || !app.lastRequest.RequireTimestamps {
+	if app.transcriptCalls != 1 || app.lastRequest != tldw.TimestampedCaptions {
 		t.Fatalf("Transcript() calls = %d, request = %+v", app.transcriptCalls, app.lastRequest)
 	}
 }
@@ -329,8 +329,8 @@ func TestMCPPaidTranscriptionReturnsTextAndStructuredContent(t *testing.T) {
 	if output.IncludeTimestamps {
 		t.Error("structured include_timestamps = true, want false")
 	}
-	if app.transcriptCalls != 1 || app.lastRequest.Policy != tldw.TranscriptPolicyPaidTranscriptionOnly {
-		t.Fatalf("Transcript() calls = %d, policy = %v", app.transcriptCalls, app.lastRequest.Policy)
+	if app.transcriptCalls != 1 || app.lastRequest != tldw.PaidOnly {
+		t.Fatalf("Transcript() calls = %d, policy = %v", app.transcriptCalls, app.lastRequest)
 	}
 }
 

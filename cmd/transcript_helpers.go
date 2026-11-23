@@ -27,11 +27,13 @@ func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, 
 	format := requestedTranscriptFormat(cmd)
 	timestamps := format == tldw.TranscriptRenderFormatTimestamps
 	allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")
-	policy := tldw.TranscriptPolicyCaptionsOnly
-	if allowPaidTranscription && !timestamps {
-		policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
+	policy := tldw.CaptionsOnly
+	if timestamps {
+		policy = tldw.TimestampedCaptions
+	} else if allowPaidTranscription {
+		policy = tldw.CaptionsThenPaid
 	}
-	transcript, err := app.Transcript(cmd.Context(), parsed, tldw.TranscriptRequest{Policy: policy, RequireTimestamps: timestamps})
+	transcript, err := app.Transcript(cmd.Context(), parsed, policy)
 	if err != nil {
 		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
 			if timestamps {

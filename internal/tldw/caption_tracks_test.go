@@ -42,7 +42,7 @@ func TestMissingTrackRefreshesOnceAndExcludesOnlyFailedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref, _ := tldw.ParseVideoRef(testVideoID)
-	got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly})
+	got, err := engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if err != nil || got.Text != "Manual English" || video.metadataCalls != 1 || video.captionCalls != 2 {
 		t.Fatalf("got %+v, err %v, metadata %d captions %d", got, err, video.metadataCalls, video.captionCalls)
 	}
@@ -66,7 +66,7 @@ func TestMissingTrackRefreshFailureDoesNotRetryOrSpend(t *testing.T) {
 				t.Fatal(err)
 			}
 			ref, _ := tldw.ParseVideoRef(testVideoID)
-			_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription})
+			_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsThenPaid)
 			if !errors.Is(err, cause) || video.captionCalls != 1 || video.metadataCalls != 1 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
 				t.Fatalf("err %v, metadata %d captions %d audio %d paid %d", err, video.metadataCalls, video.captionCalls, video.audioCalls, ai.transcribeCalls)
 			}
@@ -84,7 +84,7 @@ func TestMissingTracksDoNotLoopAfterRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref, _ := tldw.ParseVideoRef(testVideoID)
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly})
+	_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if !errors.Is(err, tldw.ErrCaptionsUnavailable) || video.metadataCalls != 1 || video.captionCalls != 2 {
 		t.Fatalf("err %v, metadata %d captions %d", err, video.metadataCalls, video.captionCalls)
 	}
@@ -109,7 +109,7 @@ func TestMissingTrackRetryTerminalErrorDoesNotSpend(t *testing.T) {
 				t.Fatal(err)
 			}
 			ref, _ := tldw.ParseVideoRef(testVideoID)
-			_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription})
+			_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsThenPaid)
 			if !errors.Is(err, cause) || video.captionCalls != 2 || video.metadataCalls != 1 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
 				t.Fatalf("err %v, metadata %d captions %d audio %d paid %d", err, video.metadataCalls, video.captionCalls, video.audioCalls, ai.transcribeCalls)
 			}
@@ -141,7 +141,7 @@ func TestLegacyCaptionCacheSurvivesRateLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref, _ := tldw.ParseVideoRef(testVideoID)
-	_, err = engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly})
+	_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if !errors.Is(err, tldw.ErrRateLimited) || video.captionCalls != 1 || video.metadataCalls != 0 {
 		t.Fatalf("err %v, metadata %d captions %d", err, video.metadataCalls, video.captionCalls)
 	}
@@ -181,7 +181,7 @@ func TestLegacyPositiveMetadataAndCaptionsAreReacquired(t *testing.T) {
 	}
 	ref, _ := tldw.ParseVideoRef(testVideoID)
 	for range 2 {
-		got, err := engine.Transcript(context.Background(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly})
+		got, err := engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 		if err != nil || got.Text != "Original English" || got.CaptionTrack == nil || *got.CaptionTrack != track {
 			t.Fatalf("got %+v, err %v", got, err)
 		}

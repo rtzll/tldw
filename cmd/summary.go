@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/rtzll/tldw/internal"
@@ -39,19 +38,19 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	}
 
 	progress := newSummaryProgress(config, "Processing video...")
-	policy := tldw.TranscriptPolicyCaptionsOnly
+	policy := tldw.CaptionsOnly
 	if allowPaidTranscription {
-		policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
+		policy = tldw.CaptionsThenPaid
 	}
 	progress.update("Generating summary with OpenAI...")
-	summary, err := engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: policy})
-	if errors.Is(err, tldw.ErrCaptionsUnavailable) && !allowPaidTranscription {
+	summary, err := engine.SummarizeVideo(ctx, ref, policy)
+	if !allowPaidTranscription && tldw.CanOfferPaidTranscription(err) {
 		progress.finish()
 		if !askUser(fmt.Sprintf("%v. Use paid OpenAI transcription?", err)) {
 			return fmt.Errorf("transcription declined by user")
 		}
 		progress = newSummaryProgress(config, "Transcribing with OpenAI...")
-		summary, err = engine.SummarizeVideo(ctx, ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyPaidTranscriptionOnly})
+		summary, err = engine.SummarizeVideo(ctx, ref, tldw.PaidOnly)
 	}
 	if err != nil {
 		progress.finish()
@@ -69,15 +68,13 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 }
 
 func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool) error {
-	request := tldw.PlaylistSummaryRequest{
-		Transcript: tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsOnly},
-	}
+	request := tldw.PlaylistTranscripts(tldw.CaptionsOnly)
 	if allowPaidTranscription {
-		request.Transcript.Policy = tldw.TranscriptPolicyCaptionsThenPaidTranscription
+		request = tldw.PlaylistTranscripts(tldw.CaptionsThenPaid)
 	} else {
-		request.ConfirmPaidTranscription = func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
+		request = tldw.PlaylistWithConsent(func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
 			return askUser(fmt.Sprintf("Video %s: '%s' has no captions. Use paid OpenAI transcription?", video.ID(), metadata.Title))
-		}
+		})
 	}
 
 	result, err := engine.CreatePlaylistSummary(ctx, ref, request)

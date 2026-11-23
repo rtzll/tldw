@@ -106,7 +106,7 @@ func TestTranscriptSharesOneRateLimitRetryAcrossMetadataAndCaptions(t *testing.T
 		}
 		ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
 		start := time.Now()
-		_, err = engine.Transcript(t.Context(), ref, tldw.TranscriptRequest{Policy: tldw.TranscriptPolicyCaptionsThenPaidTranscription})
+		_, err = engine.Transcript(t.Context(), ref, tldw.CaptionsThenPaid)
 		if !errors.Is(err, tldw.ErrRateLimited) || !strings.Contains(err.Error(), "3 seconds") ||
 			metadataCalls != 2 || captionCalls != 1 || time.Since(start) != 3*time.Second {
 			t.Fatalf("metadata=%d captions=%d elapsed=%s error=%v", metadataCalls, captionCalls, time.Since(start), err)
