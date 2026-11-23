@@ -13,7 +13,7 @@ import (
 
 // downloadCaptions requests exactly one language and one caption source.
 // Rebuilding arguments prevents fallback from modifying the conversion flag.
-func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, track tldw.CaptionTrack) (string, error) {
+func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, track directTrack) (string, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -37,41 +37,27 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading direct captions: %s (automatic=%t)\n", track.Language, track.Automatic)
 	}
-	_, partialFiles, err := yt.runCaptionDownload(ctx, ref, args, path)
-	if err != nil {
-		return "", captionDownloadError(err)
-	}
-	if len(partialFiles) > 0 && yt.verbose && !yt.quiet {
-		yt.log.Printf("Captions downloaded despite a nonterminal error: %s\n", track.Language)
-	}
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return "", &tldw.CaptionTrackUnavailableError{Track: track}
-	}
-	if err != nil {
-		return "", fmt.Errorf("checking downloaded captions: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("downloaded captions are not a regular file")
-	}
-	return path, nil
-}
-
-func (yt *Client) runCaptionDownload(ctx context.Context, ref tldw.ContentRef, args []string, pattern string) ([]byte, []string, error) {
-	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
-	err = classifyReadError(ctx, ref, output, err)
-	if err == nil {
-		return output, nil, nil
-	}
-	if terminalReadError(err) {
-		return output, nil, err
+	output, runErr := yt.executor.Run(ctx, "yt-dlp", args...)
+	runErr = classifyReadError(ctx, ref, output, runErr)
+	if terminalReadError(runErr) {
+		return "", runErr
 	}
 
-	files, globErr := filepath.Glob(pattern)
-	if globErr == nil && len(files) > 0 {
-		return output, files, nil
+	info, fileErr := os.Stat(path)
+	if fileErr == nil && info.Mode().IsRegular() {
+		// yt-dlp can finish writing the requested track before a nonterminal error.
+		return path, nil
 	}
-	return output, nil, err
+	if runErr != nil {
+		return "", captionDownloadError(runErr)
+	}
+	if os.IsNotExist(fileErr) {
+		return "", &tldw.CaptionTrackUnavailableError{Track: track.provenance()}
+	}
+	if fileErr != nil {
+		return "", fmt.Errorf("checking downloaded captions: %w", fileErr)
+	}
+	return "", fmt.Errorf("downloaded captions are not a regular file")
 }
 
 func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
@@ -90,7 +76,7 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 			return nil, fmt.Errorf("searching existing captions: %w", err)
 		}
 		if path != "" {
-			return yt.processSrtTranscript(path, track)
+			return yt.processSrtTranscript(path, track.provenance())
 		}
 	}
 	return readVideo(ctx, yt, ref, func() (*tldw.Transcript, error) {
@@ -98,7 +84,7 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 	})
 }
 
-func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, track tldw.CaptionTrack) (*tldw.Transcript, error) {
+func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, track directTrack) (*tldw.Transcript, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -117,7 +103,7 @@ func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, tr
 	if err != nil {
 		return nil, err
 	}
-	return worker.processSrtTranscript(path, track)
+	return worker.processSrtTranscript(path, track.provenance())
 }
 
 func (yt *Client) findExistingTranscript(videoID, language string) (string, error) {

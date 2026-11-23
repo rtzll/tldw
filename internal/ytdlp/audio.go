@@ -9,6 +9,11 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
+func usableAudioFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() > 0
+}
+
 // audio downloads and caches the video's audio as MP3.
 func (yt *Client) audio(ctx context.Context, ref tldw.ContentRef) (string, error) {
 	if yt.verbose && !yt.quiet {
@@ -22,7 +27,7 @@ func (yt *Client) audio(ctx context.Context, ref tldw.ContentRef) (string, error
 	}
 
 	outputFile := filepath.Join(cacheDir, ref.CacheKey()+".mp3")
-	if info, err := os.Stat(outputFile); err == nil && info.Mode().IsRegular() && info.Size() > 0 {
+	if usableAudioFile(outputFile) {
 		return outputFile, nil
 	}
 	workDir, err := os.MkdirTemp(cacheDir, "audio-")
@@ -66,7 +71,10 @@ func (yt *Client) audio(ctx context.Context, ref tldw.ContentRef) (string, error
 
 	// Return the full path to the downloaded file
 	downloaded := filepath.Join(workDir, ref.CacheKey()+".mp3")
-	if info, err := os.Stat(downloaded); err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if !usableAudioFile(downloaded) {
 		return "", fmt.Errorf("audio download produced no usable file")
 	}
 	if err := os.Rename(downloaded, outputFile); err != nil {

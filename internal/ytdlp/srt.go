@@ -70,74 +70,58 @@ func pathWithinDirectory(path, directory string) bool {
 	return relative != "." && filepath.IsLocal(relative)
 }
 
-// parseSRT extracts timed subtitle windows, retaining display-line boundaries
-// until rolling captions have been condensed.
+type cuePhase uint8
+
+const (
+	outsideCue cuePhase = iota
+	awaitingText
+	collectingText
+)
+
+type cueParser struct {
+	phase    cuePhase
+	cue      tldw.TranscriptSegment
+	lines    []string
+	segments []tldw.TranscriptSegment
+}
+
+// finish closes the current cue at a separator, another timing line, or EOF.
+func (p *cueParser) finish() {
+	if p.phase == collectingText {
+		p.cue.Text = strings.Join(p.lines, "\n")
+		p.segments = append(p.segments, p.cue)
+	}
+	p.phase = outsideCue
+	p.lines = p.lines[:0]
+}
+
 func parseSRT(content string) []tldw.TranscriptSegment {
-	var segments []tldw.TranscriptSegment
-	var current *tldw.TranscriptSegment
-	var textParts []string
-
-	flushCurrent := func() {
-		if current == nil {
-			return
-		}
-
-		current.Text = strings.TrimSpace(strings.Join(textParts, "\n"))
-		if current.Text != "" {
-			segments = append(segments, *current)
-		}
-
-		current = nil
-		textParts = nil
-	}
-
+	var p cueParser
 	lines := strings.Split(content, "\n")
-	for i, rawLine := range lines {
-		line := strings.TrimSpace(strings.TrimSuffix(rawLine, "\r"))
-		if line == "" {
-			// Converted rolling captions can start with an empty display line.
-			// Only treat a blank as a separator after collecting actual text.
-			if len(textParts) > 0 {
-				flushCurrent()
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		switch {
+		case line == "":
+			if p.phase == collectingText {
+				p.finish()
 			}
-			continue
-		}
-
-		// A sequence number precedes a timing line; digits inside a cue are speech.
-		if isSRTSequenceNumber(line) && i+1 < len(lines) && strings.Contains(lines[i+1], "-->") {
-			continue
-		}
-
-		if strings.Contains(line, "-->") {
-			flushCurrent()
-
-			start, end, err := parseSRTTiming(line)
-			if err != nil {
-				current = nil
-				textParts = nil
-				continue
+		case isSRTSequenceNumber(line) && i+1 < len(lines) && strings.Contains(lines[i+1], "-->"):
+			// Digits elsewhere in a cue are spoken text.
+		case strings.Contains(line, "-->"):
+			p.finish()
+			if start, end, err := parseSRTTiming(line); err == nil {
+				p.cue = tldw.TranscriptSegment{Start: start, End: end}
+				p.phase = awaitingText
 			}
-
-			current = &tldw.TranscriptSegment{
-				Start: start,
-				End:   end,
+		case p.phase != outsideCue:
+			if text := normalizeSubtitleLine(line); text != "" {
+				p.lines = append(p.lines, text)
+				p.phase = collectingText
 			}
-			continue
-		}
-
-		if current == nil {
-			// Ignore sequence numbers or other non-text lines outside a cue.
-			continue
-		}
-
-		if cleaned := normalizeSubtitleLine(line); cleaned != "" {
-			textParts = append(textParts, cleaned)
 		}
 	}
-
-	flushCurrent()
-
-	return segments
+	p.finish()
+	return p.segments
 }
 
 func isSRTSequenceNumber(line string) bool {
@@ -240,7 +224,7 @@ func parseSRTTimestamp(value string) (float64, error) {
 // condenseSubtitleSegments trims rolling subtitle windows down to newly introduced text.
 func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.TranscriptSegment {
 	result := make([]tldw.TranscriptSegment, 0, len(segments))
-	var previous tldw.TranscriptSegment
+	var previousRaw tldw.TranscriptSegment
 
 	for i, segment := range segments {
 		text := strings.Join(strings.Fields(segment.Text), " ")
@@ -249,24 +233,24 @@ func condenseSubtitleSegments(segments []tldw.TranscriptSegment) []tldw.Transcri
 		}
 
 		condensedText := text
-		connected := subtitleWindowsConnected(previous, segment)
+		connected := subtitleWindowsConnected(previousRaw, segment)
 		// Longer retained-line transitions need a complete three-window
 		// pattern. Adjacent matching multiline speech alone is insufficient.
 		if !connected && i+1 < len(segments) {
-			connected = rollingSubtitleBridge(previous, segment, segments[i+1])
+			connected = rollingSubtitleBridge(previousRaw, segment, segments[i+1])
 		}
 		if !connected && i >= 2 {
-			connected = rollingSubtitleBridge(segments[i-2], previous, segment)
+			connected = rollingSubtitleBridge(segments[i-2], previousRaw, segment)
 		}
 		if connected {
-			if overlap := longestSubtitleOverlap(previous.Text, text); overlap != "" {
+			if overlap := longestSubtitleOverlap(previousRaw.Text, text); overlap != "" {
 				condensedText = strings.TrimSpace(strings.TrimPrefix(text, overlap))
 			}
 		}
 
 		// Track the raw window even when it contributes no new words. A rolling
 		// window can shrink before introducing another occurrence of a word.
-		previous = segment
+		previousRaw = segment
 		if condensedText == "" {
 			continue
 		}

@@ -13,9 +13,19 @@ var captionLanguagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 var englishCaptionPreference = []string{"en-US", "en", "en-GB", "en-CA", "en-AU", "en-NZ"}
 
+// Only selectCaptionTrack constructs a directTrack for downloading.
+type directTrack struct {
+	Language  string
+	Automatic bool
+}
+
+func (track directTrack) provenance() tldw.CaptionTrack {
+	return tldw.CaptionTrack{Language: track.Language, Automatic: track.Automatic, Direct: true}
+}
+
 // selectCaptionTrack chooses one direct track. Original English automatic
 // captions come first, followed by manual English and native-language captions.
-func selectCaptionTrack(tracks []tldw.CaptionTrack, originalLanguage string) (tldw.CaptionTrack, bool) {
+func selectCaptionTrack(tracks []tldw.CaptionTrack, originalLanguage string) (directTrack, bool) {
 	var best tldw.CaptionTrack
 	bestPriority, bestVariant := 100, 100
 	found := false
@@ -55,7 +65,7 @@ func selectCaptionTrack(tracks []tldw.CaptionTrack, originalLanguage string) (tl
 			best, bestPriority, bestVariant, found = track, priority, variant, true
 		}
 	}
-	return best, found
+	return directTrack{Language: best.Language, Automatic: best.Automatic}, found
 }
 
 func extractCaptionTracks(subtitles, automatic map[string]any) []tldw.CaptionTrack {

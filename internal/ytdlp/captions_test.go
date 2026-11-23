@@ -109,15 +109,15 @@ func TestCanceledDownloadDoesNotAcceptPartialFiles(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {
-		if err := os.WriteFile(filepath.Join(dir, "partial.srt"), []byte("partial"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "dQw4w9WgXcQ.en.srt"), []byte("partial"), 0644); err != nil {
 			t.Fatal(err)
 		}
 		cancel()
 		return nil, errors.New("process exited")
 	})
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	_, files, err := yt.runCaptionDownload(ctx, ref, nil, filepath.Join(dir, "*.srt"))
-	if !errors.Is(err, context.Canceled) || len(files) != 0 {
-		t.Fatalf("accepted canceled partial download: files=%v err=%v", files, err)
+	path, err := yt.downloadCaptions(ctx, ref, directTrack{Language: "en"})
+	if !errors.Is(err, context.Canceled) || path != "" {
+		t.Fatalf("accepted canceled partial download: path=%q err=%v", path, err)
 	}
 }

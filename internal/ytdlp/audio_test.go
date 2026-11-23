@@ -43,3 +43,24 @@ func TestAudioUsesConfiguredCacheDir(t *testing.T) {
 		})
 	}
 }
+
+func TestCanceledAudioIsNeverPublished(t *testing.T) {
+	cache := t.TempDir()
+	yt := New(t.TempDir(), cache, false, true)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
+	yt.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		path := strings.ReplaceAll(args[slices.Index(args, "-o")+1], "%(ext)s", "mp3")
+		err := os.WriteFile(path, []byte("partial"), 0600)
+		cancel()
+		return nil, err
+	})
+	if _, err := yt.DownloadAudio(ctx, ref); err != context.Canceled {
+		t.Fatalf("error = %v", err)
+	}
+	files, err := os.ReadDir(cache)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("leftover files: %v, %v", files, err)
+	}
+}

@@ -46,7 +46,7 @@ func TestSelectDirectCaptionTrack(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := selectCaptionTrack(tt.tracks, tt.original)
-			if ok != tt.ok || got != tt.want {
+			if ok != tt.ok || (ok && got.provenance() != tt.want) {
 				t.Fatalf("selected %+v, %t; want %+v, %t", got, ok, tt.want, tt.ok)
 			}
 		})
