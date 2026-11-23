@@ -87,10 +87,7 @@ func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *interna
 	}
 
 	result, err := engine.CreatePlaylistSummary(cmd.Context(), ref, request)
-	if err != nil {
-		return err
-	}
-	if !config.Quiet {
+	if (!config.Quiet && err == nil) || len(result.Skipped) > 0 {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Found %d videos in playlist: %s\n\n", result.Total, result.Title)
 		fmt.Fprintf(cmd.ErrOrStderr(), "Successfully processed %d out of %d videos\n", result.Processed, result.Total)
 		if len(result.Skipped) > 0 {
@@ -100,5 +97,17 @@ func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *interna
 			}
 		}
 	}
-	return writeSummary(cmd.OutOrStdout(), result.Markdown)
+	if err != nil {
+		if result.Total > 0 && result.Declined == result.Total {
+			return errConsentDeclined
+		}
+		return err
+	}
+	if err := writeSummary(cmd.OutOrStdout(), result.Markdown); err != nil {
+		return err
+	}
+	if len(result.Skipped) > 0 {
+		return errIncomplete
+	}
+	return nil
 }

@@ -27,6 +27,8 @@ type statsPeriod struct {
 }
 
 type statsJSONOutput struct {
+	Incomplete      bool               `json:"incomplete,omitempty"`
+	Warnings        []string           `json:"warnings,omitempty"`
 	Period          string             `json:"period"`
 	From            string             `json:"from,omitempty"`
 	To              string             `json:"to,omitempty"`
@@ -76,19 +78,19 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 			if err != nil {
 				return err
 			}
-			for _, warning := range report.Warnings {
-				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
-					return err
-				}
-			}
-			jsonOutput, err := cmd.Flags().GetBool("json")
-			if err != nil {
-				return err
-			}
+			jsonOutput, _ := cmd.Flags().GetBool("json")
 			if jsonOutput {
-				return writeStatsJSON(cmd.OutOrStdout(), period, report)
+				err = writeStatsJSON(cmd.OutOrStdout(), period, report)
+			} else {
+				for _, warning := range report.Warnings {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Incomplete stats: %s\n", warning)
+				}
+				err = writeStatsText(cmd.OutOrStdout(), period, group, report)
 			}
-			return writeStatsText(cmd.OutOrStdout(), period, group, report)
+			if err == nil && len(report.Warnings) > 0 {
+				return errIncomplete
+			}
+			return err
 		},
 	}
 	command.Flags().String("period", "all", "Period to report: today, week, month, or all")
@@ -136,7 +138,7 @@ func parseStatsGroup(name string) (tldw.StatsGroup, error) {
 func writeStatsJSON(writer io.Writer, period statsPeriod, report tldw.StatsReport) error {
 	output := statsJSONOutput{
 		Period: period.name, VideoCount: report.VideoCount, DurationSeconds: report.DurationSeconds,
-		Groups: report.Groups,
+		Groups: report.Groups, Incomplete: len(report.Warnings) > 0, Warnings: report.Warnings,
 	}
 	if !period.from.IsZero() {
 		output.From = period.from.Format(time.RFC3339)

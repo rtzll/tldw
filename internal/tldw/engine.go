@@ -115,6 +115,7 @@ type PlaylistSummaryResult struct {
 	Markdown  string
 	Processed int
 	Total     int
+	Declined  int
 	Skipped   []string
 }
 
@@ -260,17 +261,20 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 			if err != nil {
 				return result, err
 			}
-			if approved {
-				transcript, transcriptErr = app.Transcript(ctx, videoRef, PaidOnly)
+			if !approved {
+				result.Declined++
+				result.Skipped = append(result.Skipped, fmt.Sprintf("%s (%s): paid transcription declined", videoRef.ID(), metadata.Title))
+				continue
 			}
+			transcript, transcriptErr = app.Transcript(ctx, videoRef, PaidOnly)
 		}
 		if transcriptErr != nil {
-			result.Skipped = append(result.Skipped, fmt.Sprintf("Video %d: %s (transcript error)", i+1, metadata.Title))
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s (%s): %v", videoRef.ID(), metadata.Title, transcriptErr))
 			continue
 		}
 		plain, renderErr := transcript.Render(TranscriptRenderFormatPlain)
 		if renderErr != nil {
-			result.Skipped = append(result.Skipped, fmt.Sprintf("Video %d: %s (transcript render error)", i+1, metadata.Title))
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s (%s): %v", videoRef.ID(), metadata.Title, renderErr))
 			continue
 		}
 		description := metadata.Description
@@ -284,8 +288,8 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 			Description: description,
 			Transcript:  plain,
 		})
+		result.Processed = len(videos)
 	}
-	result.Processed = len(videos)
 	if result.Processed == 0 {
 		return result, fmt.Errorf("no video transcripts could be obtained")
 	}

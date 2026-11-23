@@ -83,3 +83,34 @@ func TestCLIErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestStatsDistinguishesEmptyFromPartial(t *testing.T) {
+	dir := t.TempDir()
+	out, diag, code := runCLI(t, cliCommand(t, dir, "stats", "--json"))
+	if code != 0 || diag != "" || !strings.Contains(out, `"video_count": 0`) {
+		t.Fatalf("empty: %d %q %q", code, out, diag)
+	}
+	cache := filepath.Join(dir, "data", "tldw", "transcripts")
+	if err := os.MkdirAll(cache, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{"dQw4w9WgXcQ.meta.json": `{"duration":42}`, "tAP1eZYEuKA.meta.json": "invalid"} {
+		if err := os.WriteFile(filepath.Join(cache, name), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, diag, code = runCLI(t, cliCommand(t, dir, "stats", "--json"))
+	var doc struct {
+		Count      int     `json:"video_count"`
+		Duration   float64 `json:"duration_seconds"`
+		Incomplete bool
+		Warnings   []string
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || code != 1 || diag != "" || doc.Count != 1 || doc.Duration != 42 || !doc.Incomplete || len(doc.Warnings) != 1 || !strings.Contains(doc.Warnings[0], "tAP1eZYEuKA") {
+		t.Fatalf("partial: %d %q %q", code, out, diag)
+	}
+	out, diag, code = runCLI(t, cliCommand(t, dir, "stats", "-q"))
+	if code != 1 || !strings.Contains(out, "1 unique video") || !strings.Contains(diag, "Incomplete stats:") {
+		t.Fatalf("text: %d %q %q", code, out, diag)
+	}
+}

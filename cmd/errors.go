@@ -13,6 +13,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// The command has already emitted the usable result and identified skipped items.
+var errIncomplete = errors.New("incomplete result")
+
 type usageError struct{ error }
 
 func (e usageError) Unwrap() error { return e.error }
@@ -76,6 +79,9 @@ func classify(err error) (int, failure) {
 }
 
 func reportFailure(cmd *cobra.Command, err error) int {
+	if errors.Is(err, errIncomplete) {
+		return 1
+	}
 	code, result := classify(err)
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	if jsonOutput || cmd.Name() == "metadata" {
