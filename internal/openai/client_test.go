@@ -149,15 +149,15 @@ func TestAITranscribeResplitsOversizedChunks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := &mockOpenAIClient{transcription: "ok"}
-	ai.client = client
+	mock := &mockOpenAIClient{transcription: "ok"}
+	ai.getClient = func() (client, error) { return mock, nil }
 	if _, err := ai.Transcribe(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
-	if len(client.uploadSizes) != 4 {
-		t.Fatalf("uploaded chunks = %v", client.uploadSizes)
+	if len(mock.uploadSizes) != 4 {
+		t.Fatalf("uploaded chunks = %v", mock.uploadSizes)
 	}
-	for _, size := range client.uploadSizes {
+	for _, size := range mock.uploadSizes {
 		if size > 2 {
 			t.Fatalf("oversized upload: %d", size)
 		}
@@ -170,21 +170,21 @@ func TestAITranscribeSplitsLargeAudio(t *testing.T) {
 	if err := os.WriteFile(input, []byte("four"), 0o644); err != nil {
 		t.Fatalf("writing audio input: %v", err)
 	}
-	client := &mockOpenAIClient{transcription: "chunk transcript"}
+	mock := &mockOpenAIClient{transcription: "chunk transcript"}
 	ai, err := NewAIWithKey("test-key", NewAudio(chunkingRunner{}, tempDir), Config{
 		Model: "gpt-6-luna", TranscriptionUploadLimit: 2,
 	})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
-	ai.client = client
+	ai.getClient = func() (client, error) { return mock, nil }
 
 	got, err := ai.Transcribe(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Transcribe() error = %v", err)
 	}
-	if got != "chunk transcript\nchunk transcript" || client.transcriptions != 2 {
-		t.Fatalf("Transcribe() = %q, calls = %d", got, client.transcriptions)
+	if got != "chunk transcript\nchunk transcript" || mock.transcriptions != 2 {
+		t.Fatalf("Transcribe() = %q, calls = %d", got, mock.transcriptions)
 	}
 }
 
@@ -199,7 +199,7 @@ func TestAITranscribeReturnsClientError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
-	ai.client = &mockOpenAIClient{err: errors.New("transcription failed")}
+	ai.getClient = func() (client, error) { return &mockOpenAIClient{err: errors.New("transcription failed")}, nil }
 
 	if _, err := ai.Transcribe(context.Background(), input); err == nil {
 		t.Fatal("Transcribe() succeeded after client failure")
@@ -207,14 +207,14 @@ func TestAITranscribeReturnsClientError(t *testing.T) {
 }
 
 func TestAISummary(t *testing.T) {
-	client := &mockOpenAIClient{chatResponse: "A summary", checkContext: true}
+	mock := &mockOpenAIClient{chatResponse: "A summary", checkContext: true}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir())
 	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
-	ai.client = client
+	ai.getClient = func() (client, error) { return mock, nil }
 
 	got, err := ai.Summary(context.Background(), "prompt")
 	if err != nil {
@@ -223,19 +223,19 @@ func TestAISummary(t *testing.T) {
 	if got != "A summary" {
 		t.Errorf("Summary() = %q, want %q", got, "A summary")
 	}
-	if client.chatModel != "gpt-6-luna" {
-		t.Errorf("summary model = %q, want gpt-6-luna", client.chatModel)
+	if mock.chatModel != "gpt-6-luna" {
+		t.Errorf("summary model = %q, want gpt-6-luna", mock.chatModel)
 	}
 }
 
 func TestAITranscribePreservesCallerAudioFile(t *testing.T) {
-	client := &mockOpenAIClient{transcription: "A transcript"}
+	mock := &mockOpenAIClient{transcription: "A transcript"}
 	audio := NewAudio(&mockCommandRunner{}, t.TempDir())
 	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
-	ai.client = client
+	ai.getClient = func() (client, error) { return mock, nil }
 	input := t.TempDir() + "/audio.mp3"
 	if err := os.WriteFile(input, []byte("audio"), 0o644); err != nil {
 		t.Fatalf("writing audio input: %v", err)
@@ -254,17 +254,38 @@ func TestAITranscribePreservesCallerAudioFile(t *testing.T) {
 }
 
 func TestAISummaryError(t *testing.T) {
-	client := &mockOpenAIClient{err: fmt.Errorf("API error")}
+	mock := &mockOpenAIClient{err: fmt.Errorf("API error")}
 	runner := &mockCommandRunner{}
 	audio := NewAudio(runner, t.TempDir())
 	ai, err := NewAIWithKey("test-key", audio, Config{Model: "gpt-6-luna", TranscriptionUploadLimit: TranscriptionUploadLimit})
 	if err != nil {
 		t.Fatalf("NewAIWithKey() error = %v", err)
 	}
-	ai.client = client
+	ai.getClient = func() (client, error) { return mock, nil }
 
 	_, err = ai.Summary(context.Background(), "prompt")
 	if err == nil {
 		t.Error("Summary() expected error")
+	}
+}
+
+func TestNonshrinkingSplitCleansOnlyOwnedFilesBeforeUpload(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.mp3")
+	if err := os.WriteFile(input, []byte("ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ai, err := NewAIWithKey("test", NewAudio(chunkingRunner{}, dir), Config{Model: "test", TranscriptionUploadLimit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock := &mockOpenAIClient{}
+	ai.getClient = func() (client, error) { return mock, nil }
+	if _, err := ai.Transcribe(t.Context(), input); err == nil {
+		t.Fatal("accepted nonshrinking split")
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 1 || files[0].Name() != "input.mp3" || mock.transcriptions != 0 {
+		t.Fatalf("files=%v calls=%d err=%v", files, mock.transcriptions, err)
 	}
 }

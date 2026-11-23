@@ -62,16 +62,13 @@ func (c *sdkClient) CreateChatCompletion(ctx context.Context, model, prompt stri
 
 // AI handles OpenAI API interactions for transcription and summarization
 type AI struct {
-	client                   client
+	getClient                func() (client, error)
 	audio                    *Audio
 	model                    string
 	transcriptionUploadLimit int64
 	timeout                  time.Duration
 	verbose                  bool
 	quiet                    bool
-	apiKey                   string
-	clientOnce               sync.Once
-	clientErr                error
 	log                      tldw.LogSink
 }
 
@@ -86,15 +83,6 @@ type Config struct {
 
 // NewAIWithKey creates a new AI processor with lazy client initialization.
 func NewAIWithKey(apiKey string, audio *Audio, config Config) (*AI, error) {
-	ai, err := newAI(audio, config)
-	if err != nil {
-		return nil, err
-	}
-	ai.apiKey = apiKey
-	return ai, nil
-}
-
-func newAI(audio *Audio, config Config) (*AI, error) {
 	if audio == nil {
 		return nil, fmt.Errorf("audio processor is required")
 	}
@@ -108,6 +96,12 @@ func newAI(audio *Audio, config Config) (*AI, error) {
 		return nil, fmt.Errorf("timeout must not be negative")
 	}
 	return &AI{
+		getClient: sync.OnceValues(func() (client, error) {
+			if apiKey == "" {
+				return nil, fmt.Errorf("OpenAI API key is required - set it in config.toml or OPENAI_API_KEY environment variable")
+			}
+			return newSDKClient(apiKey), nil
+		}),
 		audio:                    audio,
 		model:                    config.Model,
 		transcriptionUploadLimit: config.TranscriptionUploadLimit,
@@ -122,25 +116,10 @@ func (ai *AI) SetLogSink(log tldw.LogSink) {
 	ai.log = log
 }
 
-// ensureClient initializes the OpenAI client if needed
-func (ai *AI) ensureClient() error {
-	ai.clientOnce.Do(func() {
-		if ai.client != nil {
-			return
-		}
-		if ai.apiKey == "" {
-			ai.clientErr = fmt.Errorf("OpenAI API key is required - set it in config.toml or OPENAI_API_KEY environment variable")
-			return
-		}
-		ai.client = newSDKClient(ai.apiKey)
-	})
-
-	return ai.clientErr
-}
-
 // Transcribe transcribes audio using the OpenAI audio transcriptions API.
 func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) {
-	if err := ai.ensureClient(); err != nil {
+	api, err := ai.getClient()
+	if err != nil {
 		return "", err
 	}
 
@@ -148,87 +127,69 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 		ai.log.Printf("Transcribing audio file: %s\n", audioFile)
 	}
 
-	info, err := os.Stat(audioFile)
-	if err != nil {
-		return "", fmt.Errorf("getting audio file info: %w", err)
-	}
-
-	numChunks := int(info.Size() / ai.transcriptionUploadLimit)
-	if info.Size()%ai.transcriptionUploadLimit != 0 {
-		numChunks++
-	}
-
-	var chunks []string
-	if numChunks > 1 {
-		chunks, err = ai.audio.Split(ctx, audioFile, numChunks)
-		if err != nil {
-			return "", fmt.Errorf("splitting audio: %w", err)
-		}
-	} else {
-		chunks = []string{audioFile}
-	}
-
-	if len(chunks) > 1 {
-		defer cleanupChunks(chunks)
-	}
-	chunks, cleanup, err := ai.fitAudioChunks(ctx, chunks)
-	if err != nil {
+	var prepared preparedAudio
+	defer prepared.cleanup()
+	if err := ai.fitAudio(ctx, &prepared, audioFile, 0); err != nil {
 		return "", err
 	}
-	defer cleanup()
-
-	transcript, err := ai.processAudioChunks(ctx, chunks)
+	transcript, err := ai.processAudioChunks(ctx, api, prepared.files)
 	if err != nil {
 		return "", fmt.Errorf("transcribing audio: %w", err)
 	}
 	return transcript, nil
 }
 
-// fitAudioChunks checks actual output sizes; duration-based splitting alone
-// cannot guarantee a size limit for variable bitrate audio.
-func (ai *AI) fitAudioChunks(ctx context.Context, initial []string) ([]string, func(), error) {
-	var dirs [][]string
-	cleanup := func() {
-		for _, chunks := range dirs {
-			cleanupChunks(chunks)
-		}
-	}
-	var result []string
-	var fit func(string, int64) error
-	fit = func(path string, parentSize int64) error {
-		info, err := os.Stat(path)
-		if err != nil {
-			return fmt.Errorf("checking audio chunk: %w", err)
-		}
-		if info.Size() <= ai.transcriptionUploadLimit {
-			result = append(result, path)
-			return nil
-		}
-		if parentSize > 0 && info.Size() >= parentSize {
-			return fmt.Errorf("audio chunk cannot be split below upload limit")
-		}
-		children, err := ai.audio.Split(ctx, path, 2)
-		if err != nil {
-			return fmt.Errorf("splitting oversized audio chunk: %w", err)
-		}
-		dirs = append(dirs, children)
-		for _, child := range children {
-			if err := fit(child, info.Size()); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	for _, chunk := range initial {
-		if err := fit(chunk, 0); err != nil {
-			cleanup()
-			return nil, func() {}, err
-		}
-	}
-	return result, cleanup, nil
+// files are upload inputs. Only workspaces created here belong to this request.
+type preparedAudio struct {
+	files      []string
+	workspaces []chunkBatch
 }
 
-func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, error) {
+func (p *preparedAudio) cleanup() {
+	for _, batch := range p.workspaces {
+		batch.cleanup()
+	}
+}
+
+// Prepare all chunks before the first paid upload. Descendants must fit or
+// shrink, and upload order follows the original time intervals.
+func (ai *AI) fitAudio(ctx context.Context, prepared *preparedAudio, path string, parentSize int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("checking audio chunk: %w", err)
+	}
+	size := info.Size()
+	if size == 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("empty or invalid audio chunk %q", path)
+	}
+	if size <= ai.transcriptionUploadLimit {
+		prepared.files = append(prepared.files, path)
+		return nil
+	}
+	if parentSize > 0 && size >= parentSize {
+		return fmt.Errorf("audio chunk cannot be split below upload limit")
+	}
+	count := 2
+	if parentSize == 0 {
+		count = int(1 + (size-1)/ai.transcriptionUploadLimit)
+	}
+	children, err := ai.audio.Split(ctx, path, count)
+	if err != nil {
+		return fmt.Errorf("splitting oversized audio: %w", err)
+	}
+	prepared.workspaces = append(prepared.workspaces, children)
+	for _, child := range children.files {
+		if err := ai.fitAudio(ctx, prepared, child, size); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ai *AI) processAudioChunks(ctx context.Context, api client, chunks []string) (string, error) {
 	numChunks := len(chunks)
 
 	if ai.verbose && !ai.quiet {
@@ -242,7 +203,7 @@ func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, 
 			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)
 		}
 
-		text, err := ai.client.CreateTranscription(ctx, file)
+		text, err := api.CreateTranscription(ctx, file)
 		if closeErr := file.Close(); closeErr != nil {
 			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
 		}
@@ -265,7 +226,8 @@ func (ai *AI) processAudioChunks(ctx context.Context, chunks []string) (string, 
 
 // Summary creates an AI summary using a prepared prompt
 func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
-	if err := ai.ensureClient(); err != nil {
+	api, err := ai.getClient()
+	if err != nil {
 		return "", err
 	}
 
@@ -275,7 +237,7 @@ func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
 		defer cancel()
 	}
 
-	content, err := ai.client.CreateChatCompletion(ctx, ai.model, prompt)
+	content, err := api.CreateChatCompletion(ctx, ai.model, prompt)
 	if err != nil {
 		return "", fmt.Errorf("creating chat completion: %w", err)
 	}

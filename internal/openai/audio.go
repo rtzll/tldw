@@ -43,48 +43,61 @@ func (a *Audio) Duration(ctx context.Context, audioFile string) (float64, error)
 		return 0, fmt.Errorf("parsing duration: %w", err)
 	}
 
+	if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+		return 0, fmt.Errorf("invalid audio duration %v", duration)
+	}
 	return duration, nil
 }
 
+type chunkBatch struct {
+	dir   string
+	files []string
+}
+
+func (batch chunkBatch) cleanup() { _ = os.RemoveAll(batch.dir) }
+
 // Split divides an audio file into smaller chunks
-func (a *Audio) Split(ctx context.Context, audioFile string, numChunks int) ([]string, error) {
+func (a *Audio) Split(ctx context.Context, audioFile string, numChunks int) (chunkBatch, error) {
+	if numChunks < 2 {
+		return chunkBatch{}, fmt.Errorf("splitting requires at least two chunks")
+	}
 	if err := os.MkdirAll(a.tempDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating temp directory: %w", err)
+		return chunkBatch{}, fmt.Errorf("creating temp directory: %w", err)
 	}
 
 	duration, err := a.Duration(ctx, audioFile)
 	if err != nil {
-		return nil, fmt.Errorf("getting audio duration: %w", err)
+		return chunkBatch{}, fmt.Errorf("getting audio duration: %w", err)
 	}
 
-	chunkDuration := int(math.Ceil(duration / float64(numChunks)))
+	chunkDuration := duration / float64(numChunks)
 	workDir, err := os.MkdirTemp(a.tempDir, "chunks-")
 	if err != nil {
-		return nil, fmt.Errorf("creating chunk workspace: %w", err)
+		return chunkBatch{}, fmt.Errorf("creating chunk workspace: %w", err)
 	}
 	chunks := make([]string, 0, numChunks)
 
 	for i := range numChunks {
-		start := i * chunkDuration
+		start := float64(i) * chunkDuration
 		output := filepath.Join(workDir, fmt.Sprintf("%s_chunk_%d.mp3", filepath.Base(audioFile), i))
 
 		if err := a.Chunk(ctx, audioFile, start, chunkDuration, output); err != nil {
 			_ = os.RemoveAll(workDir)
-			return nil, fmt.Errorf("creating chunk %d: %w", i, err)
+			return chunkBatch{}, fmt.Errorf("creating chunk %d: %w", i, err)
 		}
 		chunks = append(chunks, output)
 	}
 
-	return chunks, nil
+	return chunkBatch{dir: workDir, files: chunks}, nil
 }
 
 // Chunk extracts a segment from an audio file
-func (a *Audio) Chunk(ctx context.Context, audioFile string, start, duration int, output string) error {
+func (a *Audio) Chunk(ctx context.Context, audioFile string, start, duration float64, output string) error {
 	cmdOutput, err := a.cmdRunner.Run(ctx, "ffmpeg",
 		"-v", "quiet",
 		"-i", audioFile,
-		"-ss", strconv.Itoa(start),
-		"-t", strconv.Itoa(duration),
+		"-ss", strconv.FormatFloat(start, 'f', 6, 64),
+		"-t", strconv.FormatFloat(duration, 'f', 6, 64),
 		"-c:a", "copy",
 		"-y", output)
 
@@ -92,11 +105,4 @@ func (a *Audio) Chunk(ctx context.Context, audioFile string, start, duration int
 		return fmt.Errorf("ffmpeg failed: %w\nOutput: %s", err, string(cmdOutput))
 	}
 	return nil
-}
-
-// cleanupChunks owns only the private directory created by Split.
-func cleanupChunks(chunks []string) {
-	if len(chunks) > 0 {
-		_ = os.RemoveAll(filepath.Dir(chunks[0]))
-	}
 }

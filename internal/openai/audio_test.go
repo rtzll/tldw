@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -12,10 +13,12 @@ type mockCommandRunner struct {
 	output []byte
 	err    error
 	calls  []string
+	args   [][]string
 }
 
 func (m *mockCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	m.calls = append(m.calls, name)
+	m.args = append(m.args, args)
 	return m.output, m.err
 }
 
@@ -28,6 +31,8 @@ func TestAudioDuration(t *testing.T) {
 	}{
 		{"valid duration", "123.456\n", 123.456, false},
 		{"with spaces", "  60.5  ", 60.5, false},
+		{"zero", "0", 0, true},
+		{"nonfinite", "NaN", 0, true},
 		{"invalid output", "not-a-number", 0, true},
 		{"command error", "", 0, true},
 	}
@@ -87,8 +92,8 @@ func TestAudioSplit(t *testing.T) {
 		t.Fatalf("Audio.Split() error = %v", err)
 	}
 
-	if len(chunks) != 3 {
-		t.Errorf("Audio.Split() returned %d chunks, want 3", len(chunks))
+	if len(chunks.files) != 3 {
+		t.Errorf("Audio.Split() returned %d chunks, want 3", len(chunks.files))
 	}
 
 	// Verify runner was called for duration and each chunk
@@ -118,12 +123,28 @@ func TestAudioSplitUsesPrivateWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanupChunks(second)
-	if filepath.Dir(first[0]) == filepath.Dir(second[0]) {
+	defer second.cleanup()
+	if filepath.Dir(first.files[0]) == filepath.Dir(second.files[0]) {
 		t.Fatal("chunk directories shared")
 	}
-	cleanupChunks(first)
-	if _, err := os.Stat(second[0]); err != nil {
+	first.cleanup()
+	if _, err := os.Stat(second.files[0]); err != nil {
 		t.Fatalf("cleanup removed another operation: %v", err)
+	}
+}
+
+func TestShortAudioSplitsCoverItsDuration(t *testing.T) {
+	runner := &mockCommandRunner{output: []byte("1.5")}
+	audio := NewAudio(runner, t.TempDir())
+	batch, err := audio.Split(t.Context(), "short.mp3", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer batch.cleanup()
+	for i, start := range []string{"0.000000", "0.500000", "1.000000"} {
+		args := runner.args[i+1]
+		if args[slices.Index(args, "-ss")+1] != start || args[slices.Index(args, "-t")+1] != "0.500000" {
+			t.Fatalf("chunk %d: %v", i, args)
+		}
 	}
 }
