@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rtzll/tldw/internal"
-	"github.com/rtzll/tldw/internal/tldw"
 )
 
 var (
@@ -67,8 +66,9 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 	},
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if suggestion, ok := commandSuggestion(args[0], cmd.Root().Commands()); ok {
-			return fmt.Errorf("%s doesn't look like a YouTube reference or X post; %s", args[0], suggestion)
+		ref, err := parseSummaryReference(args[0], cmd.Root().Commands())
+		if err != nil {
+			return err
 		}
 		if err := validateOpenAIRequirements(cmd, config); err != nil {
 			return err
@@ -82,10 +82,6 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		ref, err := tldw.ParseReference(args[0])
-		if err != nil {
-			return fmt.Errorf("invalid input %q: %w", args[0], err)
-		}
 		allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")
 		return runSummary(cmd.Context(), app, config, ref, allowPaidTranscription)
 	},
