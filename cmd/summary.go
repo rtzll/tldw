@@ -39,9 +39,20 @@ func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config
 	ctx := cmd.Context()
 	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
 	input, diagnostic := cmd.InOrStdin(), cmd.ErrOrStderr()
-	confirm := confirmationPrompt(ctx, input, diagnostic, canPrompt(input, diagnostic, nonInteractive))
+	interactive := canPrompt(input, diagnostic, nonInteractive)
+	confirm := confirmationPrompt(ctx, input, diagnostic, interactive)
+	policy := tldw.CaptionsOnly
+	if allowPaidTranscription {
+		policy = tldw.CaptionsThenPaid
+	}
 	if ref.IsPlaylist() {
-		return runPlaylistSummary(cmd, engine, config, ref, allowPaidTranscription, confirm)
+		request := tldw.PlaylistTranscripts(policy)
+		if interactive && !allowPaidTranscription {
+			request = tldw.PlaylistWithConsent(func(video tldw.ContentRef, metadata *tldw.VideoMetadata) (bool, error) {
+				return confirm(fmt.Sprintf("Video %s: '%s' has no captions. Use paid OpenAI transcription?", video.ID(), metadata.Title))
+			})
+		}
+		return runPlaylistSummary(cmd, engine, config, ref, request)
 	}
 
 	summarize := func(policy tldw.TranscriptRequest, description string) (string, error) {
@@ -54,10 +65,6 @@ func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config
 		}
 		progress.update("Rendering summary...")
 		return summary.Markdown, nil
-	}
-	policy := tldw.CaptionsOnly
-	if allowPaidTranscription {
-		policy = tldw.CaptionsThenPaid
 	}
 	markdown, err := summarize(policy, "Processing video...")
 	if !allowPaidTranscription && tldw.CanOfferPaidTranscription(err) {
@@ -76,16 +83,7 @@ func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config
 	return writeSummary(cmd.OutOrStdout(), markdown)
 }
 
-func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool, confirm func(string) (bool, error)) error {
-	var request tldw.PlaylistSummaryRequest
-	if allowPaidTranscription {
-		request = tldw.PlaylistTranscripts(tldw.CaptionsThenPaid)
-	} else {
-		request = tldw.PlaylistWithConsent(func(video tldw.ContentRef, metadata *tldw.VideoMetadata) (bool, error) {
-			return confirm(fmt.Sprintf("Video %s: '%s' has no captions. Use paid OpenAI transcription?", video.ID(), metadata.Title))
-		})
-	}
-
+func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, request tldw.PlaylistSummaryRequest) error {
 	result, err := engine.CreatePlaylistSummary(cmd.Context(), ref, request)
 	if (!config.Quiet && err == nil) || len(result.Skipped) > 0 {
 		cmd.PrintErrf("Found %d videos in playlist: %s\n\n", result.Total, result.Title)
@@ -98,6 +96,9 @@ func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *interna
 		}
 	}
 	if err != nil {
+		if tldw.CanOfferPaidTranscription(err) {
+			return errConsentRequired
+		}
 		if result.Total > 0 && result.Declined == result.Total {
 			return errConsentDeclined
 		}

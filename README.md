@@ -146,6 +146,9 @@ prompt covers one video. Redirecting stdout alone still allows a terminal prompt
 `reason`, and `message`. A partial `stats --json` report returns its available
 totals, `incomplete: true`, and `warnings` on stdout and exits `1`. A partial
 playlist also exits `1`, with its summary on stdout and skipped videos on stderr.
+With prompts disabled and no paid opt-in, tldw summarizes the videos with
+available captions. If every video needs paid transcription, it exits `2`
+and explains how to authorize it.
 
 For `metadata` and `transcribe`, `-o -` writes to stdout. A named output
 file is published atomically after the command succeeds. Earlier versions

@@ -247,6 +247,7 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 
 	result := PlaylistSummaryResult{Title: playlist.Title, Total: len(playlist.Videos)}
 	var videos []VideoTranscript
+	missingCaptions := 0
 	for i, videoRef := range playlist.Videos {
 		transcript, transcriptErr := app.Transcript(ctx, videoRef, request.transcript)
 		metadata, metadataErr := app.resolveMetadata(ctx, videoRef)
@@ -269,6 +270,9 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 			transcript, transcriptErr = app.Transcript(ctx, videoRef, PaidOnly)
 		}
 		if transcriptErr != nil {
+			if CanOfferPaidTranscription(transcriptErr) {
+				missingCaptions++
+			}
 			result.Skipped = append(result.Skipped, fmt.Sprintf("%s (%s): %v", videoRef.ID(), metadata.Title, transcriptErr))
 			continue
 		}
@@ -291,6 +295,9 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 		result.Processed = len(videos)
 	}
 	if result.Processed == 0 {
+		if request.transcript == CaptionsOnly && request.confirmPaid == nil && missingCaptions == result.Total {
+			return result, &paidFallbackError{fmt.Errorf("%w for every video in playlist %s", ErrCaptionsUnavailable, ref.ID())}
+		}
 		return result, fmt.Errorf("no video transcripts could be obtained")
 	}
 
