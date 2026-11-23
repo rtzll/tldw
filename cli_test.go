@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rtzll/tldw/internal/store"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 // Re-exec the test binary through the production entry point to observe the
@@ -112,5 +115,48 @@ func TestStatsDistinguishesEmptyFromPartial(t *testing.T) {
 	out, diag, code = runCLI(t, cliCommand(t, dir, "stats", "-q"))
 	if code != 1 || !strings.Contains(out, "1 unique video") || !strings.Contains(diag, "Incomplete stats:") {
 		t.Fatalf("text: %d %q %q", code, out, diag)
+	}
+}
+
+func TestCLIFileExports(t *testing.T) {
+	dir := t.TempDir()
+	const id = "dQw4w9WgXcQ"
+	cache := store.NewFile(filepath.Join(dir, "data", "tldw", "transcripts"))
+	track := tldw.CaptionTrack{Language: "en", Direct: true}
+	if err := cache.SaveMetadata(id, &tldw.VideoMetadata{Title: "Example", HasCaptions: true, CaptionTracks: []tldw.CaptionTrack{track}}); err != nil {
+		t.Fatal(err)
+	}
+	transcript, err := tldw.NewCaptionTranscript(id, track, "hello", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.SaveTranscript(transcript); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"metadata", "transcribe"} {
+		t.Run(name, func(t *testing.T) {
+			out, diag, code := runCLI(t, cliCommand(t, dir, name, id, "-o", "-"))
+			if code != 0 || diag != "" || out == "" {
+				t.Fatalf("stdout: %d %q %q", code, out, diag)
+			}
+			if name == "metadata" && !json.Valid([]byte(out)) || name == "transcribe" && out != "hello\n" {
+				t.Fatalf("unexpected stdout %q", out)
+			}
+			dest := filepath.Join(dir, name+".out")
+			for i, flags := range [][]string{nil, nil, {"--force"}} {
+				args := append([]string{name, id, "-o", dest}, flags...)
+				stdout, stderr, exit := runCLI(t, cliCommand(t, dir, args...))
+				if stdout != "" || i != 1 && (exit != 0 || stderr != "") || i == 1 && (exit != 1 || !strings.Contains(stderr, "--force")) {
+					t.Fatalf("export %d: %d %q %q", i, exit, stdout, stderr)
+				}
+			}
+			data, err := os.ReadFile(dest)
+			if err != nil || string(data) != strings.TrimSuffix(out, "\n") {
+				t.Fatalf("file %q, err %v", data, err)
+			}
+		})
+	}
+	if _, err := os.Stat(filepath.Join(dir, "-")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected file named dash: %v", err)
 	}
 }

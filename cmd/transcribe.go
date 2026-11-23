@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+	"github.com/rtzll/tldw/internal/tldw"
 
 	"github.com/spf13/cobra"
 )
@@ -30,23 +30,19 @@ var transcribeCmd = &cobra.Command{
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		transcript, err := fetchTranscript(cmd, app, args[0])
+		ref, err := tldw.ParseVideoRef(args[0])
 		if err != nil {
-			return err
+			return usageError{err}
 		}
-
-		outputFile, _ := cmd.Flags().GetString("output")
-		if outputFile != "" {
-			return os.WriteFile(outputFile, []byte(transcript), 0644)
-		}
-
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), transcript)
-		return err
+		return exportResult(cmd, func() ([]byte, error) {
+			transcript, err := fetchTranscript(cmd, app, ref)
+			return []byte(transcript), err
+		})
 	},
 }
 
 func init() {
 	addTranscriptionFlags(transcribeCmd)
-	transcribeCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
+	addOutputFlags(transcribeCmd)
 	rootCmd.AddCommand(transcribeCmd)
 }

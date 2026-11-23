@@ -19,11 +19,7 @@ func requestedTranscriptFormat(cmd *cobra.Command) tldw.TranscriptRenderFormat {
 }
 
 // fetchTranscript retrieves a transcript for the given argument and optionally falls back to paid transcription.
-func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, arg string) (string, error) {
-	parsed, err := tldw.ParseVideoRef(arg)
-	if err != nil {
-		return "", usageError{err}
-	}
+func fetchTranscript(cmd *cobra.Command, app *tldw.Engine, parsed tldw.ContentRef) (string, error) {
 	format := requestedTranscriptFormat(cmd)
 	timestamps := format == tldw.TranscriptRenderFormatTimestamps
 	allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")

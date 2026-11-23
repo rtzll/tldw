@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/atotto/clipboard"
+	"github.com/rtzll/tldw/internal/tldw"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,11 @@ var cpCmd = &cobra.Command{
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		transcript, err := fetchTranscript(cmd, app, args[0])
+		ref, err := tldw.ParseVideoRef(args[0])
+		if err != nil {
+			return usageError{err}
+		}
+		transcript, err := fetchTranscript(cmd, app, ref)
 		if err != nil {
 			return err
 		}

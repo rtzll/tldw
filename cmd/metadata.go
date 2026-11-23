@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -33,44 +32,28 @@ var metadataCmd = &cobra.Command{
 		if err != nil {
 			return usageError{err}
 		}
-		// Get metadata for the video
-		var metadata *tldw.VideoMetadata
-		refresh, _ := cmd.Flags().GetBool("refresh")
-		if refresh {
-			metadata, err = app.RefreshMetadata(cmd.Context(), parsed)
-		} else {
-			metadata, err = app.MetadataFor(cmd.Context(), parsed)
-		}
-		if err != nil {
-			return err
-		}
-
-		// Convert metadata to JSON
-		var jsonData []byte
-		pretty, _ := cmd.Flags().GetBool("pretty")
-		if pretty {
-			jsonData, err = json.MarshalIndent(metadata, "", "  ")
-		} else {
-			jsonData, err = json.Marshal(metadata)
-		}
-		if err != nil {
-			return fmt.Errorf("error converting metadata to JSON: %w", err)
-		}
-
-		// Handle output flag
-		outputFile, _ := cmd.Flags().GetString("output")
-		if outputFile != "" {
-			err := os.WriteFile(outputFile, jsonData, 0644)
-			return err
-		}
-
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), string(jsonData))
-		return err
+		return exportResult(cmd, func() ([]byte, error) {
+			var metadata *tldw.VideoMetadata
+			refresh, _ := cmd.Flags().GetBool("refresh")
+			if refresh {
+				metadata, err = app.RefreshMetadata(cmd.Context(), parsed)
+			} else {
+				metadata, err = app.MetadataFor(cmd.Context(), parsed)
+			}
+			if err != nil {
+				return nil, err
+			}
+			pretty, _ := cmd.Flags().GetBool("pretty")
+			if pretty {
+				return json.MarshalIndent(metadata, "", "  ")
+			}
+			return json.Marshal(metadata)
+		})
 	},
 }
 
 func init() {
-	metadataCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
+	addOutputFlags(metadataCmd)
 	metadataCmd.Flags().Bool("refresh", false, "Fetch fresh metadata instead of using the cache")
 	metadataCmd.Flags().Bool("pretty", false, "Format output as pretty JSON")
 	rootCmd.AddCommand(metadataCmd)

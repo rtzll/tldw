@@ -122,6 +122,13 @@ tldw stats --period month --group-by day
 tldw stats --period week --json
 ```
 
+For `metadata` and `transcribe`, `-o -` writes to stdout. A named output
+file is published atomically after the command succeeds. Earlier versions
+overwrote existing files. Scripts that intentionally replace an existing
+regular file must now pass `--force`. New exports have owner-only permissions
+on Unix. Replacements preserve the file's permission bits. Use `-o ./-` for
+a file literally named `-`.
+
 `tldw stats` reports the runtime of unique videos in the local metadata library.
 Supported periods are `today`, `week`, `month`, and `all`; grouped reports can
 use `day`, `week`, or `month`.
