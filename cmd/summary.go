@@ -27,7 +27,7 @@ func newSummaryProgress(config *internal.Config, description string, diagnostic 
 func (p *summaryProgress) update(description string) {
 	p.bar.Describe(description)
 	if p.verbose {
-		fmt.Fprintf(p.diagnostic, "[Status] %s\n", description)
+		_, _ = fmt.Fprintf(p.diagnostic, "[Status] %s\n", description)
 	}
 }
 
@@ -88,12 +88,12 @@ func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *interna
 
 	result, err := engine.CreatePlaylistSummary(cmd.Context(), ref, request)
 	if (!config.Quiet && err == nil) || len(result.Skipped) > 0 {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Found %d videos in playlist: %s\n\n", result.Total, result.Title)
-		fmt.Fprintf(cmd.ErrOrStderr(), "Successfully processed %d out of %d videos\n", result.Processed, result.Total)
+		cmd.PrintErrf("Found %d videos in playlist: %s\n\n", result.Total, result.Title)
+		cmd.PrintErrf("Successfully processed %d out of %d videos\n", result.Processed, result.Total)
 		if len(result.Skipped) > 0 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Skipped %d videos:\n", len(result.Skipped))
+			cmd.PrintErrf("Skipped %d videos:\n", len(result.Skipped))
 			for _, skipped := range result.Skipped {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", skipped)
+				cmd.PrintErrf("  - %s\n", skipped)
 			}
 		}
 	}

@@ -40,7 +40,7 @@ var cpCmd = &cobra.Command{
 		}
 
 		if !config.Quiet {
-			fmt.Fprintln(cmd.ErrOrStderr(), "Transcript copied to clipboard")
+			cmd.PrintErrln("Transcript copied to clipboard")
 		}
 
 		return nil

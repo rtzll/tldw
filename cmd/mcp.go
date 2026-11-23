@@ -110,7 +110,7 @@ This command will:
 		}
 		quiet, _ := cmd.Flags().GetBool("quiet")
 		if !quiet {
-			fmt.Fprintln(cmd.ErrOrStderr(), "Configured the TL;DW MCP server. Restart Claude Desktop to use it.")
+			cmd.PrintErrln("Configured the TL;DW MCP server. Restart Claude Desktop to use it.")
 		}
 		return nil
 	},

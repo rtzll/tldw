@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"syscall"
 
@@ -36,7 +35,7 @@ func flagError(cmd *cobra.Command, err error) error {
 	if format := cmd.Flags().Lookup("json"); format != nil {
 		flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
 		flags.AddFlagSet(cmd.Flags())
-		flags.ParseErrorsAllowlist.UnknownFlags = true
+		flags.ParseErrorsAllowlist.UnknownFlagsHandling = pflag.IgnoreUnknownFlag
 		_ = flags.ParseAll(os.Args[1:], func(flag *pflag.Flag, value string) error {
 			if flag == format {
 				return format.Value.Set(value)
@@ -87,7 +86,7 @@ func reportFailure(cmd *cobra.Command, err error) int {
 	if jsonOutput || cmd.Name() == "metadata" {
 		_ = json.NewEncoder(cmd.ErrOrStderr()).Encode(result)
 	} else {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Error:", result.Message)
+		cmd.PrintErrln("Error:", result.Message)
 	}
 	return code
 }

@@ -19,7 +19,7 @@ type cliLogSink struct {
 
 func (l cliLogSink) Printf(format string, args ...any) {
 	if l.config.Verbose && !l.config.Quiet {
-		fmt.Fprintf(l.diagnostic, format, args...)
+		_, _ = fmt.Fprintf(l.diagnostic, format, args...)
 	}
 }
 

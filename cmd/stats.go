@@ -83,7 +83,7 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 				err = writeStatsJSON(cmd.OutOrStdout(), period, report)
 			} else {
 				for _, warning := range report.Warnings {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Incomplete stats: %s\n", warning)
+					cmd.PrintErrf("Incomplete stats: %s\n", warning)
 				}
 				err = writeStatsText(cmd.OutOrStdout(), period, group, report)
 			}
