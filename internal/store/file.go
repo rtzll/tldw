@@ -35,9 +35,9 @@ func NewFile(dir string) *File {
 	return &File{dir: dir}
 }
 
-// LockTranscript coordinates acquisition across independent processes sharing
+// WithTranscriptLock coordinates acquisition across independent processes sharing
 // the same store. Lock files are retained so waiters always lock the same inode.
-func (s *File) LockTranscript(ctx context.Context, videoID string) (func() error, error) {
+func (s *File) WithTranscriptLock(ctx context.Context, videoID string, read func() (*tldw.Transcript, error)) (result *tldw.Transcript, err error) {
 	path, err := s.cachePath(videoID, ".lock")
 	if err != nil {
 		return nil, err
@@ -53,7 +53,8 @@ func (s *File) LockTranscript(ctx context.Context, videoID string) (func() error
 	if !locked {
 		return nil, ctx.Err()
 	}
-	return lock.Unlock, nil
+	defer func() { err = errors.Join(err, lock.Unlock()) }()
+	return read()
 }
 
 func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
@@ -109,44 +110,47 @@ func (s *File) LoadMetadata(videoID string) (*tldw.VideoMetadata, error) {
 }
 
 // ListMetadata returns every cached video's metadata and original cache time.
-func (s *File) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
-	files, err := filepath.Glob(filepath.Join(s.dir, "*.meta.json"))
-	if err != nil {
-		return nil, fmt.Errorf("listing metadata cache: %w", err)
+func (s *File) ListMetadata() (tldw.MetadataScan, error) {
+	files, err := os.ReadDir(s.dir)
+	if os.IsNotExist(err) {
+		return tldw.MetadataScan{}, nil
 	}
-	entries := make([]tldw.StoredVideoMetadata, 0, len(files))
-	var skipped []error
-	for _, path := range files {
+	if err != nil {
+		return tldw.MetadataScan{}, fmt.Errorf("listing metadata cache: %w", err)
+	}
+	var scan tldw.MetadataScan
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".meta.json") {
+			continue
+		}
+		path := filepath.Join(s.dir, file.Name())
 		videoID := strings.TrimSuffix(filepath.Base(path), ".meta.json")
 		if !tldw.IsValidVideoCacheKey(videoID) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("reading metadata cache %s: %w", filepath.Base(path), err))
+			scan.Warnings = append(scan.Warnings, fmt.Sprintf("reading metadata cache %s: %v", file.Name(), err))
 			continue
 		}
 		var cached cachedMetadata
 		if err := json.Unmarshal(data, &cached); err != nil {
-			skipped = append(skipped, fmt.Errorf("parsing metadata cache %s: %w", filepath.Base(path), err))
+			scan.Warnings = append(scan.Warnings, fmt.Sprintf("parsing metadata cache %s: %v", file.Name(), err))
 			continue
 		}
 		firstSeenAt, err := cachedMetadataFirstSeenAt(path, cached)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("reading metadata timestamp %s: %w", filepath.Base(path), err))
+			scan.Warnings = append(scan.Warnings, fmt.Sprintf("reading metadata timestamp %s: %v", file.Name(), err))
 			continue
 		}
-		entries = append(entries, tldw.StoredVideoMetadata{
+		scan.Entries = append(scan.Entries, tldw.StoredVideoMetadata{
 			VideoID: videoID, Metadata: metadataFromCached(cached), FirstSeenAt: firstSeenAt,
 		})
 	}
-	if len(skipped) > 0 {
-		return entries, &tldw.PartialMetadataError{Errors: skipped}
-	}
-	return entries, nil
+	return scan, nil
 }
 
-func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error {
+func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) (err error) {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("creating metadata store: %w", err)
 	}
@@ -157,6 +161,17 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) error 
 	if metadata == nil {
 		return fmt.Errorf("saving metadata: metadata is nil")
 	}
+	// First-seen is a read/modify/write across processes. Use a separate
+	// inode from the transcript lock, which this caller may already hold.
+	lock := flock.New(path + ".lock")
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("locking metadata: %w", err)
+	}
+	defer func() {
+		if unlockErr := lock.Unlock(); unlockErr != nil {
+			err = errors.Join(err, unlockErr)
+		}
+	}()
 	now := time.Now()
 	firstSeenAt := metadataFirstSeenAt(path, now)
 	cached := cachedMetadata{

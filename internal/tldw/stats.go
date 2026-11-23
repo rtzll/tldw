@@ -1,17 +1,15 @@
 package tldw
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"time"
 )
 
-// PartialMetadataError reports entries skipped while listing an otherwise usable cache.
-type PartialMetadataError struct{ Errors []error }
-
-func (e *PartialMetadataError) Error() string {
-	return fmt.Sprintf("%d metadata entries skipped", len(e.Errors))
+// MetadataScan includes every readable entry and diagnostics for skipped files.
+type MetadataScan struct {
+	Entries  []StoredVideoMetadata
+	Warnings []string
 }
 
 // StatsGroup controls how matching videos are bucketed in a stats report.
@@ -53,21 +51,13 @@ func (app *Engine) Stats(query StatsQuery) (StatsReport, error) {
 	if err := validateStatsQuery(query); err != nil {
 		return StatsReport{}, err
 	}
-	entries, err := app.store.ListMetadata()
-	var warnings []string
+	scan, err := app.store.ListMetadata()
 	if err != nil {
-		var partial *PartialMetadataError
-		if !errors.As(err, &partial) {
-			return StatsReport{}, fmt.Errorf("listing cached metadata: %w", err)
-		}
-		for _, item := range partial.Errors {
-			warnings = append(warnings, item.Error())
-		}
+		return StatsReport{}, fmt.Errorf("listing cached metadata: %w", err)
 	}
-
-	report := StatsReport{Warnings: warnings}
+	report := StatsReport{Warnings: scan.Warnings}
 	grouped := make(map[string]StatsBucket)
-	for _, entry := range entries {
+	for _, entry := range scan.Entries {
 		if (!query.From.IsZero() && entry.FirstSeenAt.Before(query.From)) ||
 			(!query.To.IsZero() && !entry.FirstSeenAt.Before(query.To)) {
 			continue

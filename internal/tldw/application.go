@@ -89,12 +89,8 @@ func (app *Engine) setCachedMetadata(id string, metadata *VideoMetadata) {
 
 const negativeMetadataTTL = 15 * time.Minute
 
-func metadataNeedsRefresh(metadata *VideoMetadata) bool {
-	if metadata == nil {
-		return false
-	}
-
-	if !metadata.HasCaptions && (metadata.CheckedAt.IsZero() || time.Since(metadata.CheckedAt) >= negativeMetadataTTL) {
+func metadataNeedsRefresh(metadata *VideoMetadata, recheckAbsence bool, now time.Time) bool {
+	if !metadata.HasCaptions && (recheckAbsence || metadata.CheckedAt.IsZero() || now.Sub(metadata.CheckedAt) >= negativeMetadataTTL) {
 		return true
 	}
 	if strings.TrimSpace(metadata.Channel) == "" {
@@ -153,10 +149,7 @@ func (app *Engine) RefreshMetadata(ctx context.Context, ref ContentRef) (*VideoM
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("metadata requires a valid video reference")
 	}
-	release, err := app.metadataWork.acquire(ctx, ref.CacheKey())
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return app.fetchMetadata(ctx, ref)
+	return withVideoWork(ctx, &app.metadataWork, ref.CacheKey(), func() (*VideoMetadata, error) {
+		return app.fetchMetadata(ctx, ref)
+	})
 }

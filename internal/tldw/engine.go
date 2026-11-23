@@ -77,7 +77,7 @@ type VideoStore interface {
 	SaveTranscript(transcript *Transcript) error
 	LoadMetadata(videoID string) (*VideoMetadata, error)
 	SaveMetadata(videoID string, metadata *VideoMetadata) error
-	ListMetadata() ([]StoredVideoMetadata, error)
+	ListMetadata() (MetadataScan, error)
 }
 
 // LogSink receives diagnostic events without coupling workflows to a terminal.
@@ -128,26 +128,20 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 	if !validVideoRef(ref) {
 		return nil, fmt.Errorf("transcript requires a valid video reference")
 	}
-	// Recheck the cache after acquiring the video gate; another request may have filled it.
-	release, err := app.transcriptWork.acquire(ctx, ref.CacheKey())
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	// Stores that share a filesystem may coordinate with other processes.
-	if locker, ok := app.store.(interface {
-		LockTranscript(context.Context, string) (func() error, error)
-	}); ok {
-		unlock, err := locker.LockTranscript(ctx, ref.CacheKey())
-		if err != nil {
-			return nil, fmt.Errorf("locking transcript: %w", err)
+	key := ref.CacheKey()
+	return withVideoWork(ctx, &app.transcriptWork, key, func() (*Transcript, error) {
+		read := func() (*Transcript, error) { return app.loadOrAcquireTranscript(ctx, ref, request) }
+		if locker, ok := app.store.(interface {
+			WithTranscriptLock(context.Context, string, func() (*Transcript, error)) (*Transcript, error)
+		}); ok {
+			return locker.WithTranscriptLock(ctx, key, read)
 		}
-		defer func() {
-			if err := unlock(); err != nil {
-				app.log.Printf("Warning: unlocking transcript: %v\n", err)
-			}
-		}()
-	}
+		return read()
+	})
+}
+
+// Both locks are held before checking the cache. A previous owner may have filled it.
+func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, request TranscriptRequest) (*Transcript, error) {
 	if transcript, err := app.store.LoadTranscript(ref.CacheKey()); err == nil {
 		if cachedTranscriptAllowed(transcript, request) {
 			return transcript, nil
@@ -314,26 +308,23 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref ContentRef) (*VideoM
 }
 
 func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref ContentRef, refreshNegative bool) (*VideoMetadata, error) {
-	release, err := app.metadataWork.acquire(ctx, ref.CacheKey())
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if cached, ok := app.getCachedMetadata(ref.CacheKey()); ok {
-		return app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
-	}
-
-	if cached, err := app.store.LoadMetadata(ref.CacheKey()); err == nil {
-		resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
-		if refreshErr == nil {
-			app.setCachedMetadata(ref.CacheKey(), resolved)
+	return withVideoWork(ctx, &app.metadataWork, ref.CacheKey(), func() (*VideoMetadata, error) {
+		if cached, ok := app.getCachedMetadata(ref.CacheKey()); ok {
+			return app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
 		}
-		return resolved, refreshErr
-	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
-		return nil, fmt.Errorf("loading cached metadata: %w", err)
-	}
 
-	return app.fetchMetadata(ctx, ref)
+		if cached, err := app.store.LoadMetadata(ref.CacheKey()); err == nil {
+			resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
+			if refreshErr == nil {
+				app.setCachedMetadata(ref.CacheKey(), resolved)
+			}
+			return resolved, refreshErr
+		} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
+			return nil, fmt.Errorf("loading cached metadata: %w", err)
+		}
+
+		return app.fetchMetadata(ctx, ref)
+	})
 }
 
 func (app *Engine) fetchMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error) {
@@ -349,7 +340,10 @@ func (app *Engine) fetchMetadata(ctx context.Context, ref ContentRef) (*VideoMet
 }
 
 func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref ContentRef, cached *VideoMetadata, refreshNegative bool) (*VideoMetadata, error) {
-	if !metadataNeedsRefresh(cached) && (!refreshNegative || cached.HasCaptions) {
+	if cached == nil {
+		return nil, fmt.Errorf("metadata store returned no record")
+	}
+	if !metadataNeedsRefresh(cached, refreshNegative, time.Now()) {
 		return cached, nil
 	}
 	refreshed, err := app.fetchMetadata(ctx, ref)

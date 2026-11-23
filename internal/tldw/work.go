@@ -17,7 +17,7 @@ type workGate struct {
 	users int
 }
 
-func (g *workGates) acquire(ctx context.Context, key string) (func(), error) {
+func withVideoWork[T any](ctx context.Context, g *workGates, key string, work func() (*T, error)) (*T, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -40,16 +40,15 @@ func (g *workGates) acquire(ctx context.Context, key string) (func(), error) {
 			delete(g.entries, key)
 		}
 	}
+	defer leave()
 	select {
 	case entry.token <- struct{}{}:
-		release := func() { <-entry.token; leave() }
+		defer func() { <-entry.token }()
 		if err := ctx.Err(); err != nil {
-			release()
 			return nil, err
 		}
-		return release, nil
+		return work()
 	case <-ctx.Done():
-		leave()
 		return nil, ctx.Err()
 	}
 }

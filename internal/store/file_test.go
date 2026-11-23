@@ -30,14 +30,14 @@ func TestFileListsMetadataWithItsOriginalCacheTime(t *testing.T) {
 		t.Fatalf("write metadata: %v", err)
 	}
 
-	entries, err := store.NewFile(dir).ListMetadata()
+	scan, err := store.NewFile(dir).ListMetadata()
 	if err != nil {
 		t.Fatalf("ListMetadata() error = %v", err)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("ListMetadata() returned %d entries, want 1", len(entries))
+	if len(scan.Entries) != 1 {
+		t.Fatalf("ListMetadata() returned %d entries, want 1", len(scan.Entries))
 	}
-	entry := entries[0]
+	entry := scan.Entries[0]
 	if entry.VideoID != "dQw4w9WgXcQ" || entry.Metadata.Title != "Example" || entry.Metadata.Duration != 3723 {
 		t.Fatalf("ListMetadata() entry = %+v", entry)
 	}
@@ -59,15 +59,15 @@ func TestFilePreservesFirstSeenTimeWhenMetadataIsRefreshed(t *testing.T) {
 	if err := adapter.SaveMetadata("dQw4w9WgXcQ", &tldw.VideoMetadata{Title: "Fresh", Duration: 120}); err != nil {
 		t.Fatalf("SaveMetadata() error = %v", err)
 	}
-	entries, err := adapter.ListMetadata()
+	scan, err := adapter.ListMetadata()
 	if err != nil {
 		t.Fatalf("ListMetadata() error = %v", err)
 	}
-	if len(entries) != 1 || !entries[0].FirstSeenAt.Equal(firstSeen) {
-		t.Fatalf("ListMetadata() = %+v, want first seen %v", entries, firstSeen)
+	if len(scan.Entries) != 1 || !scan.Entries[0].FirstSeenAt.Equal(firstSeen) {
+		t.Fatalf("ListMetadata() = %+v, want first seen %v", scan.Entries, firstSeen)
 	}
-	if entries[0].Metadata.Title != "Fresh" || entries[0].Metadata.Duration != 120 {
-		t.Fatalf("ListMetadata() metadata = %+v, want refreshed metadata", entries[0].Metadata)
+	if scan.Entries[0].Metadata.Title != "Fresh" || scan.Entries[0].Metadata.Duration != 120 {
+		t.Fatalf("ListMetadata() metadata = %+v, want refreshed metadata", scan.Entries[0].Metadata)
 	}
 }
 
@@ -82,12 +82,12 @@ func TestFileUsesModificationTimeForMetadataWithoutCacheTimestamp(t *testing.T) 
 		t.Fatalf("set metadata modification time: %v", err)
 	}
 
-	entries, err := store.NewFile(dir).ListMetadata()
+	scan, err := store.NewFile(dir).ListMetadata()
 	if err != nil {
 		t.Fatalf("ListMetadata() error = %v", err)
 	}
-	if len(entries) != 1 || !entries[0].FirstSeenAt.Equal(modifiedAt) {
-		t.Fatalf("ListMetadata() = %+v, want modification time %v", entries, modifiedAt)
+	if len(scan.Entries) != 1 || !scan.Entries[0].FirstSeenAt.Equal(modifiedAt) {
+		t.Fatalf("ListMetadata() = %+v, want modification time %v", scan.Entries, modifiedAt)
 	}
 }
 
@@ -103,12 +103,12 @@ func TestFileListMetadataIgnoresNonVideoCacheFiles(t *testing.T) {
 		}
 	}
 
-	entries, err := store.NewFile(dir).ListMetadata()
+	scan, err := store.NewFile(dir).ListMetadata()
 	if err != nil {
 		t.Fatalf("ListMetadata() error = %v", err)
 	}
-	if len(entries) != 1 || entries[0].VideoID != "dQw4w9WgXcQ" {
-		t.Fatalf("ListMetadata() = %+v, want only the video cache", entries)
+	if len(scan.Entries) != 1 || scan.Entries[0].VideoID != "dQw4w9WgXcQ" {
+		t.Fatalf("ListMetadata() = %+v, want only the video cache", scan.Entries)
 	}
 }
 
@@ -257,12 +257,26 @@ func TestListMetadataReturnsHealthyEntriesAndWarning(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "tAP1eZYEuKA.meta.json"), []byte("invalid json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := adapter.ListMetadata()
-	var partial *tldw.PartialMetadataError
-	if !errors.As(err, &partial) || len(partial.Errors) != 1 {
+	scan, err := adapter.ListMetadata()
+	if err != nil || len(scan.Warnings) != 1 {
 		t.Fatalf("warning = %v", err)
 	}
-	if len(entries) != 1 || entries[0].Metadata.Title != "Good" {
-		t.Fatalf("entries = %+v", entries)
+	if len(scan.Entries) != 1 || scan.Entries[0].Metadata.Title != "Good" {
+		t.Fatalf("entries = %+v", scan.Entries)
+	}
+}
+
+func TestMetadataScanDistinguishesMissingDirectoryFromFailedListing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "library")
+	store := store.NewFile(path)
+	scan, err := store.ListMetadata()
+	if err != nil || len(scan.Entries) != 0 || len(scan.Warnings) != 0 {
+		t.Fatalf("missing directory: %+v, %v", scan, err)
+	}
+	if err := os.WriteFile(path, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ListMetadata(); err == nil {
+		t.Fatal("unreadable library reported as empty")
 	}
 }

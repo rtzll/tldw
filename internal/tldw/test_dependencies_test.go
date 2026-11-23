@@ -48,8 +48,8 @@ type memoryStore struct {
 	metadataSaves   int
 }
 
-func (store *memoryStore) ListMetadata() ([]tldw.StoredVideoMetadata, error) {
-	return store.metadataEntries, nil
+func (store *memoryStore) ListMetadata() (tldw.MetadataScan, error) {
+	return tldw.MetadataScan{Entries: store.metadataEntries}, nil
 }
 
 func (store *memoryStore) LoadTranscript(videoID string) (*tldw.Transcript, error) {
