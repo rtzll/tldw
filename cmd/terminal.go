@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -11,16 +12,22 @@ import (
 	"golang.org/x/term"
 )
 
-var askUser = func(message string) bool {
-	fmt.Printf("%s (y/N): ", message)
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(scanner.Text())), "y")
+// Keep one scanner per invocation so a playlist consumes one answer per prompt.
+func confirmationPrompt(input io.Reader) func(string) bool {
+	scanner := bufio.NewScanner(input)
+	return func(message string) bool {
+		fmt.Printf("%s (y/N): ", message)
+		ok := scanner.Scan()
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			return false
+		}
+		if !ok {
+			return false
+		}
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		return answer == "y" || answer == "yes"
 	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-	}
-	return false
 }
 
 func renderMarkdown(content string) (string, error) {
