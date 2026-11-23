@@ -83,7 +83,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		}
 
 		allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")
-		return runSummary(cmd.Context(), app, config, ref, allowPaidTranscription)
+		return runSummary(cmd, app, config, ref, allowPaidTranscription)
 	},
 }
 
@@ -109,6 +109,7 @@ func init() {
 	rootCmd.SilenceUsage = true
 	addTranscriptionFlags(rootCmd)
 	addOpenAIFlags(rootCmd)
+	rootCmd.PersistentFlags().Bool("non-interactive", false, "Disable interactive prompts")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable verbose output for debugging")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "Suppress progress bars and non-essential output")
 	rootCmd.PersistentFlags().StringP("config", "c", "", "Config file (default is $XDG_CONFIG_HOME/tldw/config.toml)")

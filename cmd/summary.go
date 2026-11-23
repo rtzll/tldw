@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
+	"github.com/spf13/cobra"
 
 	"github.com/rtzll/tldw/internal"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -33,8 +33,11 @@ func (p *summaryProgress) finish() {
 	p.bar.Finish()
 }
 
-func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool) error {
-	confirm := confirmationPrompt(os.Stdin)
+func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool) error {
+	ctx := cmd.Context()
+	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
+	input, diagnostic := cmd.InOrStdin(), cmd.ErrOrStderr()
+	confirm := confirmationPrompt(ctx, input, diagnostic, canPrompt(input, diagnostic, nonInteractive))
 	if ref.IsPlaylist() {
 		return runPlaylistSummary(ctx, engine, config, ref, allowPaidTranscription, confirm)
 	}
@@ -60,8 +63,12 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	}
 	rendered, err := summarize(policy, "Processing video...")
 	if !allowPaidTranscription && tldw.CanOfferPaidTranscription(err) {
-		if !confirm(fmt.Sprintf("%v. Use paid OpenAI transcription?", err)) {
-			return fmt.Errorf("transcription declined by user")
+		approved, confirmErr := confirm(fmt.Sprintf("%v. Use paid OpenAI transcription?", err))
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if !approved {
+			return errConsentDeclined
 		}
 		rendered, err = summarize(tldw.PaidOnly, "Transcribing with OpenAI...")
 	}
@@ -72,12 +79,12 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 	return nil
 }
 
-func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool, confirm func(string) bool) error {
+func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool, confirm func(string) (bool, error)) error {
 	var request tldw.PlaylistSummaryRequest
 	if allowPaidTranscription {
 		request = tldw.PlaylistTranscripts(tldw.CaptionsThenPaid)
 	} else {
-		request = tldw.PlaylistWithConsent(func(video tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
+		request = tldw.PlaylistWithConsent(func(video tldw.ContentRef, metadata *tldw.VideoMetadata) (bool, error) {
 			return confirm(fmt.Sprintf("Video %s: '%s' has no captions. Use paid OpenAI transcription?", video.ID(), metadata.Title))
 		})
 	}

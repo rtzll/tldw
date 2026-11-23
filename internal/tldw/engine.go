@@ -96,7 +96,7 @@ type Summary struct {
 
 type PlaylistSummaryRequest struct {
 	transcript  TranscriptRequest
-	confirmPaid func(ContentRef, *VideoMetadata) bool
+	confirmPaid func(ContentRef, *VideoMetadata) (bool, error)
 }
 
 // PlaylistTranscripts applies one acquisition intent to every item.
@@ -106,7 +106,7 @@ func PlaylistTranscripts(request TranscriptRequest) PlaylistSummaryRequest {
 
 // PlaylistWithConsent starts each item with free captions. Approval applies
 // only to the item for which the callback was invoked.
-func PlaylistWithConsent(confirm func(ContentRef, *VideoMetadata) bool) PlaylistSummaryRequest {
+func PlaylistWithConsent(confirm func(ContentRef, *VideoMetadata) (bool, error)) PlaylistSummaryRequest {
 	return PlaylistSummaryRequest{transcript: CaptionsOnly, confirmPaid: confirm}
 }
 
@@ -255,8 +255,14 @@ func (app *Engine) CreatePlaylistSummary(ctx context.Context, ref ContentRef, re
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		if request.confirmPaid != nil && CanOfferPaidTranscription(transcriptErr) && request.confirmPaid(videoRef, metadata) {
-			transcript, transcriptErr = app.Transcript(ctx, videoRef, PaidOnly)
+		if request.confirmPaid != nil && CanOfferPaidTranscription(transcriptErr) {
+			approved, err := request.confirmPaid(videoRef, metadata)
+			if err != nil {
+				return result, err
+			}
+			if approved {
+				transcript, transcriptErr = app.Transcript(ctx, videoRef, PaidOnly)
+			}
 		}
 		if transcriptErr != nil {
 			result.Skipped = append(result.Skipped, fmt.Sprintf("Video %d: %s (transcript error)", i+1, metadata.Title))

@@ -419,11 +419,18 @@ func TestEngineSummarizePlaylistUsesPaidTranscriptionAfterConsent(t *testing.T) 
 	if err != nil {
 		t.Fatalf("NewEngine() error = %v", err)
 	}
+	consentErr := errors.New("confirmation unavailable")
+	_, err = engine.CreatePlaylistSummary(t.Context(), playlistRef, tldw.PlaylistWithConsent(func(tldw.ContentRef, *tldw.VideoMetadata) (bool, error) {
+		return false, consentErr
+	}))
+	if !errors.Is(err, consentErr) || video.audioCalls != 0 || ai.transcribeCalls != 0 {
+		t.Fatalf("consent failure: err=%v audio=%d transcriptions=%d", err, video.audioCalls, ai.transcribeCalls)
+	}
 	confirmed := false
 
-	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistWithConsent(func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) bool {
+	result, err := engine.CreatePlaylistSummary(context.Background(), playlistRef, tldw.PlaylistWithConsent(func(ref tldw.ContentRef, metadata *tldw.VideoMetadata) (bool, error) {
 		confirmed = ref.ID() == testVideoID && metadata.Title == "No captions"
-		return true
+		return true, nil
 	}))
 	if err != nil {
 		t.Fatalf("CreatePlaylistSummary() error = %v", err)

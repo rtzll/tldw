@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,21 +14,48 @@ import (
 	"golang.org/x/term"
 )
 
-// Keep one scanner per invocation so a playlist consumes one answer per prompt.
-func confirmationPrompt(input io.Reader) func(string) bool {
+var errConsentRequired = errors.New("paid transcription requires confirmation; rerun with --allow-paid-transcription to authorize it")
+var errConsentDeclined = errors.New("transcription declined")
+
+func isTerminal(stream any) bool {
+	f, ok := stream.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
+}
+
+func canPrompt(input io.Reader, diagnostic io.Writer, nonInteractive bool) bool {
+	ci := strings.ToLower(strings.TrimSpace(os.Getenv("CI")))
+	return !nonInteractive && (ci == "" || ci == "false" || ci == "0") && isTerminal(input) && isTerminal(diagnostic)
+}
+
+// One scanner per invocation preserves buffered answers across playlist items.
+func confirmationPrompt(ctx context.Context, input io.Reader, diagnostic io.Writer, interactive bool) func(string) (bool, error) {
 	scanner := bufio.NewScanner(input)
-	return func(message string) bool {
-		fmt.Printf("%s (y/N): ", message)
-		ok := scanner.Scan()
-		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
-			return false
+	return func(message string) (bool, error) {
+		if err := ctx.Err(); err != nil {
+			return false, err
 		}
-		if !ok {
-			return false
+		if !interactive {
+			return false, errConsentRequired
 		}
-		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
-		return answer == "y" || answer == "yes"
+		if _, err := fmt.Fprintf(diagnostic, "%s (y/N): ", message); err != nil {
+			return false, err
+		}
+		// Terminal reads can block until the next line even after a signal.
+		read := make(chan bool, 1)
+		go func() { read <- scanner.Scan() }()
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case ok := <-read:
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			if !ok {
+				return false, scanner.Err()
+			}
+			answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+			return answer == "y" || answer == "yes", nil
+		}
 	}
 }
 
