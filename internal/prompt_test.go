@@ -86,3 +86,27 @@ func TestPromptManagerCreatePrompt(t *testing.T) {
 		}
 	})
 }
+
+func TestPromptSourceRemainsStableAcrossFilesystemChanges(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "template")
+	literal := NewPromptManager("", path)
+	if err := os.WriteFile(path, []byte("first"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file := NewPromptManager("", path)
+	if err := os.WriteFile(path, []byte("second"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := literal.CreatePrompt("", nil); err != nil || got != path {
+		t.Fatalf("literal changed: %q %v", got, err)
+	}
+	if got, err := file.CreatePrompt("", nil); err != nil || got != "second" {
+		t.Fatalf("file edit lost: %q %v", got, err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.CreatePrompt("", nil); err == nil {
+		t.Fatal("missing file became a literal")
+	}
+}

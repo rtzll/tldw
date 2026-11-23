@@ -19,50 +19,29 @@ type promptData struct {
 
 // PromptManager handles loading and processing prompt templates.
 type PromptManager struct {
-	promptFile   string
-	promptString string
-	configDir    string
+	load func() (string, error)
 }
 
-// NewPromptManager creates a new prompt manager
-func NewPromptManager(configDir, promptSetting string) *PromptManager {
-	pm := &PromptManager{
-		configDir: configDir,
-	}
-
-	// Configure prompt based on config setting.
-	if promptSetting != "" {
-		if _, err := os.Stat(promptSetting); err == nil {
-			pm.promptFile = promptSetting
+// NewPromptManager resolves the source once. File-backed templates are read
+// for each summary so edits take effect during a long-running process.
+func NewPromptManager(configDir, setting string) *PromptManager {
+	path := filepath.Join(configDir, "prompt.txt")
+	if setting != "" {
+		if _, err := os.Stat(setting); err != nil {
+			return &PromptManager{load: func() (string, error) { return setting, nil }}
 		}
-		if pm.promptFile == "" {
-			pm.promptString = promptSetting
-		}
+		path = setting
 	}
-
-	return pm
+	return &PromptManager{load: func() (string, error) {
+		data, err := os.ReadFile(path)
+		return string(data), err
+	}}
 }
 
-// CreatePrompt builds a prompt from a transcript and metadata.
 func (pm *PromptManager) CreatePrompt(transcript string, metadata *tldw.VideoMetadata) (string, error) {
-	var tmplContent string
-
-	if pm.promptString != "" {
-		// Use custom prompt string.
-		tmplContent = pm.promptString
-	} else {
-		// Use prompt file (custom or default from config directory).
-		promptFile := pm.promptFile
-		if promptFile == "" {
-			// Use default prompt from config directory.
-			promptFile = filepath.Join(pm.configDir, "prompt.txt")
-		}
-
-		content, err := os.ReadFile(promptFile)
-		if err != nil {
-			return "", fmt.Errorf("reading prompt template: %w", err)
-		}
-		tmplContent = string(content)
+	tmplContent, err := pm.load()
+	if err != nil {
+		return "", fmt.Errorf("reading prompt template: %w", err)
 	}
 
 	tmpl, err := template.New("prompt").Parse(tmplContent)

@@ -37,38 +37,41 @@ func runSummary(ctx context.Context, engine *tldw.Engine, config *internal.Confi
 		return runPlaylistSummary(ctx, engine, config, ref, allowPaidTranscription)
 	}
 
-	progress := newSummaryProgress(config, "Processing video...")
+	summarize := func(policy tldw.TranscriptRequest, description string) (string, error) {
+		progress := newSummaryProgress(config, description)
+		defer progress.finish()
+		progress.update("Generating summary with OpenAI...")
+		summary, err := engine.SummarizeVideo(ctx, ref, policy)
+		if err != nil {
+			return "", err
+		}
+		progress.update("Rendering summary...")
+		rendered, err := renderMarkdown(summary.Markdown)
+		if err != nil {
+			return "", fmt.Errorf("rendering markdown: %w", err)
+		}
+		return rendered, nil
+	}
 	policy := tldw.CaptionsOnly
 	if allowPaidTranscription {
 		policy = tldw.CaptionsThenPaid
 	}
-	progress.update("Generating summary with OpenAI...")
-	summary, err := engine.SummarizeVideo(ctx, ref, policy)
+	rendered, err := summarize(policy, "Processing video...")
 	if !allowPaidTranscription && tldw.CanOfferPaidTranscription(err) {
-		progress.finish()
 		if !askUser(fmt.Sprintf("%v. Use paid OpenAI transcription?", err)) {
 			return fmt.Errorf("transcription declined by user")
 		}
-		progress = newSummaryProgress(config, "Transcribing with OpenAI...")
-		summary, err = engine.SummarizeVideo(ctx, ref, tldw.PaidOnly)
+		rendered, err = summarize(tldw.PaidOnly, "Transcribing with OpenAI...")
 	}
 	if err != nil {
-		progress.finish()
 		return err
-	}
-
-	progress.update("Rendering summary...")
-	rendered, err := renderMarkdown(summary.Markdown)
-	progress.finish()
-	if err != nil {
-		return fmt.Errorf("rendering markdown: %w", err)
 	}
 	fmt.Println(rendered)
 	return nil
 }
 
 func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool) error {
-	request := tldw.PlaylistTranscripts(tldw.CaptionsOnly)
+	var request tldw.PlaylistSummaryRequest
 	if allowPaidTranscription {
 		request = tldw.PlaylistTranscripts(tldw.CaptionsThenPaid)
 	} else {
