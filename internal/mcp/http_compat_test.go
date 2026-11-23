@@ -80,7 +80,7 @@ func startCompatibilityHTTPServer(t *testing.T, app MCPApplication) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- NewMCPServer(app).Start(ctx, "http", "127.0.0.1", port)
+		errCh <- NewMCPServer(app, nil).Start(ctx, "http", "127.0.0.1", port)
 	}()
 	t.Cleanup(func() {
 		cancel()

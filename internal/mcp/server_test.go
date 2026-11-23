@@ -40,7 +40,7 @@ func (stub *applicationStub) Transcript(_ context.Context, _ tldw.ContentRef, re
 }
 
 func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
-	server := NewMCPServer(&applicationStub{})
+	server := NewMCPServer(&applicationStub{}, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	res, err := clientSession.ListTools(ctx, nil)
@@ -167,7 +167,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 }
 
 func TestMCPToolDescriptionsDoNotAdvertisePlaylists(t *testing.T) {
-	server := NewMCPServer(&applicationStub{})
+	server := NewMCPServer(&applicationStub{}, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	res, err := clientSession.ListTools(ctx, nil)
@@ -191,7 +191,7 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 		HasCaptions: true, CaptionLanguages: []string{"en"},
 	}
 
-	server := NewMCPServer(app)
+	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
@@ -253,7 +253,7 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 		},
 	}
 
-	server := NewMCPServer(app)
+	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
@@ -297,7 +297,7 @@ func TestMCPPaidTranscriptionReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
 	app.transcript = &tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: tldw.TranscriptSourcePaidTranscription, Text: "paid transcript"}
 
-	server := NewMCPServer(app)
+	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
@@ -337,7 +337,7 @@ func TestMCPPaidTranscriptionReturnsTextAndStructuredContent(t *testing.T) {
 func TestMCPPaidTranscriptionRejectsTimestampsBeforeDownload(t *testing.T) {
 	app := &applicationStub{}
 
-	server := NewMCPServer(app)
+	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
@@ -363,7 +363,7 @@ func TestMCPPaidTranscriptionRejectsTimestampsBeforeDownload(t *testing.T) {
 
 func TestMCPTranscriptDoesNotMislabelApplicationFailures(t *testing.T) {
 	app := &applicationStub{transcriptErr: context.Canceled}
-	server := NewMCPServer(app)
+	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
@@ -385,7 +385,7 @@ func TestMCPTranscriptDoesNotMislabelApplicationFailures(t *testing.T) {
 }
 
 func TestMCPHTTPTransportServesTools(t *testing.T) {
-	server := NewMCPServer(&applicationStub{})
+	server := NewMCPServer(&applicationStub{}, nil)
 	port := unusedTCPPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -470,7 +470,7 @@ func TestMCPHTTPTransportServesTools(t *testing.T) {
 }
 
 func TestMCPServerRejectsInvalidTransport(t *testing.T) {
-	server := NewMCPServer(&applicationStub{})
+	server := NewMCPServer(&applicationStub{}, nil)
 	err := server.Start(context.Background(), "htp", "127.0.0.1", 8765)
 	if err == nil {
 		t.Fatal("expected invalid transport error")
@@ -481,12 +481,11 @@ func TestMCPServerRejectsInvalidTransport(t *testing.T) {
 }
 
 func TestMCPServerSerializesStdioToolHandlers(t *testing.T) {
-	server := &MCPServer{}
 
 	var active atomic.Int32
 	var maxActive atomic.Int32
 
-	handler := server.serializeStdioToolCalls(func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+	handler := serializeStdioToolCalls(func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
 		current := active.Add(1)
 		for {
 			observed := maxActive.Load()
@@ -540,7 +539,7 @@ func connectTestMCPClient(t *testing.T, server *MCPServer) (context.Context, *mc
 	t.Cleanup(cancel)
 
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.mcpServer.Connect(ctx, serverTransport, nil)
+	serverSession, err := server.protocolServer().Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("server Connect() error = %v", err)
 	}
@@ -628,4 +627,23 @@ func structuredContent[T any](t *testing.T, result *mcp.CallToolResult) T {
 		t.Fatalf("unmarshaling structuredContent %s: %v", data, err)
 	}
 	return out
+}
+
+func TestCanceledStdioWaiterDoesNotInvokeTool(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	handler := serializeStdioToolCalls(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		close(started)
+		<-release
+		return nil, nil
+	})
+	done := make(chan error, 1)
+	go func() { _, err := handler(t.Context(), mcpMethodCallTool, nil); done <- err }()
+	<-started
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := handler(ctx, mcpMethodCallTool, nil)
+	close(release)
+	if !errors.Is(err, context.Canceled) || <-done != nil {
+		t.Fatalf("canceled waiter: %v", err)
+	}
 }

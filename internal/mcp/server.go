@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -17,10 +17,8 @@ import (
 
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
-	engine             MCPApplication
-	mcpServer          *mcp.Server
-	stdioToolMu        sync.Mutex
-	stdioSerializeOnce sync.Once
+	engine MCPApplication
+	log    *Logger
 }
 
 type MCPApplication interface {
@@ -79,9 +77,15 @@ type mcpTranscriptOutput struct {
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer(engine MCPApplication) *MCPServer {
-	MCPLogInfo("Initializing MCP server (tldw-server v%s)", mcpServerVersion)
+func NewMCPServer(engine MCPApplication, logger *Logger) *MCPServer {
+	if logger == nil {
+		logger = NewLogger(io.Discard)
+	}
+	return &MCPServer{engine: engine, log: logger}
+}
 
+// Each transport owns its protocol server and its middleware.
+func (s *MCPServer) protocolServer() *mcp.Server {
 	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    "tldw-server",
 		Version: mcpServerVersion,
@@ -91,47 +95,49 @@ func NewMCPServer(engine MCPApplication) *MCPServer {
 		},
 	})
 
-	s := &MCPServer{
-		engine:    engine,
-		mcpServer: mcpServer,
-	}
-
-	s.registerTools()
-	MCPLogInfo("MCP server initialized with %d tools", 3)
-	return s
+	s.registerTools(mcpServer)
+	return mcpServer
 }
 
-func (s *MCPServer) serializeStdioToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
+func serializeStdioToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
+	token := make(chan struct{}, 1)
 	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
 		if method != mcpMethodCallTool {
 			return next(ctx, method, request)
 		}
 
-		s.stdioToolMu.Lock()
-		defer s.stdioToolMu.Unlock()
+		select {
+		case token <- struct{}{}:
+			defer func() { <-token }()
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 
 		return next(ctx, method, request)
 	}
 }
 
 // registerTools registers all available MCP tools
-func (s *MCPServer) registerTools() {
+func (s *MCPServer) registerTools(server *mcp.Server) {
 	// get_youtube_metadata tool
-	mcp.AddTool(s.mcpServer, &mcp.Tool{
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_youtube_metadata",
 		Description: mcpGetMetadataDescription,
 		Annotations: mcpToolAnnotations(true),
 	}, s.handleGetMetadata)
 
 	// get_youtube_transcript tool (free - existing captions only)
-	mcp.AddTool(s.mcpServer, &mcp.Tool{
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_youtube_transcript",
 		Description: mcpGetTranscriptDescription,
 		Annotations: mcpToolAnnotations(true),
 	}, s.handleGetTranscript)
 
 	// transcribe_video_paid tool (paid - creates transcript using AI)
-	mcp.AddTool(s.mcpServer, &mcp.Tool{
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "transcribe_video_paid",
 		Description: mcpPaidTranscriptionDescription,
 		Annotations: mcpToolAnnotations(false),
@@ -160,20 +166,20 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	url := input.URL
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
-		MCPLogError("Tool: get_youtube_metadata - invalid URL: %v", err)
+		s.log.errorf("Tool: get_youtube_metadata - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
-	MCPLogInfo("Tool: get_youtube_metadata - URL: %s", url)
+	s.log.Printf("Tool: get_youtube_metadata - URL: %s", url)
 
 	// Get video metadata
 	metadata, err := s.engine.MetadataFor(ctx, parsed)
 	if err != nil {
-		MCPLogError("Tool: get_youtube_metadata failed - %v", err)
+		s.log.errorf("Tool: get_youtube_metadata failed - %v", err)
 		return nil, zero, fmt.Errorf("metadata error: %w", err)
 	}
 
-	MCPLogInfo("Tool: get_youtube_metadata succeeded - Title: %s, Duration: %.0fs, HasCaptions: %t",
+	s.log.Printf("Tool: get_youtube_metadata succeeded - Title: %s, Duration: %.0fs, HasCaptions: %t",
 		metadata.Title, metadata.Duration, metadata.HasCaptions)
 
 	output := mcpMetadataOutput{
@@ -227,11 +233,11 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	url := input.URL
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
-		MCPLogError("Tool: get_youtube_transcript - invalid URL: %v", err)
+		s.log.errorf("Tool: get_youtube_transcript - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
-	MCPLogInfo("Tool: get_youtube_transcript - URL: %s", url)
+	s.log.Printf("Tool: get_youtube_transcript - URL: %s", url)
 	includeTimestamps := input.IncludeTimestamps
 
 	format := tldw.TranscriptRenderFormatPlain
@@ -245,7 +251,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	}
 	structured, err := s.engine.Transcript(ctx, parsed, request)
 	if err != nil {
-		MCPLogError("Tool: get_youtube_transcript failed - %v", err)
+		s.log.errorf("Tool: get_youtube_transcript failed - %v", err)
 		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
 			return nil, zero, fmt.Errorf("%w. Offer transcribe_video_paid for a plain-text transcript (paid) and ask for confirmation first", err)
 		}
@@ -256,7 +262,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 		return nil, zero, err
 	}
 
-	MCPLogInfo("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
+	s.log.Printf("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
 
 	output := mcpTranscriptOutput{
 		URL:               url,
@@ -274,20 +280,20 @@ func (s *MCPServer) handlePaidTranscription(ctx context.Context, _ *mcp.CallTool
 	url := input.URL
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
-		MCPLogError("Tool: transcribe_video_paid - invalid URL: %v", err)
+		s.log.errorf("Tool: transcribe_video_paid - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
-	MCPLogInfo("Tool: transcribe_video_paid - URL: %s (PAID OPERATION)", url)
+	s.log.Printf("Tool: transcribe_video_paid - URL: %s (PAID OPERATION)", url)
 	if input.IncludeTimestamps {
 		err := fmt.Errorf("paid transcription returns plain text without timestamps")
-		MCPLogError("Tool: transcribe_video_paid failed - %v", err)
+		s.log.errorf("Tool: transcribe_video_paid failed - %v", err)
 		return nil, zero, err
 	}
 
 	structured, err := s.engine.Transcript(ctx, parsed, tldw.PaidOnly)
 	if err != nil {
-		MCPLogError("Tool: transcribe_video_paid - transcription failed: %v", err)
+		s.log.errorf("Tool: transcribe_video_paid - transcription failed: %v", err)
 		return nil, zero, fmt.Errorf("failed to transcribe audio with OpenAI: %w", err)
 	}
 	transcript, err := structured.Render(tldw.TranscriptRenderFormatPlain)
@@ -295,7 +301,7 @@ func (s *MCPServer) handlePaidTranscription(ctx context.Context, _ *mcp.CallTool
 		return nil, zero, err
 	}
 
-	MCPLogInfo("Tool: transcribe_video_paid succeeded - transcript length: %d characters", len(transcript))
+	s.log.Printf("Tool: transcribe_video_paid succeeded - transcript length: %d characters", len(transcript))
 
 	output := mcpTranscriptOutput{
 		URL:               url,
@@ -316,14 +322,15 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		}
 
 		addr := net.JoinHostPort(host, strconv.Itoa(port))
-		MCPLogInfo("Starting MCP server with HTTP transport on %s", addr)
+		s.log.Printf("Starting MCP server with HTTP transport on %s", addr)
 		if ctx.Err() != nil {
-			MCPLogError("Context cancelled before HTTP server start")
+			s.log.errorf("Context cancelled before HTTP server start")
 			return ctx.Err()
 		}
 
+		server := s.protocolServer()
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-			return s.mcpServer
+			return server
 		}, &mcp.StreamableHTTPOptions{
 			// MCP 2026-07-28 requires stateless HTTP. These tools do not
 			// need persistent sessions or server-initiated client requests.
@@ -337,47 +344,45 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		mux.Handle("/mcp", handler)
 		mux.Handle("/{$}", handler) // Preserve the legacy root endpoint.
 		httpServer := &http.Server{
-			Addr:    addr,
-			Handler: mux,
+			Addr:        addr,
+			Handler:     mux,
+			BaseContext: func(net.Listener) context.Context { return ctx },
 		}
-		errCh := make(chan error, 1)
-		go func() {
-			errCh <- httpServer.ListenAndServe()
-		}()
-
-		select {
-		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := httpServer.Shutdown(shutdownCtx); err != nil {
-				if closeErr := httpServer.Close(); closeErr != nil {
-					MCPLogError("HTTP server forced close failed: %v", closeErr)
-					return closeErr
-				}
-			}
-			if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-				MCPLogError("HTTP server failed: %v", err)
-				return err
-			}
-			return ctx.Err()
-		case err := <-errCh:
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			MCPLogError("HTTP server failed to start: %v", err)
-			return err
-		}
+		return serveHTTP(ctx, httpServer)
 	case "stdio":
-		MCPLogInfo("Starting MCP server with stdio transport")
-		s.stdioSerializeOnce.Do(func() {
-			s.mcpServer.AddReceivingMiddleware(s.serializeStdioToolCalls)
-		})
-		err := s.mcpServer.Run(ctx, &mcp.StdioTransport{})
+		s.log.Printf("Starting MCP server with stdio transport")
+		server := s.protocolServer()
+		server.AddReceivingMiddleware(serializeStdioToolCalls)
+		err := server.Run(ctx, &mcp.StdioTransport{})
 		if err != nil {
-			MCPLogError("Stdio server failed: %v", err)
+			s.log.errorf("Stdio server failed: %v", err)
 		}
 		return err
 	default:
 		return fmt.Errorf("invalid MCP transport %q; expected stdio or http", transport)
+	}
+}
+
+func serveHTTP(ctx context.Context, server *http.Server) error {
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe() }()
+	select {
+	case err := <-done:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		drain, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(drain); err != nil {
+			if err := server.Close(); err != nil {
+				return err
+			}
+		}
+		if err := <-done; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return ctx.Err()
 	}
 }

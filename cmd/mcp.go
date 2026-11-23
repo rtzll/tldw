@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -51,23 +52,34 @@ Transport options:
 			host = "127.0.0.1"
 		}
 
-		mcpserver.InitLogging(config.MCPLogEnabled)
-		app, err := buildEngine(config, mcpLogSink{})
+		var output io.Writer = io.Discard
+		if config.MCPLogEnabled {
+			file, err := openMCPLog(config.CacheDir)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Opening MCP log: %v\n", err)
+			} else {
+				defer func() { _ = file.Close() }()
+				output = file
+			}
+		}
+		logger := mcpserver.NewLogger(output)
+		app, err := buildEngine(config, logger)
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		mcpServer := mcpserver.NewMCPServer(app)
+		mcpServer := mcpserver.NewMCPServer(app, logger)
 
 		// Start the server (this will block until context is cancelled)
 		return mcpServer.Start(cmd.Context(), transport, host, port)
 	},
 }
 
-type mcpLogSink struct{}
-
-func (mcpLogSink) Printf(format string, args ...any) {
-	mcpserver.MCPLogInfo(strings.TrimSuffix(format, "\n"), args...)
+func openMCPLog(dir string) (*os.File, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(dir, "mcp.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
 // setupClaudeCmd represents the setup-claude subcommand
