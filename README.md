@@ -128,9 +128,18 @@ use `day`, `week`, or `month`.
 
 Caption downloads prefer original English automatic captions, then manual
 English captions, then a direct track in another language. Each download
-requests one track; automatically translated captions are excluded. A rate-limit
-error stops the request without trying other languages or starting paid
-transcription.
+requests one track. Automatically translated captions are excluded.
+
+When YouTube rate-limits a metadata or caption fetch, tldw shares a cooldown
+across those reads in the running process. It honors a `Retry-After` delay
+reported by yt-dlp. Otherwise the cooldown starts at about 10 seconds and
+doubles on repeated failures, up to two minutes. One request checks whether
+YouTube has recovered when the cooldown expires. Each call can retry once and
+spend up to 20 seconds waiting for recovery, subject to its own deadline.
+Longer waits return a suggested retry time. Cached results remain available.
+With MCP logging enabled, each automatic retry logs its outcome and added time.
+X/Twitter reads run independently, and a caption rate limit never triggers
+paid transcription.
 
 Negative caption metadata expires after 15 minutes. Before falling back to paid
 transcription, tldw checks cached negative metadata again. A failed

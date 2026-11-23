@@ -33,6 +33,9 @@ func (yt *Client) metadata(ctx context.Context, ref tldw.ContentRef) (*tldw.Vide
 			yt.log.Printf("Metadata extraction error: %v\n", err)
 			yt.log.Printf("Command output: %s\n", string(output))
 		}
+		if !ref.IsX() {
+			err = classifyReadError(ctx, ref, output, err)
+		}
 		return nil, fmt.Errorf("extracting video metadata: %w", err)
 	}
 

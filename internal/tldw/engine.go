@@ -156,6 +156,9 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 		return app.transcribeVideo(ctx, ref)
 	}
 
+	if !ref.IsX() {
+		ctx = withYouTubeReadBudget(ctx)
+	}
 	metadata, err := app.resolveMetadataWithPolicy(ctx, ref, request.Policy == TranscriptPolicyCaptionsThenPaidTranscription)
 	if err != nil {
 		return nil, fmt.Errorf("checking video metadata: %w", err)
@@ -401,7 +404,7 @@ func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref ContentRef, cac
 	refreshed, err := app.fetchMetadata(ctx, ref)
 	if err != nil {
 		// A failed lookup must not turn stale absence into a decision to charge for transcription.
-		if !cached.HasCaptions || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if !cached.HasCaptions || terminalTranscriptError(err) {
 			return nil, err
 		}
 		app.log.Printf("Warning: metadata refresh failed: %v\n", err)

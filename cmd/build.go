@@ -25,10 +25,6 @@ func newEngine(config *internal.Config) (*tldw.Engine, error) {
 	return buildEngine(config, cliLogSink{config: config})
 }
 
-type silentLogSink struct{}
-
-func (silentLogSink) Printf(string, ...any) {}
-
 func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error) {
 	runner := &process.CommandRunner{}
 	audio := openaiadapter.NewAudio(runner, config.TempDir)

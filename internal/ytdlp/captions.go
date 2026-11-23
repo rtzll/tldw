@@ -2,7 +2,6 @@ package ytdlp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +37,7 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading direct captions: %s (automatic=%t)\n", track.Language, track.Automatic)
 	}
-	_, partialFiles, err := yt.runCaptionDownload(ctx, args, path)
+	_, partialFiles, err := yt.runCaptionDownload(ctx, ref, args, path)
 	if err != nil {
 		return "", captionDownloadError(err)
 	}
@@ -58,21 +57,14 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	return path, nil
 }
 
-func (yt *Client) runCaptionDownload(ctx context.Context, args []string, pattern string) ([]byte, []string, error) {
+func (yt *Client) runCaptionDownload(ctx context.Context, ref tldw.ContentRef, args []string, pattern string) ([]byte, []string, error) {
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
-	if ctx.Err() != nil {
-		return output, nil, errors.Join(err, ctx.Err())
-	}
+	err = classifyReadError(ctx, ref, output, err)
 	if err == nil {
 		return output, nil, nil
 	}
-	if terminalCaptionError(err) {
+	if terminalReadError(err) {
 		return output, nil, err
-	}
-	// CommandError includes stderr; stdout alone misses yt-dlp HTTP errors.
-	details := strings.ToLower(string(output) + "\n" + err.Error())
-	if strings.Contains(details, "http error 429") || strings.Contains(details, "too many requests") {
-		return output, nil, fmt.Errorf("%w: %w", tldw.ErrRateLimited, err)
 	}
 
 	files, globErr := filepath.Glob(pattern)
@@ -101,6 +93,12 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 			return yt.processSrtTranscript(path, track)
 		}
 	}
+	return readVideo(ctx, yt, ref, func() (*tldw.Transcript, error) {
+		return yt.fetchCaptionTrack(ctx, ref, track)
+	})
+}
+
+func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, track tldw.CaptionTrack) (*tldw.Transcript, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -169,12 +167,8 @@ func extractCaptionLanguages(subtitles, autoCaptions map[string]any) []string {
 	return result
 }
 
-func terminalCaptionError(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, tldw.ErrRateLimited)
-}
-
 func captionDownloadError(err error) error {
-	if terminalCaptionError(err) {
+	if terminalReadError(err) {
 		return err
 	}
 	return fmt.Errorf("%w: %w", tldw.ErrDownloadFailed, err)

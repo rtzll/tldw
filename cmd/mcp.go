@@ -51,17 +51,23 @@ Transport options:
 			host = "127.0.0.1"
 		}
 
-		app, err := buildEngine(config, silentLogSink{})
+		mcpserver.InitLogging(config.MCPLogEnabled)
+		app, err := buildEngine(config, mcpLogSink{})
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
 
-		mcpserver.InitLogging(config.MCPLogEnabled)
 		mcpServer := mcpserver.NewMCPServer(app)
 
 		// Start the server (this will block until context is cancelled)
 		return mcpServer.Start(cmd.Context(), transport, host, port)
 	},
+}
+
+type mcpLogSink struct{}
+
+func (mcpLogSink) Printf(format string, args ...any) {
+	mcpserver.MCPLogInfo(strings.TrimSuffix(format, "\n"), args...)
 }
 
 // setupClaudeCmd represents the setup-claude subcommand

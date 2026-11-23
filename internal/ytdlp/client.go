@@ -2,6 +2,8 @@ package ytdlp
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/rtzll/tldw/internal/process"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -21,6 +23,7 @@ type Client struct {
 	quiet          bool
 	log            tldw.LogSink
 	executor       process.Runner
+	youtube        *tldw.YouTubeCooldown
 }
 
 // New creates a yt-dlp client with explicit storage paths.
@@ -32,6 +35,7 @@ func New(transcriptsDir, cacheDir string, verbose bool, quiet bool) *Client {
 		quiet:          quiet,
 		log:            discardLogSink{},
 		executor:       &process.CommandRunner{},
+		youtube:        &tldw.YouTubeCooldown{},
 	}
 }
 
@@ -40,7 +44,29 @@ func (yt *Client) SetLogSink(log tldw.LogSink) {
 }
 
 func (yt *Client) FetchMetadata(ctx context.Context, ref tldw.ContentRef) (*tldw.VideoMetadata, error) {
-	return yt.metadata(ctx, ref)
+	return readVideo(ctx, yt, ref, func() (*tldw.VideoMetadata, error) {
+		return yt.metadata(ctx, ref)
+	})
+}
+
+// Only metadata and uncached caption reads participate in YouTube recovery.
+func readVideo[T any](ctx context.Context, yt *Client, ref tldw.ContentRef, fetch func() (T, error)) (T, error) {
+	if ref.IsX() {
+		return fetch()
+	}
+	var value T
+	var limitedAt time.Time
+	err := yt.youtube.Read(ctx, func() error {
+		var err error
+		value, err = fetch()
+		if !limitedAt.IsZero() {
+			yt.log.Printf("YouTube rate-limit retry recovered=%t added_time=%s\n", err == nil, time.Since(limitedAt).Round(time.Millisecond))
+		} else if errors.Is(err, tldw.ErrRateLimited) {
+			limitedAt = time.Now()
+		}
+		return err
+	})
+	return value, err
 }
 
 func (yt *Client) FetchCaptions(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {

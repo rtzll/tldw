@@ -3,11 +3,13 @@ package ytdlp
 import (
 	"context"
 	"errors"
-	"github.com/rtzll/tldw/internal/process"
-	"github.com/rtzll/tldw/internal/tldw"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/rtzll/tldw/internal/process"
+	"github.com/rtzll/tldw/internal/tldw"
 )
 
 func TestFindExistingTranscriptReturnsDirectoryErrors(t *testing.T) {
@@ -53,7 +55,7 @@ func TestExtractCaptionLanguages(t *testing.T) {
 	}
 }
 
-func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
+func TestCaptionErrorsPreserveCauseWithShortDeadline(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		stdout string
@@ -75,7 +77,9 @@ func TestCaptionErrorsPreserveCauseAndStopRetries(t *testing.T) {
 				return []byte(tt.stdout), commandErr
 			})
 			ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-			_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			_, err := yt.FetchCaptions(ctx, ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
 			var got *process.CommandError
 			if !errors.Is(err, tt.want) || !errors.As(err, &got) || got != commandErr {
 				t.Fatalf("error chain lost: %v", err)
@@ -111,7 +115,8 @@ func TestCanceledDownloadDoesNotAcceptPartialFiles(t *testing.T) {
 		cancel()
 		return nil, errors.New("process exited")
 	})
-	_, files, err := yt.runCaptionDownload(ctx, nil, filepath.Join(dir, "*.srt"))
+	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
+	_, files, err := yt.runCaptionDownload(ctx, ref, nil, filepath.Join(dir, "*.srt"))
 	if !errors.Is(err, context.Canceled) || len(files) != 0 {
 		t.Fatalf("accepted canceled partial download: files=%v err=%v", files, err)
 	}
