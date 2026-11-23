@@ -27,6 +27,9 @@ type refreshMetadataFunc func(context.Context, ContentRef) (*VideoMetadata, erro
 // readCaptions has no paid dependencies. Only the first attempt can schedule
 // recovery. The final result can finish the lookup or offer plain-text fallback.
 func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, timed bool, fetch fetchCaptionsFunc, refresh refreshMetadataFunc) (*Transcript, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !metadata.HasCaptions {
 		err := fmt.Errorf("%w for %s", ErrCaptionsUnavailable, ref.URL())
 		if metadata.Duration > 0 {
@@ -73,6 +76,9 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 			return nil, &paidFallbackError{err}
 		}
 		return nil, err
+	}
+	if transcript.Source() != TranscriptSourceCaptions {
+		return nil, fmt.Errorf("caption adapter returned unverified transcript")
 	}
 	if timed && !transcript.HasTimestamps() {
 		return nil, ErrTranscriptTimestampsUnavailable

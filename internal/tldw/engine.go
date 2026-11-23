@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -175,11 +174,7 @@ func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, 
 		return nil, err
 	}
 
-	transcript.VideoID = ref.CacheKey()
-	if err := app.persistTranscript(transcript); err != nil {
-		app.log.Printf("Warning: %v\n", err)
-	}
-	return transcript, nil
+	return app.saveAcquiredTranscript(ref, transcript), nil
 }
 
 func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) bool {
@@ -188,9 +183,9 @@ func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) 
 	}
 	switch request {
 	case CaptionsOnly, TimestampedCaptions:
-		return transcript.Source == TranscriptSourceCaptions
+		return transcript.Source() == TranscriptSourceCaptions
 	case PaidOnly:
-		return transcript.Source == TranscriptSourcePaidTranscription
+		return transcript.Source() == TranscriptSourcePaidTranscription
 	default:
 		return true
 	}
@@ -367,19 +362,21 @@ func (app *Engine) cacheMetadata(videoID string, metadata *VideoMetadata) {
 }
 
 func (app *Engine) transcribeVideo(ctx context.Context, ref ContentRef) (*Transcript, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	audioFile, err := app.video.DownloadAudio(ctx, ref)
 	if err != nil {
 		return nil, fmt.Errorf("downloading audio: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	transcript, err := app.transcribeAudio(ctx, audioFile)
 	if err != nil {
 		return nil, err
 	}
-	transcript.VideoID = ref.CacheKey()
-	if err := app.persistTranscript(transcript); err != nil {
-		app.log.Printf("Warning: %v\n", err)
-	}
-	return transcript, nil
+	return app.saveAcquiredTranscript(ref, transcript), nil
 }
 
 func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Transcript, error) {
@@ -392,11 +389,16 @@ func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Tran
 	if err != nil {
 		return nil, err
 	}
-	return &Transcript{Source: TranscriptSourcePaidTranscription, Text: strings.TrimSpace(text)}, nil
+	return NewPaidTranscript("", text)
 }
 
-func (app *Engine) persistTranscript(transcript *Transcript) error {
-	return app.store.SaveTranscript(transcript)
+func (app *Engine) saveAcquiredTranscript(ref ContentRef, transcript *Transcript) *Transcript {
+	result := *transcript
+	result.VideoID = ref.CacheKey()
+	if err := app.store.SaveTranscript(&result); err != nil {
+		app.log.Printf("Warning: %v\n", err)
+	}
+	return &result
 }
 
 func sleepWithContext(ctx context.Context, duration time.Duration) error {

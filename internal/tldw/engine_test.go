@@ -44,7 +44,7 @@ func TestXPaidTranscriptionRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 				if tc.video.audioCalls != 0 || ai.transcribeCalls != 0 {
 					t.Fatal("started paid transcription after an unsuccessful caption check")
 				}
-			} else if tc.video.audioCalls != 1 || ai.transcribeCalls != 1 || got.Source != tldw.TranscriptSourcePaidTranscription || got.VideoID != ref.CacheKey() {
+			} else if tc.video.audioCalls != 1 || ai.transcribeCalls != 1 || got.Source() != tldw.TranscriptSourcePaidTranscription || got.VideoID != ref.CacheKey() {
 				t.Fatalf("incorrect paid transcription result %+v, audio calls %d, transcription calls %d", got, tc.video.audioCalls, ai.transcribeCalls)
 			}
 		})
@@ -52,9 +52,7 @@ func TestXPaidTranscriptionRequiresOptInAndSuccessfulVideoLookup(t *testing.T) {
 }
 
 func TestEnginePaidTranscriptionOnlySkipsCaptionsAndReplacesCaptionCache(t *testing.T) {
-	store := &memoryStore{transcript: &tldw.Transcript{
-		VideoID: testVideoID, Source: tldw.TranscriptSourceCaptions, Text: "cached captions",
-	}}
+	store := &memoryStore{transcript: fixtureCaptions(t, "cached captions")}
 	video := &videoStub{audioPath: "audio.mp3"}
 	ai := &aiStub{transcription: "paid transcript"}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
@@ -72,13 +70,13 @@ func TestEnginePaidTranscriptionOnlySkipsCaptionsAndReplacesCaptionCache(t *test
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got.Source != tldw.TranscriptSourcePaidTranscription || got.PlainText() != "paid transcript" {
+	if got.Source() != tldw.TranscriptSourcePaidTranscription || got.PlainText() != "paid transcript" {
 		t.Fatalf("Transcript() = %+v", got)
 	}
 	if video.captionCalls != 0 || video.audioCalls != 1 || ai.transcribeCalls != 1 {
 		t.Fatalf("calls: captions=%d audio=%d transcribe=%d", video.captionCalls, video.audioCalls, ai.transcribeCalls)
 	}
-	if store.transcriptSaves != 1 || store.transcript.Source != tldw.TranscriptSourcePaidTranscription {
+	if store.transcriptSaves != 1 || store.transcript.Source() != tldw.TranscriptSourcePaidTranscription {
 		t.Fatalf("saved transcript = %+v, saves = %d", store.transcript, store.transcriptSaves)
 	}
 }
@@ -129,7 +127,11 @@ func TestEngineDoesNotUsePaidTranscriptionForTimestampRequest(t *testing.T) {
 }
 
 func TestEngineCaptionsOnlyRejectsCachedPaidTranscription(t *testing.T) {
-	store := &memoryStore{transcript: &tldw.Transcript{VideoID: testVideoID, Source: tldw.TranscriptSourcePaidTranscription, Text: "paid transcript"}}
+	paid, err := tldw.NewPaidTranscript(testVideoID, "paid transcript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryStore{transcript: paid}
 	video := &videoStub{metadata: &tldw.VideoMetadata{HasCaptions: false}}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: store, AI: &aiStub{}, Prompts: &promptStub{},
@@ -149,10 +151,14 @@ func TestEngineCaptionsOnlyRejectsCachedPaidTranscription(t *testing.T) {
 }
 
 func TestEngineCaptionsOnlyDoesNotInventUnknownCacheSource(t *testing.T) {
-	store := &memoryStore{transcript: &tldw.Transcript{VideoID: testVideoID, Text: "legacy transcript"}}
+	legacy, err := tldw.NewLegacyTranscript(testVideoID, "legacy transcript", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &memoryStore{transcript: legacy}
 	video := &videoStub{
 		metadata: &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-		captions: &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "verified captions"},
+		captions: fixtureCaptions(t, "verified captions"),
 	}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
 		Video: video, Store: store, AI: &aiStub{}, Prompts: &promptStub{},
@@ -177,10 +183,7 @@ func TestEngineCaptionsOnlyDoesNotInventUnknownCacheSource(t *testing.T) {
 func TestEngineCachesCaptionTranscript(t *testing.T) {
 	video := &videoStub{
 		metadata: &tldw.VideoMetadata{HasCaptions: true, CaptionLanguages: []string{"en"}},
-		captions: &tldw.Transcript{
-			Source:   tldw.TranscriptSourceCaptions,
-			Segments: []tldw.TranscriptSegment{{Start: 0, End: 2, Text: "hello world"}},
-		},
+		captions: fixtureCaptions(t, "", tldw.TranscriptSegment{Start: 0, End: 2, Text: "hello world"}),
 	}
 	store := &memoryStore{}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
@@ -253,7 +256,7 @@ func TestEngineFallsBackToPaidTranscriptionWhenCaptionsAreUnavailable(t *testing
 	if err != nil {
 		t.Fatalf("Transcript() error = %v", err)
 	}
-	if got.Source != tldw.TranscriptSourcePaidTranscription || video.audioCalls != 1 || ai.transcribeCalls != 1 {
+	if got.Source() != tldw.TranscriptSourcePaidTranscription || video.audioCalls != 1 || ai.transcribeCalls != 1 {
 		t.Fatalf("Transcript() = %+v, audio=%d transcribe=%d", got, video.audioCalls, ai.transcribeCalls)
 	}
 }
@@ -286,7 +289,7 @@ func TestEngineDoesNotFallBackToPaidTranscriptionAfterCaptionCancellation(t *tes
 func TestEngineSummarizeVideoReturnsTransportNeutralMarkdown(t *testing.T) {
 	video := &videoStub{
 		metadata: &tldw.VideoMetadata{Title: "Example", HasCaptions: true, CaptionLanguages: []string{"en"}},
-		captions: &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "source transcript"},
+		captions: fixtureCaptions(t, "source transcript"),
 	}
 	prompts := &promptStub{prompt: "prompt"}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
@@ -320,7 +323,7 @@ func TestEngineSummarizePlaylistReturnsTransportNeutralResult(t *testing.T) {
 	}
 	video := &videoStub{
 		metadata: &tldw.VideoMetadata{Title: "First", Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}},
-		captions: &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "playlist transcript"},
+		captions: fixtureCaptions(t, "playlist transcript"),
 		playlist: &tldw.PlaylistInfo{Title: "Examples", Videos: []tldw.ContentRef{videoRef}},
 	}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{

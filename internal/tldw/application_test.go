@@ -141,7 +141,7 @@ func TestNegativeCaptionCacheRefresh(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			lookupErr := errors.New("upstream unavailable")
-			video := &videoStub{metadata: &tldw.VideoMetadata{Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}, captions: &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "captions became available"}}
+			video := &videoStub{metadata: &tldw.VideoMetadata{Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}, captions: fixtureCaptions(t, "captions became available")}
 			if tt.fail {
 				video.metadataErr = lookupErr
 			}
@@ -162,7 +162,7 @@ func TestNegativeCaptionCacheRefresh(t *testing.T) {
 					t.Fatalf("error=%v", err)
 				}
 			} else if tt.wantRefresh {
-				if err != nil || result.Source != tldw.TranscriptSourceCaptions {
+				if err != nil || result.Source() != tldw.TranscriptSourceCaptions {
 					t.Fatalf("result=%+v error=%v", result, err)
 				}
 			} else if !errors.Is(err, tldw.ErrCaptionsUnavailable) {

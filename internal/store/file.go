@@ -23,8 +23,13 @@ const metadataCacheVersion = 4
 const captionCacheVersion = 3
 
 type cachedTranscript struct {
-	CacheVersion int `json:"cache_version,omitempty"`
-	tldw.Transcript
+	CacheVersion int                      `json:"cache_version,omitempty"`
+	VideoID      string                   `json:"video_id,omitempty"`
+	Language     string                   `json:"language,omitempty"`
+	Source       tldw.TranscriptSource    `json:"source,omitempty"`
+	Text         string                   `json:"text,omitempty"`
+	Segments     []tldw.TranscriptSegment `json:"segments,omitempty"`
+	CaptionTrack *tldw.CaptionTrack       `json:"caption_track,omitempty"`
 }
 
 // File is the filesystem adapter for the application's persistence seam.
@@ -70,7 +75,7 @@ func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("%w: empty legacy transcript", tldw.ErrStoreStale)
 	}
-	return &tldw.Transcript{VideoID: videoID, Text: text}, nil
+	return tldw.NewLegacyTranscript(videoID, text, nil)
 }
 
 func (s *File) SaveTranscript(transcript *tldw.Transcript) error {
@@ -263,18 +268,12 @@ func (s *File) loadPlainTranscript(videoID string) (string, error) {
 }
 
 func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
-	if transcript.Source == tldw.TranscriptSourceCaptions && (transcript.CaptionTrack == nil || !transcript.CaptionTrack.Direct) {
-		return fmt.Errorf("saving captions requires a verified direct track")
-	}
-	if transcript.Source == tldw.TranscriptSourcePaidTranscription && (transcript.CaptionTrack != nil || transcript.HasTimestamps()) {
-		return fmt.Errorf("saving paid transcription requires plain text")
-	}
 	path, err := s.cachePath(transcript.VideoID, ".transcript.json")
 	if err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
-	cached := cachedTranscript{Transcript: *transcript}
-	if transcript.Source == tldw.TranscriptSourceCaptions {
+	cached := cachedTranscript{VideoID: transcript.VideoID, Language: transcript.Language, Source: transcript.Source(), Text: transcript.PlainText(), Segments: transcript.Segments(), CaptionTrack: transcript.CaptionTrack()}
+	if transcript.Source() == tldw.TranscriptSourceCaptions {
 		cached.CacheVersion = captionCacheVersion
 	}
 	data, err := json.MarshalIndent(cached, "", "  ")
@@ -309,29 +308,35 @@ func (s *File) loadStructuredTranscript(videoID string) (*tldw.Transcript, error
 	if cached.Source == tldw.TranscriptSourceCaptions && (cached.CaptionTrack == nil || !cached.CaptionTrack.Direct) {
 		return nil, fmt.Errorf("%w: caption origin is unknown or translated", tldw.ErrStoreStale)
 	}
-	transcript := cached.Transcript
-	if transcript.VideoID != "" && transcript.VideoID != videoID {
-		return nil, fmt.Errorf("transcript cache key %q contains %q", videoID, transcript.VideoID)
+	if cached.VideoID != "" && cached.VideoID != videoID {
+		return nil, fmt.Errorf("transcript cache key %q contains %q", videoID, cached.VideoID)
 	}
-	switch transcript.Source {
+	var transcript *tldw.Transcript
+	switch cached.Source {
 	case "whisper", tldw.TranscriptSourcePaidTranscription:
-		// Older releases wrote "whisper" for paid text. Preserve it without
-		// incurring another paid call or manufacturing caption provenance.
-		transcript.Source = tldw.TranscriptSourcePaidTranscription
-		transcript.Text = transcript.PlainText()
-		transcript.Segments, transcript.CaptionTrack = nil, nil
+		// Paid records have no caption provenance. Extract legacy segmented
+		// text before discarding timing from older wire formats.
+		text := cached.Text
+		if len(cached.Segments) > 0 {
+			legacy, decodeErr := tldw.NewLegacyTranscript(videoID, text, cached.Segments)
+			if decodeErr != nil {
+				return nil, fmt.Errorf("%w: %w", tldw.ErrStoreStale, decodeErr)
+			}
+			text = legacy.PlainText()
+		}
+		transcript, err = tldw.NewPaidTranscript(videoID, text)
 	case tldw.TranscriptSourceCaptions:
+		transcript, err = tldw.NewCaptionTranscript(videoID, *cached.CaptionTrack, cached.Text, cached.Segments)
 	default:
-		transcript.Source = ""
-		transcript.CaptionTrack = nil
+		transcript, err = tldw.NewLegacyTranscript(videoID, cached.Text, cached.Segments)
 	}
-	if transcript.PlainText() == "" {
-		return nil, fmt.Errorf("%w: empty cached transcript", tldw.ErrStoreStale)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", tldw.ErrStoreStale, err)
 	}
-	if transcript.VideoID == "" {
-		transcript.VideoID = videoID
+	if cached.Language != "" {
+		transcript.Language = cached.Language
 	}
-	return &transcript, nil
+	return transcript, nil
 }
 
 type cachedMetadata struct {

@@ -149,7 +149,7 @@ func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{track}})
-			if err != nil || calls != 1 || got.CaptionTrack == nil || *got.CaptionTrack != track || got.Language != "en" {
+			if err != nil || calls != 1 || got.CaptionTrack() == nil || *got.CaptionTrack() != track || got.Language != "en" {
 				t.Fatalf("got %+v, err %v, calls %d", got, err, calls)
 			}
 		})
@@ -185,7 +185,7 @@ func TestExistingSRTRespectsTrackAndPreservesUnrelatedFiles(t *testing.T) {
 	})
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en-orig", Automatic: true, Direct: true}}})
-	if err != nil || got.Text != "Original text" {
+	if err != nil || got.PlainText() != "Original text" {
 		t.Fatalf("got %+v, err %v", got, err)
 	}
 	for _, path := range []string{old, original} {

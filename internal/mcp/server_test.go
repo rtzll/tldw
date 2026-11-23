@@ -244,14 +244,11 @@ func TestMCPGetMetadataReturnsTextAndStructuredContent(t *testing.T) {
 
 func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
-	app.transcript = &tldw.Transcript{
-		VideoID:  "dQw4w9WgXcQ",
-		Language: "en",
-		Source:   tldw.TranscriptSourceCaptions,
-		Segments: []tldw.TranscriptSegment{
-			{Start: 1, End: 3, Text: "Hello world"},
-		},
+	captions, err := tldw.NewCaptionTranscript("dQw4w9WgXcQ", tldw.CaptionTrack{Language: "en", Direct: true}, "", []tldw.TranscriptSegment{{Start: 1, End: 3, Text: "Hello world"}})
+	if err != nil {
+		t.Fatal(err)
 	}
+	app.transcript = captions
 
 	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)
@@ -295,7 +292,11 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 
 func TestMCPPaidTranscriptionReturnsTextAndStructuredContent(t *testing.T) {
 	app := &applicationStub{}
-	app.transcript = &tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: tldw.TranscriptSourcePaidTranscription, Text: "paid transcript"}
+	paid, err := tldw.NewPaidTranscript("dQw4w9WgXcQ", "paid transcript")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.transcript = paid
 
 	server := NewMCPServer(app, nil)
 	ctx, clientSession := connectTestMCPClient(t, server)

@@ -35,7 +35,7 @@ func TestMissingTrackRefreshesOnceAndExcludesOnlyFailedSource(t *testing.T) {
 		if !reflect.DeepEqual(metadata.CaptionTracks, []tldw.CaptionTrack{manual}) {
 			t.Fatalf("retry candidates = %+v", metadata.CaptionTracks)
 		}
-		return &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "Manual English", CaptionTrack: &manual}, nil
+		return tldw.NewCaptionTranscript(testVideoID, manual, "Manual English", nil)
 	}
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: &memoryStore{metadata: initial}, AI: &aiStub{}, Prompts: &promptStub{}})
 	if err != nil {
@@ -43,7 +43,7 @@ func TestMissingTrackRefreshesOnceAndExcludesOnlyFailedSource(t *testing.T) {
 	}
 	ref, _ := tldw.ParseVideoRef(testVideoID)
 	got, err := engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
-	if err != nil || got.Text != "Manual English" || video.metadataCalls != 1 || video.captionCalls != 2 {
+	if err != nil || got.PlainText() != "Manual English" || video.metadataCalls != 1 || video.captionCalls != 2 {
 		t.Fatalf("got %+v, err %v, metadata %d captions %d", got, err, video.metadataCalls, video.captionCalls)
 	}
 	if !reflect.DeepEqual(fresh.CaptionTracks, []tldw.CaptionTrack{missing, manual}) {
@@ -172,7 +172,7 @@ func TestLegacyPositiveMetadataAndCaptionsAreReacquired(t *testing.T) {
 		if !reflect.DeepEqual(got.CaptionTracks, metadata.CaptionTracks) {
 			t.Fatalf("old metadata used: %+v", got)
 		}
-		return &tldw.Transcript{Source: tldw.TranscriptSourceCaptions, Text: "Original English", Language: "en", CaptionTrack: &track}, nil
+		return tldw.NewCaptionTranscript(testVideoID, track, "Original English", nil)
 	}
 	adapter := store.NewFile(dir)
 	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: adapter, AI: &aiStub{}, Prompts: &promptStub{}})
@@ -182,7 +182,7 @@ func TestLegacyPositiveMetadataAndCaptionsAreReacquired(t *testing.T) {
 	ref, _ := tldw.ParseVideoRef(testVideoID)
 	for range 2 {
 		got, err := engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
-		if err != nil || got.Text != "Original English" || got.CaptionTrack == nil || *got.CaptionTrack != track {
+		if err != nil || got.PlainText() != "Original English" || got.CaptionTrack() == nil || *got.CaptionTrack() != track {
 			t.Fatalf("got %+v, err %v", got, err)
 		}
 	}

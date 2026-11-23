@@ -114,13 +114,9 @@ func TestFileListMetadataIgnoresNonVideoCacheFiles(t *testing.T) {
 
 func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	adapter := store.NewFile(t.TempDir())
-	transcript := &tldw.Transcript{
-		VideoID:      "dQw4w9WgXcQ",
-		Source:       tldw.TranscriptSourceCaptions,
-		CaptionTrack: &tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true},
-		Segments: []tldw.TranscriptSegment{
-			{Start: 1, End: 2, Text: "Hello world"},
-		},
+	transcript, err := tldw.NewCaptionTranscript("dQw4w9WgXcQ", tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}, "", []tldw.TranscriptSegment{{Start: 1, End: 2, Text: "Hello world"}})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := adapter.SaveTranscript(transcript); err != nil {
 		t.Fatalf("SaveTranscript() error = %v", err)
@@ -159,8 +155,8 @@ func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
 	if transcript.PlainText() != "legacy transcript" {
 		t.Fatalf("LoadTranscript().PlainText() = %q, want legacy transcript", transcript.PlainText())
 	}
-	if transcript.Source != "" {
-		t.Fatalf("LoadTranscript().Source = %q, want unknown source", transcript.Source)
+	if transcript.Source() != "" {
+		t.Fatalf("LoadTranscript().Source = %q, want unknown source", transcript.Source())
 	}
 }
 
@@ -170,26 +166,23 @@ func TestFileRefreshesOldCaptionsOnly(t *testing.T) {
 			for _, source := range []tldw.TranscriptSource{tldw.TranscriptSourceCaptions, tldw.TranscriptSourcePaidTranscription, ""} {
 				t.Run(string(source), func(t *testing.T) {
 					dir := t.TempDir()
-					transcript := tldw.Transcript{VideoID: "dQw4w9WgXcQ", Source: source, Text: "old transcript"}
-					data, err := json.Marshal(struct {
-						CacheVersion int `json:"cache_version,omitempty"`
-						tldw.Transcript
-					}{CacheVersion: version, Transcript: transcript})
+					const id, content = "dQw4w9WgXcQ", "old transcript"
+					data, err := json.Marshal(map[string]any{"cache_version": version, "video_id": id, "source": source, "text": content})
 					if err != nil {
 						t.Fatal(err)
 					}
-					for suffix, contents := range map[string][]byte{".transcript.json": data, ".txt": []byte(transcript.Text)} {
-						if err := os.WriteFile(filepath.Join(dir, transcript.VideoID+suffix), contents, 0o600); err != nil {
+					for suffix, contents := range map[string][]byte{".transcript.json": data, ".txt": []byte(content)} {
+						if err := os.WriteFile(filepath.Join(dir, id+suffix), contents, 0o600); err != nil {
 							t.Fatal(err)
 						}
 					}
-					got, err := store.NewFile(dir).LoadTranscript(transcript.VideoID)
+					got, err := store.NewFile(dir).LoadTranscript(id)
 					if source == tldw.TranscriptSourceCaptions {
 						// Do not fall back to the equally stale plain text file.
 						if !errors.Is(err, tldw.ErrStoreStale) {
 							t.Fatalf("old captions: got %+v, %v; want ErrStoreStale", got, err)
 						}
-					} else if err != nil || got.Text != transcript.Text || got.Source != source {
+					} else if err != nil || got.PlainText() != content || got.Source() != source {
 						t.Fatalf("non-caption cache: got %+v, %v", got, err)
 					}
 				})
@@ -226,7 +219,11 @@ func TestFileRejectsVideoIDPathTraversal(t *testing.T) {
 	if _, err := adapter.LoadTranscript("../outside"); err == nil {
 		t.Fatal("LoadTranscript() accepted an invalid video ID")
 	}
-	if err := adapter.SaveTranscript(&tldw.Transcript{VideoID: "../outside", Text: "secret"}); err == nil {
+	input, err := tldw.NewLegacyTranscript("../outside", "secret", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.SaveTranscript(input); err == nil {
 		t.Fatal("SaveTranscript() accepted an invalid video ID")
 	}
 }
@@ -288,11 +285,11 @@ func TestLegacyPaidCacheAndFailedReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := store.NewFile(dir)
-	if err := s.SaveTranscript(&tldw.Transcript{VideoID: key, Source: tldw.TranscriptSourcePaidTranscription}); err == nil {
+	if err := s.SaveTranscript(&tldw.Transcript{VideoID: key}); err == nil {
 		t.Fatal("accepted empty replacement")
 	}
 	got, err := s.LoadTranscript(key)
-	if err != nil || got.Source != tldw.TranscriptSourcePaidTranscription || got.Text != "already paid" || got.HasTimestamps() {
+	if err != nil || got.Source() != tldw.TranscriptSourcePaidTranscription || got.PlainText() != "already paid" || got.HasTimestamps() {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
@@ -304,11 +301,15 @@ func TestCanonicalTranscriptSurvivesFailedCompatibilityWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := store.NewFile(dir)
-	if err := s.SaveTranscript(&tldw.Transcript{VideoID: key, Source: tldw.TranscriptSourcePaidTranscription, Text: "saved"}); err == nil {
+	paid, err := tldw.NewPaidTranscript(key, "saved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveTranscript(paid); err == nil {
 		t.Fatal("expected compatibility write error")
 	}
 	got, err := s.LoadTranscript(key)
-	if err != nil || got.Text != "saved" {
+	if err != nil || got.PlainText() != "saved" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }

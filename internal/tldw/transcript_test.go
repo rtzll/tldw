@@ -17,13 +17,13 @@ func TestTranscriptPlainText(t *testing.T) {
 		},
 		{
 			name: "text only",
-			t:    &Transcript{Text: "Hello world"},
+			t:    &Transcript{text: "Hello world"},
 			want: "Hello world",
 		},
 		{
 			name: "segments only",
 			t: &Transcript{
-				Segments: []TranscriptSegment{
+				segments: []TranscriptSegment{
 					{Start: 0, End: 1, Text: "Hello"},
 					{Start: 1, End: 2, Text: "world"},
 				},
@@ -33,7 +33,7 @@ func TestTranscriptPlainText(t *testing.T) {
 		{
 			name: "segments with empty text",
 			t: &Transcript{
-				Segments: []TranscriptSegment{
+				segments: []TranscriptSegment{
 					{Start: 0, End: 1, Text: "Hello"},
 					{Start: 1, End: 2, Text: "  "},
 					{Start: 2, End: 3, Text: "world"},
@@ -44,7 +44,7 @@ func TestTranscriptPlainText(t *testing.T) {
 		{
 			name: "segments with whitespace",
 			t: &Transcript{
-				Segments: []TranscriptSegment{
+				segments: []TranscriptSegment{
 					{Start: 0, End: 1, Text: "  Hello  "},
 					{Start: 1, End: 2, Text: "  world  "},
 				},
@@ -54,8 +54,8 @@ func TestTranscriptPlainText(t *testing.T) {
 		{
 			name: "both text and segments prefers segments",
 			t: &Transcript{
-				Text: "ignored text",
-				Segments: []TranscriptSegment{
+				text: "ignored text",
+				segments: []TranscriptSegment{
 					{Start: 0, End: 1, Text: "segment text"},
 				},
 			},
@@ -80,7 +80,7 @@ func TestTranscriptHasTimestamps(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"no segments", &Transcript{}, false},
-		{"has segments", &Transcript{Segments: []TranscriptSegment{{Start: 0}}}, true},
+		{"has segments", &Transcript{segments: []TranscriptSegment{{Start: 0}}}, true},
 	}
 
 	for _, tt := range tests {
@@ -102,7 +102,7 @@ func TestTranscriptRender(t *testing.T) {
 	}{
 		{
 			name:    "plain text from segments",
-			t:       &Transcript{Segments: []TranscriptSegment{{Start: 0, End: 1, Text: "Hello world"}}},
+			t:       &Transcript{segments: []TranscriptSegment{{Start: 0, End: 1, Text: "Hello world"}}},
 			format:  TranscriptRenderFormatPlain,
 			want:    "Hello world",
 			wantErr: false,
@@ -116,21 +116,21 @@ func TestTranscriptRender(t *testing.T) {
 		},
 		{
 			name:    "timestamps available",
-			t:       &Transcript{Segments: []TranscriptSegment{{Start: 65, End: 70, Text: "Hello world"}}},
+			t:       &Transcript{segments: []TranscriptSegment{{Start: 65, End: 70, Text: "Hello world"}}},
 			format:  TranscriptRenderFormatTimestamps,
 			want:    "[01:05] Hello world",
 			wantErr: false,
 		},
 		{
 			name:    "timestamps unavailable",
-			t:       &Transcript{Text: "Hello world"},
+			t:       &Transcript{text: "Hello world"},
 			format:  TranscriptRenderFormatTimestamps,
 			want:    "",
 			wantErr: true,
 		},
 		{
 			name:    "unsupported format",
-			t:       &Transcript{Text: "Hello"},
+			t:       &Transcript{text: "Hello"},
 			format:  "invalid",
 			want:    "",
 			wantErr: true,
@@ -168,7 +168,7 @@ func TestTranscriptTimestampRendering(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transcript := &Transcript{Segments: []TranscriptSegment{{Start: tt.seconds, Text: "text"}}}
+			transcript := &Transcript{segments: []TranscriptSegment{{Start: tt.seconds, Text: "text"}}}
 			got, err := transcript.Render(TranscriptRenderFormatTimestamps)
 			if err != nil {
 				t.Fatalf("Transcript.Render() error = %v", err)
@@ -178,5 +178,26 @@ func TestTranscriptTimestampRendering(t *testing.T) {
 				t.Errorf("Transcript.Render() = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestTranscriptConstructorsPreserveOriginAndOwnTiming(t *testing.T) {
+	track := CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}
+	segments := []TranscriptSegment{{Start: 1, End: 2, Text: "verified"}}
+	transcript, err := NewCaptionTranscript("id", track, "", segments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segments[0].Text = "changed"
+	transcript.Segments()[0].Text = "changed"
+	transcript.CaptionTrack().Direct = false
+	if transcript.PlainText() != "verified" || !transcript.CaptionTrack().Direct || transcript.Language != "en" {
+		t.Fatalf("mutable transcript: %+v", transcript)
+	}
+	if _, err := NewCaptionTranscript("id", CaptionTrack{Language: "en"}, "translated", nil); err == nil {
+		t.Fatal("accepted unverified caption provenance")
+	}
+	if _, err := NewPaidTranscript("id", "  "); err == nil {
+		t.Fatal("accepted empty paid output")
 	}
 }

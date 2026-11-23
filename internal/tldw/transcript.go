@@ -4,6 +4,7 @@ package tldw
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -35,12 +36,48 @@ type TranscriptSegment struct {
 
 // Transcript is the canonical transcript representation.
 type Transcript struct {
-	VideoID      string              `json:"video_id,omitempty"`
-	Language     string              `json:"language,omitempty"`
-	Source       TranscriptSource    `json:"source,omitempty"`
-	Text         string              `json:"text,omitempty"`
-	Segments     []TranscriptSegment `json:"segments,omitempty"`
-	CaptionTrack *CaptionTrack       `json:"caption_track,omitempty"`
+	VideoID  string
+	Language string
+	source   TranscriptSource
+	text     string
+	segments []TranscriptSegment
+	track    *CaptionTrack
+}
+
+// NewCaptionTranscript records the verified track, including for plain-text captions.
+func NewCaptionTranscript(id string, track CaptionTrack, text string, segments []TranscriptSegment) (*Transcript, error) {
+	if !track.Direct || track.Language == "" {
+		return nil, fmt.Errorf("captions require a verified direct track")
+	}
+	t := &Transcript{VideoID: id, Language: strings.TrimSuffix(track.Language, "-orig"), source: TranscriptSourceCaptions, text: text, segments: slices.Clone(segments), track: &track}
+	return t.validateContent()
+}
+
+func NewPaidTranscript(id, text string) (*Transcript, error) {
+	return (&Transcript{VideoID: id, source: TranscriptSourcePaidTranscription, text: strings.TrimSpace(text)}).validateContent()
+}
+
+// NewLegacyTranscript preserves content whose origin is unknown, including
+// timing from early structured cache records.
+func NewLegacyTranscript(id, text string, segments []TranscriptSegment) (*Transcript, error) {
+	return (&Transcript{VideoID: id, text: text, segments: slices.Clone(segments)}).validateContent()
+}
+
+func (t *Transcript) validateContent() (*Transcript, error) {
+	if t.PlainText() == "" {
+		return nil, fmt.Errorf("transcript is empty")
+	}
+	return t, nil
+}
+
+func (t *Transcript) Source() TranscriptSource      { return t.source }
+func (t *Transcript) Segments() []TranscriptSegment { return slices.Clone(t.segments) }
+func (t *Transcript) CaptionTrack() *CaptionTrack {
+	if t.track == nil {
+		return nil
+	}
+	track := *t.track
+	return &track
 }
 
 // PlainText renders the transcript as plain text.
@@ -48,9 +85,9 @@ func (t *Transcript) PlainText() string {
 	if t == nil {
 		return ""
 	}
-	if len(t.Segments) > 0 {
-		lines := make([]string, 0, len(t.Segments))
-		for _, segment := range t.Segments {
+	if len(t.segments) > 0 {
+		lines := make([]string, 0, len(t.segments))
+		for _, segment := range t.segments {
 			text := strings.TrimSpace(segment.Text)
 			if text != "" {
 				lines = append(lines, text)
@@ -58,12 +95,12 @@ func (t *Transcript) PlainText() string {
 		}
 		return strings.TrimSpace(strings.Join(lines, "\n"))
 	}
-	return strings.TrimSpace(t.Text)
+	return strings.TrimSpace(t.text)
 }
 
 // HasTimestamps reports whether the transcript includes timestamped segments.
 func (t *Transcript) HasTimestamps() bool {
-	return t != nil && len(t.Segments) > 0
+	return t != nil && len(t.segments) > 0
 }
 
 // Render renders the transcript in the requested format.
@@ -79,8 +116,8 @@ func (t *Transcript) Render(format TranscriptRenderFormat) (string, error) {
 		if !t.HasTimestamps() {
 			return "", ErrTranscriptTimestampsUnavailable
 		}
-		lines := make([]string, 0, len(t.Segments))
-		for _, segment := range t.Segments {
+		lines := make([]string, 0, len(t.segments))
+		for _, segment := range t.segments {
 			text := strings.TrimSpace(segment.Text)
 			if text == "" {
 				continue

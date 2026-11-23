@@ -2,6 +2,7 @@ package tldw_test
 
 import (
 	"context"
+	"testing"
 
 	"github.com/rtzll/tldw/internal/tldw"
 )
@@ -106,4 +107,13 @@ type promptStub struct {
 func (stub *promptStub) CreatePrompt(transcript string, _ *tldw.VideoMetadata) (string, error) {
 	stub.transcript = transcript
 	return stub.prompt, nil
+}
+
+func fixtureCaptions(t *testing.T, text string, segments ...tldw.TranscriptSegment) *tldw.Transcript {
+	t.Helper()
+	result, err := tldw.NewCaptionTranscript(testVideoID, tldw.CaptionTrack{Language: "en", Direct: true}, text, segments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }

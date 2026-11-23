@@ -38,19 +38,10 @@ func (yt *Client) processSrtTranscript(filePath string, track tldw.CaptionTrack)
 			segments[i].Text = strings.Join(strings.Fields(segments[i].Text), " ")
 		}
 	}
-	transcript := &tldw.Transcript{
-		VideoID:      id,
-		Language:     strings.TrimSuffix(track.Language, "-orig"),
-		Source:       tldw.TranscriptSourceCaptions,
-		Segments:     segments,
-		CaptionTrack: &track,
-	}
-
-	text, err := transcript.Render(tldw.TranscriptRenderFormatPlain)
+	transcript, err := tldw.NewCaptionTranscript(id, track, "", segments)
 	if err != nil {
 		return nil, err
 	}
-	transcript.Text = text
 
 	// Remove downloaded cache files after processing, but retain persistent transcripts.
 	if pathWithinDirectory(filePath, yt.cacheDir) {

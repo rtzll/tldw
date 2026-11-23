@@ -411,11 +411,11 @@ Goodbye
 		{Start: 7.04, End: 8.23, Text: "Goodbye"},
 		{Start: 10, End: 12, Text: "Goodbye"},
 	}
-	if !reflect.DeepEqual(got.Segments, want) {
-		t.Fatalf("rolling captions = %+v, want %+v", got.Segments, want)
+	if !reflect.DeepEqual(got.Segments(), want) {
+		t.Fatalf("rolling captions = %+v, want %+v", got.Segments(), want)
 	}
-	if got.Text != "Hello world\nYes. Yes.\n2026\nGoodbye\nGoodbye" {
-		t.Fatalf("plain transcript = %q", got.Text)
+	if got.PlainText() != "Hello world\nYes. Yes.\n2026\nGoodbye\nGoodbye" {
+		t.Fatalf("plain transcript = %q", got.PlainText())
 	}
 }
 
@@ -516,16 +516,16 @@ So, in this talk, I'll
 		{Start: 172.274, End: 173.475, Text: "will generate even more bad code."},
 		{Start: 174.152, End: 175.442, Text: "So, in this talk, I'll"},
 	}
-	if len(got.Segments) != len(want) {
-		t.Fatalf("rolling captions = %+v, want %+v", got.Segments, want)
+	if len(got.Segments()) != len(want) {
+		t.Fatalf("rolling captions = %+v, want %+v", got.Segments(), want)
 	}
-	for i, segment := range got.Segments {
+	for i, segment := range got.Segments() {
 		if segment.Text != want[i].Text || math.Abs(segment.Start-want[i].Start) > 0.000001 || math.Abs(segment.End-want[i].End) > 0.000001 {
 			t.Fatalf("rolling caption %d = %+v, want %+v", i, segment, want[i])
 		}
 	}
-	if got.Text != "OK. I'm here to\ntalk about\nsolving the\nmaybe I'll notify people right away.\nMaybe you have something\nwill generate even more bad code.\nSo, in this talk, I'll" {
-		t.Fatalf("plain transcript = %q", got.Text)
+	if got.PlainText() != "OK. I'm here to\ntalk about\nsolving the\nmaybe I'll notify people right away.\nMaybe you have something\nwill generate even more bad code.\nSo, in this talk, I'll" {
+		t.Fatalf("plain transcript = %q", got.PlainText())
 	}
 }
 
@@ -579,7 +579,7 @@ func TestManualCaptionProcessingPreservesRollingLikeSpeech(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Text != "Hello Yes.\nYes.\nYes. Again\nAgain" || len(got.Segments) != 4 {
+	if got.PlainText() != "Hello Yes.\nYes.\nYes. Again\nAgain" || len(got.Segments()) != 4 {
 		t.Fatalf("manual speech was deduplicated: %+v", got)
 	}
 }
