@@ -3,6 +3,7 @@ package tldw_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -96,8 +97,39 @@ func TestEngineRefreshesIncompleteCachedMetadata(t *testing.T) {
 	if metadata.Title != "Fresh" || metadata.Channel != "AI Engineer" || len(metadata.Creators) != 2 {
 		t.Fatalf("MetadataFor() = %+v", metadata)
 	}
-	if video.metadataCalls != 1 || store.metadataSaves != 1 || store.metadata != metadata {
+	if video.metadataCalls != 1 || store.metadataSaves != 1 || !reflect.DeepEqual(store.metadata, metadata) {
 		t.Fatalf("metadata calls = %d, saves = %d, cached = %+v", video.metadataCalls, store.metadataSaves, store.metadata)
+	}
+}
+
+func TestMetadataCacheOwnsSnapshots(t *testing.T) {
+	original := &tldw.VideoMetadata{
+		Channel: "Channel", HasCaptions: true,
+		CaptionLanguages: []string{"en"}, CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}},
+	}
+	video := &videoStub{metadata: original}
+	store := &memoryStore{}
+	engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+		Video: video, Store: store, AI: &aiStub{}, Prompts: &promptStub{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := tldw.ParseVideoRef(testVideoID)
+	for range 3 {
+		got, err := engine.MetadataFor(t.Context(), ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.HasCaptions || got.CaptionLanguages[0] != "en" || !got.CaptionTracks[0].Direct {
+			t.Fatalf("another reader changed cached metadata: %+v", got)
+		}
+		got.HasCaptions = false
+		got.CaptionLanguages[0] = "fr"
+		got.CaptionTracks[0].Direct = false
+	}
+	if video.metadataCalls != 1 || !original.CheckedAt.IsZero() || !store.metadata.CaptionTracks[0].Direct {
+		t.Fatalf("calls %d, adapter metadata %+v, stored metadata %+v", video.metadataCalls, original, store.metadata)
 	}
 }
 

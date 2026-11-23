@@ -309,7 +309,10 @@ func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref ContentRef
 		}
 
 		if cached, err := app.store.LoadMetadata(ref.CacheKey()); err == nil {
-			resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
+			if cached == nil {
+				return nil, fmt.Errorf("metadata store returned no record")
+			}
+			resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached.clone(), refreshNegative)
 			if refreshErr == nil {
 				app.setCachedMetadata(ref.CacheKey(), resolved)
 			}
@@ -330,14 +333,16 @@ func (app *Engine) fetchMetadata(ctx context.Context, ref ContentRef) (*VideoMet
 	if metadata == nil {
 		return nil, fmt.Errorf("video adapter returned no metadata")
 	}
-	app.cacheMetadata(ref.CacheKey(), metadata)
+	metadata = metadata.clone()
+	metadata.CheckedAt = time.Now()
+	if err := app.store.SaveMetadata(ref.CacheKey(), metadata.clone()); err != nil {
+		app.log.Printf("Warning: Failed to cache metadata: %v\n", err)
+	}
+	app.setCachedMetadata(ref.CacheKey(), metadata)
 	return metadata, nil
 }
 
 func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref ContentRef, cached *VideoMetadata, refreshNegative bool) (*VideoMetadata, error) {
-	if cached == nil {
-		return nil, fmt.Errorf("metadata store returned no record")
-	}
 	if !metadataNeedsRefresh(cached, refreshNegative, time.Now()) {
 		return cached, nil
 	}
@@ -351,14 +356,6 @@ func (app *Engine) useOrRefreshMetadata(ctx context.Context, ref ContentRef, cac
 		return cached, nil
 	}
 	return refreshed, nil
-}
-
-func (app *Engine) cacheMetadata(videoID string, metadata *VideoMetadata) {
-	metadata.CheckedAt = time.Now()
-	if err := app.store.SaveMetadata(videoID, metadata); err != nil {
-		app.log.Printf("Warning: Failed to cache metadata: %v\n", err)
-	}
-	app.setCachedMetadata(videoID, metadata)
 }
 
 func (app *Engine) transcribeVideo(ctx context.Context, ref ContentRef) (*Transcript, error) {

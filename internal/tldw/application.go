@@ -72,19 +72,22 @@ func NewEngine(config Config, dependencies Dependencies) (*Engine, error) {
 	return app, nil
 }
 
-// getCachedMetadata returns metadata from the in-memory cache if available
+// Cache entries are immutable once published. Each caller owns its returned value.
 func (app *Engine) getCachedMetadata(id string) (*VideoMetadata, bool) {
 	app.metadataMu.RLock()
-	defer app.metadataMu.RUnlock()
 	metadata, ok := app.metadataCache[id]
-	return metadata, ok
+	app.metadataMu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return metadata.clone(), true
 }
 
-// setCachedMetadata stores metadata in the in-memory cache.
 func (app *Engine) setCachedMetadata(id string, metadata *VideoMetadata) {
+	snapshot := metadata.clone()
 	app.metadataMu.Lock()
 	defer app.metadataMu.Unlock()
-	app.metadataCache[id] = metadata
+	app.metadataCache[id] = snapshot
 }
 
 const negativeMetadataTTL = 15 * time.Minute
