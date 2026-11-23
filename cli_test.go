@@ -160,3 +160,37 @@ func TestCLIFileExports(t *testing.T) {
 		t.Fatalf("unexpected file named dash: %v", err)
 	}
 }
+
+func TestDiscoveryWorksBeforeConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	var version string
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--version"}, "tldw "}, {[]string{"version"}, "tldw "},
+		{[]string{"--help"}, "<video-or-playlist-id-or-url>"}, {[]string{"help", "transcribe"}, "<video-id-or-url>"},
+		{[]string{"metadata", "--help"}, "--force"},
+	} {
+		args := append([]string{"--config", "unreadable.toml"}, tc.args...)
+		out, diag, code := runCLI(t, cliCommand(t, dir, args...))
+		if code != 0 || diag != "" || !strings.Contains(out, tc.want) {
+			t.Fatalf("%v: %d %q %q", tc.args, code, out, diag)
+		}
+		if tc.want == "tldw " {
+			if version != "" && version != out {
+				t.Fatalf("version mismatch %q %q", version, out)
+			}
+			version = out
+		}
+	}
+	for _, args := range [][]string{{"version", "extra"}, {"paths", "extra"}, {"mcp", "extra"}, {"mcp", "setup-claude", "extra"}} {
+		out, _, code := runCLI(t, cliCommand(t, dir, args...))
+		if out != "" || code != 2 {
+			t.Fatalf("%v: %d %q", args, code, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("discovery created a config directory: %v", err)
+	}
+}

@@ -9,8 +9,9 @@ import (
 
 // transcribeCmd represents the transcribe command
 var transcribeCmd = &cobra.Command{
-	Use:   "transcribe [URL]",
-	Short: "Get a transcript from a YouTube video or single-video X post",
+	Use:     "transcribe <video-id-or-url>",
+	PreRunE: loadConfig,
+	Short:   "Get a transcript from a YouTube video or single-video X post",
 	Example: `  # Get transcript from YouTube captions
   tldw transcribe "https://www.youtube.com/watch?v=tAP1eZYEuKA"
   tldw transcribe tAP1eZYEuKA

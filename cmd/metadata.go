@@ -11,8 +11,9 @@ import (
 
 // metadataCmd represents the metadata command
 var metadataCmd = &cobra.Command{
-	Use:   "metadata [URL]",
-	Short: "Get metadata from a YouTube video or single-video X post",
+	Use:     "metadata <video-id-or-url>",
+	PreRunE: loadConfig,
+	Short:   "Get metadata from a YouTube video or single-video X post",
 	Example: `  # Get metadata from YouTube video
   tldw metadata "https://www.youtube.com/watch?v=tAP1eZYEuKA"
   tldw metadata tAP1eZYEuKA

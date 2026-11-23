@@ -122,6 +122,31 @@ tldw stats --period month --group-by day
 tldw stats --period week --json
 ```
 
+### Using tldw in scripts
+
+Results go to stdout. Prompts, progress, and verbose logs go to stderr.
+Piping a summary produces plain Markdown. For version information use
+`tldw --version` or `tldw version`. Both work before configuration.
+`-v` enables verbose output.
+
+Summaries ask for paid transcription only when stdin and stderr are terminals.
+Use `--non-interactive` to disable prompts. CI also disables them. To authorize
+paid fallback explicitly, pass `--allow-paid-transcription`. Each playlist
+prompt covers one video. Redirecting stdout alone still allows a terminal prompt.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success, including an empty statistics report |
+| `1` | Operational failure or partial result |
+| `2` | Invalid arguments or required confirmation unavailable |
+| `130` | Ctrl+C or declining a confirmation required to finish |
+| `128 + signal` | Termination by signal, e.g. `143` for SIGTERM on Unix |
+
+`metadata` and `stats --json` return a JSON error on stderr with `status`,
+`reason`, and `message`. A partial `stats --json` report returns its available
+totals, `incomplete: true`, and `warnings` on stdout and exits `1`. A partial
+playlist also exits `1`, with its summary on stdout and skipped videos on stderr.
+
 For `metadata` and `transcribe`, `-o -` writes to stdout. A named output
 file is published atomically after the command succeeds. Earlier versions
 overwrote existing files. Scripts that intentionally replace an existing

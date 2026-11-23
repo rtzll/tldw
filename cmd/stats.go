@@ -221,5 +221,6 @@ var statsCmd = newStatsCommand(func() (statsApplication, error) {
 }, time.Now)
 
 func init() {
+	statsCmd.PreRunE = loadConfig
 	rootCmd.AddCommand(statsCmd)
 }

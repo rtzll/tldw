@@ -17,6 +17,7 @@ import (
 // mcpCmd represents the mcp command
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
+	Args:  arguments(cobra.NoArgs),
 	Short: "Run minimal MCP server for TL;DW",
 	Long: `Run a Model Context Protocol (MCP) server that exposes TL;DW functionality as tools.
 
@@ -39,6 +40,9 @@ Transport options:
   # Set up Claude Desktop integration
   tldw mcp setup-claude`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := loadConfig(cmd, args); err != nil {
+			return err
+		}
 		// MCP uses stdio protocol, so disable all UI output including spinners
 		config.Verbose = false
 		config.Quiet = true
@@ -91,6 +95,7 @@ func openMCPLog(dir string) (*os.File, error) {
 // setupClaudeCmd represents the setup-claude subcommand
 var setupClaudeCmd = &cobra.Command{
 	Use:   "setup-claude",
+	Args:  arguments(cobra.NoArgs),
 	Short: "Configure Claude Desktop to use TL;DW MCP server",
 	Long: `Automatically configure Claude Desktop to use TL;DW as an MCP server.
 
@@ -103,7 +108,8 @@ This command will:
 		if err := setupClaudeDesktop(); err != nil {
 			return err
 		}
-		if !config.Quiet {
+		quiet, _ := cmd.Flags().GetBool("quiet")
+		if !quiet {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Configured the TL;DW MCP server. Restart Claude Desktop to use it.")
 		}
 		return nil

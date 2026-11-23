@@ -10,8 +10,9 @@ import (
 
 // cpCmd copies the transcript to the system clipboard instead of printing to stdout.
 var cpCmd = &cobra.Command{
-	Use:   "cp [URL]",
-	Short: "Copy a YouTube or X video transcript to the clipboard",
+	Use:     "cp <video-id-or-url>",
+	PreRunE: loadConfig,
+	Short:   "Copy a YouTube or X video transcript to the clipboard",
 	Example: `  # Copy transcript from YouTube captions
   tldw cp "https://www.youtube.com/watch?v=tAP1eZYEuKA"
   tldw cp tAP1eZYEuKA

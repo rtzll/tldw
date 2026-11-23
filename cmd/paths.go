@@ -8,8 +8,10 @@ import (
 
 // pathsCmd represents the paths command
 var pathsCmd = &cobra.Command{
-	Use:   "paths",
-	Short: "Show paths used by the application",
+	Use:     "paths",
+	Args:    arguments(cobra.NoArgs),
+	PreRunE: loadConfig,
+	Short:   "Show paths used by the application",
 	Example: `  # Show all application paths
   tldw paths`,
 	Run: func(cmd *cobra.Command, args []string) {
