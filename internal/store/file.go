@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/rtzll/tldw/internal/atomicfile"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
@@ -66,6 +67,9 @@ func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(text) == "" {
+		return nil, fmt.Errorf("%w: empty legacy transcript", tldw.ErrStoreStale)
+	}
 	return &tldw.Transcript{VideoID: videoID, Text: text}, nil
 }
 
@@ -73,13 +77,15 @@ func (s *File) SaveTranscript(transcript *tldw.Transcript) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("creating transcript store: %w", err)
 	}
-	if err := s.saveStructuredTranscript(transcript); err != nil {
-		return err
-	}
 	plain, err := transcript.Render(tldw.TranscriptRenderFormatPlain)
 	if err != nil {
 		return err
 	}
+	if err := s.saveStructuredTranscript(transcript); err != nil {
+		return err
+	}
+	// JSON is authoritative. Failure to update the compatibility copy does
+	// not invalidate the committed transcript.
 	return s.savePlainTranscript(transcript.VideoID, plain)
 }
 
@@ -187,7 +193,7 @@ func (s *File) SaveMetadata(videoID string, metadata *tldw.VideoMetadata) (err e
 	if err != nil {
 		return fmt.Errorf("marshaling metadata: %w", err)
 	}
-	if err := atomicWriteFile(path, data, 0o644); err != nil {
+	if err := atomicfile.Replace(path, data, 0o644); err != nil {
 		return fmt.Errorf("saving metadata: %w", err)
 	}
 	return nil
@@ -235,7 +241,7 @@ func (s *File) savePlainTranscript(videoID, transcript string) error {
 	if err != nil {
 		return err
 	}
-	if err := atomicWriteFile(path, []byte(transcript), 0o644); err != nil {
+	if err := atomicfile.Replace(path, []byte(transcript), 0o644); err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
 	return nil
@@ -257,8 +263,11 @@ func (s *File) loadPlainTranscript(videoID string) (string, error) {
 }
 
 func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
-	if transcript == nil {
-		return fmt.Errorf("saving transcript: transcript is nil")
+	if transcript.Source == tldw.TranscriptSourceCaptions && (transcript.CaptionTrack == nil || !transcript.CaptionTrack.Direct) {
+		return fmt.Errorf("saving captions requires a verified direct track")
+	}
+	if transcript.Source == tldw.TranscriptSourcePaidTranscription && (transcript.CaptionTrack != nil || transcript.HasTimestamps()) {
+		return fmt.Errorf("saving paid transcription requires plain text")
 	}
 	path, err := s.cachePath(transcript.VideoID, ".transcript.json")
 	if err != nil {
@@ -272,7 +281,7 @@ func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
 	if err != nil {
 		return fmt.Errorf("marshaling transcript: %w", err)
 	}
-	if err := atomicWriteFile(path, data, 0o644); err != nil {
+	if err := atomicfile.Replace(path, data, 0o644); err != nil {
 		return fmt.Errorf("saving structured transcript: %w", err)
 	}
 	return nil
@@ -301,6 +310,24 @@ func (s *File) loadStructuredTranscript(videoID string) (*tldw.Transcript, error
 		return nil, fmt.Errorf("%w: caption origin is unknown or translated", tldw.ErrStoreStale)
 	}
 	transcript := cached.Transcript
+	if transcript.VideoID != "" && transcript.VideoID != videoID {
+		return nil, fmt.Errorf("transcript cache key %q contains %q", videoID, transcript.VideoID)
+	}
+	switch transcript.Source {
+	case "whisper", tldw.TranscriptSourcePaidTranscription:
+		// Older releases wrote "whisper" for paid text. Preserve it without
+		// incurring another paid call or manufacturing caption provenance.
+		transcript.Source = tldw.TranscriptSourcePaidTranscription
+		transcript.Text = transcript.PlainText()
+		transcript.Segments, transcript.CaptionTrack = nil, nil
+	case tldw.TranscriptSourceCaptions:
+	default:
+		transcript.Source = ""
+		transcript.CaptionTrack = nil
+	}
+	if transcript.PlainText() == "" {
+		return nil, fmt.Errorf("%w: empty cached transcript", tldw.ErrStoreStale)
+	}
 	if transcript.VideoID == "" {
 		transcript.VideoID = videoID
 	}
@@ -342,42 +369,4 @@ func metadataFromCached(cached cachedMetadata) tldw.VideoMetadata {
 		CaptionLanguages: cached.CaptionLanguages,
 		CaptionTracks:    cached.CaptionTracks,
 	}
-}
-
-func atomicWriteFile(path string, data []byte, mode os.FileMode) (err error) {
-	dir := filepath.Dir(path)
-	temp, err := os.CreateTemp(dir, ".tldw-*")
-	if err != nil {
-		return fmt.Errorf("creating temporary cache file: %w", err)
-	}
-	tempPath := temp.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			if closeErr := temp.Close(); err == nil && closeErr != nil {
-				err = fmt.Errorf("closing temporary cache file: %w", closeErr)
-			}
-		}
-		if removeErr := os.Remove(tempPath); err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
-			err = fmt.Errorf("removing temporary cache file: %w", removeErr)
-		}
-	}()
-
-	if err := temp.Chmod(mode); err != nil {
-		return fmt.Errorf("setting temporary cache permissions: %w", err)
-	}
-	if _, err := temp.Write(data); err != nil {
-		return fmt.Errorf("writing temporary cache file: %w", err)
-	}
-	if err := temp.Sync(); err != nil {
-		return fmt.Errorf("syncing temporary cache file: %w", err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("closing temporary cache file: %w", err)
-	}
-	closed = true
-	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("replacing cache file: %w", err)
-	}
-	return nil
 }

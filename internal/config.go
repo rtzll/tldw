@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/rtzll/tldw/internal/atomicfile"
 	"github.com/spf13/viper"
 )
 
@@ -64,7 +65,9 @@ func ensureDefaultFile(configDir, embedFilename, description string) error {
 	}
 
 	// Write the default file to the specified directory
-	if err := os.WriteFile(filePath, defaultContent, 0644); err != nil {
+	if err := atomicfile.Create(filePath, defaultContent, 0600); os.IsExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("writing default %s: %w", description, err)
 	}
 

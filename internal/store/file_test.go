@@ -280,3 +280,35 @@ func TestMetadataScanDistinguishesMissingDirectoryFromFailedListing(t *testing.T
 		t.Fatal("unreadable library reported as empty")
 	}
 }
+
+func TestLegacyPaidCacheAndFailedReplacement(t *testing.T) {
+	dir := t.TempDir()
+	const key = "dQw4w9WgXcQ"
+	if err := os.WriteFile(filepath.Join(dir, key+".transcript.json"), []byte(`{"source":"whisper","text":"already paid"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := store.NewFile(dir)
+	if err := s.SaveTranscript(&tldw.Transcript{VideoID: key, Source: tldw.TranscriptSourcePaidTranscription}); err == nil {
+		t.Fatal("accepted empty replacement")
+	}
+	got, err := s.LoadTranscript(key)
+	if err != nil || got.Source != tldw.TranscriptSourcePaidTranscription || got.Text != "already paid" || got.HasTimestamps() {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}
+
+func TestCanonicalTranscriptSurvivesFailedCompatibilityWrite(t *testing.T) {
+	dir := t.TempDir()
+	const key = "dQw4w9WgXcQ"
+	if err := os.Mkdir(filepath.Join(dir, key+".txt"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s := store.NewFile(dir)
+	if err := s.SaveTranscript(&tldw.Transcript{VideoID: key, Source: tldw.TranscriptSourcePaidTranscription, Text: "saved"}); err == nil {
+		t.Fatal("expected compatibility write error")
+	}
+	got, err := s.LoadTranscript(key)
+	if err != nil || got.Text != "saved" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}

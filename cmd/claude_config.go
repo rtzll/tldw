@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/rtzll/tldw/internal/atomicfile"
 )
 
 // updateClaudeDesktopConfig changes only tldw's managed fields, preserving
@@ -66,7 +68,7 @@ func updateClaudeDesktopConfig(path string, server mcpServerConfig) error {
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
-	return writeClaudeConfigAtomically(path, data, info.Mode().Perm())
+	return atomicfile.Replace(path, data, info.Mode().Perm())
 }
 
 func claudeConfigObject(data json.RawMessage) (map[string]json.RawMessage, error) {
@@ -80,31 +82,4 @@ func claudeConfigObject(data json.RawMessage) (map[string]json.RawMessage, error
 		object = make(map[string]json.RawMessage)
 	}
 	return object, nil
-}
-
-func writeClaudeConfigAtomically(path string, data []byte, mode os.FileMode) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".tldw-claude-*")
-	if err != nil {
-		return fmt.Errorf("creating temporary config: %w", err)
-	}
-	defer func() {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-	}()
-	if err := file.Chmod(mode); err != nil {
-		return fmt.Errorf("setting config permissions: %w", err)
-	}
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("writing temporary config: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("syncing config: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("closing config: %w", err)
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return fmt.Errorf("replacing config: %w", err)
-	}
-	return nil
 }

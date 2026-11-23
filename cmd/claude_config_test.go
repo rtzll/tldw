@@ -135,24 +135,6 @@ func TestUpdateClaudeDesktopConfigRequiresExistingFile(t *testing.T) {
 	}
 }
 
-func TestWriteClaudeConfigAtomicallyCleansUpOnFailure(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "config.json")
-	if err := os.Mkdir(target, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeClaudeConfigAtomically(target, []byte(`{}`), 0o600); err == nil {
-		t.Fatal("expected rename over directory to fail")
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].Name() != "config.json" || !entries[0].IsDir() {
-		t.Fatalf("unexpected files after failed replacement: %v", entries)
-	}
-}
-
 func assertJSONEqual(t *testing.T, got, want []byte) {
 	t.Helper()
 	var a, b any
