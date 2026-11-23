@@ -198,6 +198,9 @@ func (ai *AI) processAudioChunks(ctx context.Context, api client, chunks []strin
 
 	var sb strings.Builder
 	for i, chunkPath := range chunks {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		file, err := os.Open(chunkPath)
 		if err != nil {
 			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)

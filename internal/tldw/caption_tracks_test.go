@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"testing/synctest"
 
 	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -87,6 +88,43 @@ func TestMissingTracksDoNotLoopAfterRefresh(t *testing.T) {
 	_, err = engine.Transcript(context.Background(), ref, tldw.CaptionsOnly)
 	if !errors.Is(err, tldw.ErrCaptionsUnavailable) || video.metadataCalls != 1 || video.captionCalls != 2 {
 		t.Fatalf("err %v, metadata %d captions %d", err, video.metadataCalls, video.captionCalls)
+	}
+}
+
+func TestCaptionRecoveryCannotChangeStrategiesOnTheSecondAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		first, second error
+		wantRefreshes int
+		wantOffer     bool
+	}{
+		{"missing then download failed", tldw.ErrCaptionsUnavailable, tldw.ErrDownloadFailed, 1, false},
+		{"download failed then missing", tldw.ErrDownloadFailed, tldw.ErrCaptionsUnavailable, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				metadata := &tldw.VideoMetadata{Channel: "Channel", HasCaptions: true, CaptionLanguages: []string{"en"}}
+				video := &captionTrackVideoStub{videoStub: videoStub{metadata: metadata}}
+				video.fetch = func(*tldw.VideoMetadata) (*tldw.Transcript, error) {
+					if video.captionCalls == 1 {
+						return nil, tc.first
+					}
+					return nil, tc.second
+				}
+				engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+					Video: video, Store: &memoryStore{metadata: metadata}, AI: &aiStub{}, Prompts: &promptStub{},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ref, _ := tldw.ParseVideoRef(testVideoID)
+				_, err = engine.Transcript(t.Context(), ref, tldw.CaptionsOnly)
+				if !errors.Is(err, tc.second) || tldw.CanOfferPaidTranscription(err) != tc.wantOffer ||
+					video.captionCalls != 2 || video.metadataCalls != tc.wantRefreshes || video.audioCalls != 0 {
+					t.Fatalf("err %v, captions %d, refreshes %d, audio %d", err, video.captionCalls, video.metadataCalls, video.audioCalls)
+				}
+			})
+		})
 	}
 }
 

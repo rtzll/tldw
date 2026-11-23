@@ -55,6 +55,7 @@ type mockOpenAIClient struct {
 	checkContext   bool
 	transcriptions int
 	uploadSizes    []int64
+	afterUpload    func()
 }
 
 func TestNewAIRejectsInvalidConfiguration(t *testing.T) {
@@ -87,6 +88,9 @@ func (m *mockOpenAIClient) CreateTranscription(ctx context.Context, file *os.Fil
 		return "", err
 	}
 	m.uploadSizes = append(m.uploadSizes, info.Size())
+	if m.afterUpload != nil {
+		m.afterUpload()
+	}
 	if m.checkContext && ctx.Err() != nil {
 		return "", ctx.Err()
 	}
@@ -203,6 +207,30 @@ func TestAITranscribeReturnsClientError(t *testing.T) {
 
 	if _, err := ai.Transcribe(context.Background(), input); err == nil {
 		t.Fatal("Transcribe() succeeded after client failure")
+	}
+}
+
+func TestCancellationBetweenChunksStopsPaidUploads(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "audio.mp3")
+	if err := os.WriteFile(input, []byte("four"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	mock := &mockOpenAIClient{transcription: "first chunk", afterUpload: cancel}
+	ai, err := NewAIWithKey("test", NewAudio(chunkingRunner{}, dir), Config{Model: "test", TranscriptionUploadLimit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ai.getClient = func() (client, error) { return mock, nil }
+	got, err := ai.Transcribe(ctx, input)
+	if !errors.Is(err, context.Canceled) || got != "" || mock.transcriptions != 1 {
+		t.Fatalf("transcript %q, error %v, uploads %d", got, err, mock.transcriptions)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 1 || files[0].Name() != "audio.mp3" {
+		t.Fatalf("remaining files %v, error %v", files, err)
 	}
 }
 
