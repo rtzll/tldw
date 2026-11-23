@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/rtzll/tldw/internal"
 	openaiadapter "github.com/rtzll/tldw/internal/openai"
@@ -12,17 +13,18 @@ import (
 )
 
 type cliLogSink struct {
-	config *internal.Config
+	config     *internal.Config
+	diagnostic io.Writer
 }
 
 func (l cliLogSink) Printf(format string, args ...any) {
 	if l.config.Verbose && !l.config.Quiet {
-		fmt.Printf(format, args...)
+		fmt.Fprintf(l.diagnostic, format, args...)
 	}
 }
 
-func newEngine(config *internal.Config) (*tldw.Engine, error) {
-	return buildEngine(config, cliLogSink{config: config})
+func newEngine(config *internal.Config, diagnostic io.Writer) (*tldw.Engine, error) {
+	return buildEngine(config, cliLogSink{config: config, diagnostic: diagnostic})
 }
 
 func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error) {

@@ -94,7 +94,13 @@ This command will:
 - Preserve existing MCP server configurations
 - Set appropriate XDG environment variables for the current platform`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return setupClaudeDesktop()
+		if err := setupClaudeDesktop(); err != nil {
+			return err
+		}
+		if !config.Quiet {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Configured the TL;DW MCP server. Restart Claude Desktop to use it.")
+		}
+		return nil
 	},
 }
 
@@ -142,9 +148,6 @@ func setupClaudeDesktop() error {
 	}); err != nil {
 		return err
 	}
-
-	fmt.Printf("Successfully configured Claude Desktop MCP server\n")
-	fmt.Printf("Restart Claude Desktop to use the TL;DW MCP server\n")
 
 	return nil
 }

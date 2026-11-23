@@ -215,7 +215,7 @@ func plural(count int, singular, plural string) string {
 }
 
 var statsCmd = newStatsCommand(func() (statsApplication, error) {
-	return newEngine(config)
+	return newEngine(config, io.Discard)
 }, time.Now)
 
 func init() {

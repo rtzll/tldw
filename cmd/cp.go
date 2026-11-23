@@ -19,7 +19,7 @@ var cpCmd = &cobra.Command{
   tldw cp tAP1eZYEuKA --allow-paid-transcription`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app, err := newEngine(config)
+		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
@@ -34,7 +34,7 @@ var cpCmd = &cobra.Command{
 		}
 
 		if !config.Quiet {
-			fmt.Println("Transcript copied to clipboard")
+			fmt.Fprintln(cmd.ErrOrStderr(), "Transcript copied to clipboard")
 		}
 
 		return nil

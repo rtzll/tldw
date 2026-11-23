@@ -13,10 +13,10 @@ var pathsCmd = &cobra.Command{
 	Example: `  # Show all application paths
   tldw paths`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("Config directory: %s\n", config.ConfigDir)
-		fmt.Printf("Data directory: %s\n", config.DataDir)
-		fmt.Printf("Cache directory: %s\n", config.CacheDir)
-		fmt.Printf("Transcripts directory: %s\n", config.TranscriptsDir)
+		fmt.Fprintf(cmd.OutOrStdout(), "Config directory: %s\n", config.ConfigDir)
+		fmt.Fprintf(cmd.OutOrStdout(), "Data directory: %s\n", config.DataDir)
+		fmt.Fprintf(cmd.OutOrStdout(), "Cache directory: %s\n", config.CacheDir)
+		fmt.Fprintf(cmd.OutOrStdout(), "Transcripts directory: %s\n", config.TranscriptsDir)
 	},
 }
 

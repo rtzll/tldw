@@ -25,7 +25,7 @@ var metadataCmd = &cobra.Command{
   tldw metadata tAP1eZYEuKA --pretty`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app, err := newEngine(config)
+		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
@@ -64,9 +64,8 @@ var metadataCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Println(string(jsonData))
-
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), string(jsonData))
+		return err
 	},
 }
 

@@ -59,8 +59,12 @@ func confirmationPrompt(ctx context.Context, input io.Reader, diagnostic io.Writ
 	}
 }
 
-func renderMarkdown(content string) (string, error) {
-	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+func renderMarkdown(output io.Writer, content string) (string, error) {
+	f, ok := output.(*os.File)
+	if !ok || !isTerminal(f) || os.Getenv("TERM") == "dumb" || os.Getenv("NO_COLOR") != "" {
+		return content, nil
+	}
+	width, _, err := term.GetSize(int(f.Fd()))
 	if err != nil {
 		width = 80
 	} else if width > 10 {
@@ -79,4 +83,16 @@ func renderMarkdown(content string) (string, error) {
 		return "", fmt.Errorf("rendering markdown: %w", err)
 	}
 	return rendered, nil
+}
+
+func writeSummary(output io.Writer, markdown string) error {
+	rendered, err := renderMarkdown(output, markdown)
+	if err != nil {
+		return err
+	}
+	if !strings.HasSuffix(rendered, "\n") {
+		rendered += "\n"
+	}
+	_, err = io.WriteString(output, rendered)
+	return err
 }

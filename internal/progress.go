@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"io"
 	"os"
 
 	"github.com/mattn/go-isatty"
@@ -15,12 +16,14 @@ type Spinner interface {
 
 // NewSpinner creates a terminal spinner, or a no-op spinner when output is
 // redirected and terminal animation would corrupt piped output.
-func NewSpinner(description string) Spinner {
-	if !isatty.IsTerminal(os.Stdout.Fd()) {
+func NewSpinner(description string, output io.Writer) Spinner {
+	f, ok := output.(*os.File)
+	if !ok || !isatty.IsTerminal(f.Fd()) || os.Getenv("TERM") == "dumb" {
 		return NoOpSpinner{}
 	}
 	bar := progressbar.NewOptions(-1,
 		progressbar.OptionSetDescription(description),
+		progressbar.OptionSetWriter(output),
 		progressbar.OptionSpinnerType(11),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionClearOnFinish(),

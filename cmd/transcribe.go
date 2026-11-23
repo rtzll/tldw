@@ -25,7 +25,7 @@ var transcribeCmd = &cobra.Command{
   tldw transcribe tAP1eZYEuKA --allow-paid-transcription`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		app, err := newEngine(config)
+		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
@@ -40,8 +40,8 @@ var transcribeCmd = &cobra.Command{
 			return os.WriteFile(outputFile, []byte(transcript), 0644)
 		}
 
-		fmt.Println(transcript)
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), transcript)
+		return err
 	},
 }
 

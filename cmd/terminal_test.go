@@ -38,3 +38,12 @@ func TestNoninteractiveConsentConsumesNoInput(t *testing.T) {
 		t.Fatalf("ok=%v err=%v input=%d output=%q", ok, err, in.Len(), out.String())
 	}
 }
+
+func TestSummaryWritesUnstyledMarkdownToPipe(t *testing.T) {
+	for _, md := range []string{"## Heading\n\n- item", "## Heading\n\n- item\n"} {
+		var out strings.Builder
+		if err := writeSummary(&out, md); err != nil || out.String() != "## Heading\n\n- item\n" {
+			t.Fatalf("output %q, error %v", out.String(), err)
+		}
+	}
+}

@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
+	"io"
+
 	"github.com/spf13/cobra"
 
 	"github.com/rtzll/tldw/internal"
@@ -10,22 +11,23 @@ import (
 )
 
 type summaryProgress struct {
-	bar     internal.Spinner
-	verbose bool
+	bar        internal.Spinner
+	verbose    bool
+	diagnostic io.Writer
 }
 
-func newSummaryProgress(config *internal.Config, description string) *summaryProgress {
+func newSummaryProgress(config *internal.Config, description string, diagnostic io.Writer) *summaryProgress {
 	bar := internal.Spinner(internal.NoOpSpinner{})
 	if !config.Quiet && !config.Verbose {
-		bar = internal.NewSpinner(description)
+		bar = internal.NewSpinner(description, diagnostic)
 	}
-	return &summaryProgress{bar: bar, verbose: config.Verbose && !config.Quiet}
+	return &summaryProgress{bar: bar, diagnostic: diagnostic, verbose: config.Verbose && !config.Quiet}
 }
 
 func (p *summaryProgress) update(description string) {
 	p.bar.Describe(description)
 	if p.verbose {
-		fmt.Printf("[Status] %s\n", description)
+		fmt.Fprintf(p.diagnostic, "[Status] %s\n", description)
 	}
 }
 
@@ -39,11 +41,11 @@ func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config
 	input, diagnostic := cmd.InOrStdin(), cmd.ErrOrStderr()
 	confirm := confirmationPrompt(ctx, input, diagnostic, canPrompt(input, diagnostic, nonInteractive))
 	if ref.IsPlaylist() {
-		return runPlaylistSummary(ctx, engine, config, ref, allowPaidTranscription, confirm)
+		return runPlaylistSummary(cmd, engine, config, ref, allowPaidTranscription, confirm)
 	}
 
 	summarize := func(policy tldw.TranscriptRequest, description string) (string, error) {
-		progress := newSummaryProgress(config, description)
+		progress := newSummaryProgress(config, description, diagnostic)
 		defer progress.finish()
 		progress.update("Generating summary with OpenAI...")
 		summary, err := engine.SummarizeVideo(ctx, ref, policy)
@@ -51,17 +53,13 @@ func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config
 			return "", err
 		}
 		progress.update("Rendering summary...")
-		rendered, err := renderMarkdown(summary.Markdown)
-		if err != nil {
-			return "", fmt.Errorf("rendering markdown: %w", err)
-		}
-		return rendered, nil
+		return summary.Markdown, nil
 	}
 	policy := tldw.CaptionsOnly
 	if allowPaidTranscription {
 		policy = tldw.CaptionsThenPaid
 	}
-	rendered, err := summarize(policy, "Processing video...")
+	markdown, err := summarize(policy, "Processing video...")
 	if !allowPaidTranscription && tldw.CanOfferPaidTranscription(err) {
 		approved, confirmErr := confirm(fmt.Sprintf("%v. Use paid OpenAI transcription?", err))
 		if confirmErr != nil {
@@ -70,16 +68,15 @@ func runSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config
 		if !approved {
 			return errConsentDeclined
 		}
-		rendered, err = summarize(tldw.PaidOnly, "Transcribing with OpenAI...")
+		markdown, err = summarize(tldw.PaidOnly, "Transcribing with OpenAI...")
 	}
 	if err != nil {
 		return err
 	}
-	fmt.Println(rendered)
-	return nil
+	return writeSummary(cmd.OutOrStdout(), markdown)
 }
 
-func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool, confirm func(string) (bool, error)) error {
+func runPlaylistSummary(cmd *cobra.Command, engine *tldw.Engine, config *internal.Config, ref tldw.ContentRef, allowPaidTranscription bool, confirm func(string) (bool, error)) error {
 	var request tldw.PlaylistSummaryRequest
 	if allowPaidTranscription {
 		request = tldw.PlaylistTranscripts(tldw.CaptionsThenPaid)
@@ -89,24 +86,19 @@ func runPlaylistSummary(ctx context.Context, engine *tldw.Engine, config *intern
 		})
 	}
 
-	result, err := engine.CreatePlaylistSummary(ctx, ref, request)
+	result, err := engine.CreatePlaylistSummary(cmd.Context(), ref, request)
 	if err != nil {
 		return err
 	}
 	if !config.Quiet {
-		fmt.Printf("Found %d videos in playlist: %s\n\n", result.Total, result.Title)
-		fmt.Printf("Successfully processed %d out of %d videos\n", result.Processed, result.Total)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Found %d videos in playlist: %s\n\n", result.Total, result.Title)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Successfully processed %d out of %d videos\n", result.Processed, result.Total)
 		if len(result.Skipped) > 0 {
-			fmt.Printf("Skipped %d videos:\n", len(result.Skipped))
+			fmt.Fprintf(cmd.ErrOrStderr(), "Skipped %d videos:\n", len(result.Skipped))
 			for _, skipped := range result.Skipped {
-				fmt.Printf("  - %s\n", skipped)
+				fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", skipped)
 			}
 		}
 	}
-	rendered, err := renderMarkdown(result.Markdown)
-	if err != nil {
-		return fmt.Errorf("rendering markdown: %w", err)
-	}
-	fmt.Println(rendered)
-	return nil
+	return writeSummary(cmd.OutOrStdout(), result.Markdown)
 }

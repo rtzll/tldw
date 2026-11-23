@@ -77,7 +77,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 		if err := handlePromptFlag(cmd, config); err != nil {
 			return err
 		}
-		app, err := newEngine(config)
+		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
 		}
