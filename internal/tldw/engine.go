@@ -72,7 +72,7 @@ type AIAdapter interface {
 
 // VideoStore is the persistence seam used by application workflows.
 type VideoStore interface {
-	LoadTranscript(videoID string) (*Transcript, error)
+	LoadTranscript(videoID string, source TranscriptSource) (*Transcript, error)
 	SaveTranscript(transcript *Transcript) error
 	LoadMetadata(videoID string) (*VideoMetadata, error)
 	SaveMetadata(videoID string, metadata *VideoMetadata) error
@@ -141,12 +141,17 @@ func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request Trans
 
 // Both locks are held before checking the cache. A previous owner may have filled it.
 func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, request TranscriptRequest) (*Transcript, error) {
-	if transcript, err := app.store.LoadTranscript(ref.CacheKey()); err == nil {
-		if cachedTranscriptAllowed(transcript, request) {
+	for _, source := range request.cacheSources() {
+		transcript, err := app.store.LoadTranscript(ref.CacheKey(), source)
+		if errors.Is(err, ErrStoreNotFound) || errors.Is(err, ErrStoreStale) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("loading cached transcript: %w", err)
+		}
+		if transcript != nil && transcript.Source() == source && (!request.needsTimestamps() || transcript.HasTimestamps()) {
 			return transcript, nil
 		}
-	} else if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrStoreStale) {
-		return nil, fmt.Errorf("loading cached transcript: %w", err)
 	}
 	if request == PaidOnly {
 		// An X post URL alone cannot establish whether it contains one video.
@@ -177,17 +182,18 @@ func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, 
 	return app.saveAcquiredTranscript(ref, transcript), nil
 }
 
-func cachedTranscriptAllowed(transcript *Transcript, request TranscriptRequest) bool {
-	if transcript == nil || (request.needsTimestamps() && !transcript.HasTimestamps()) {
-		return false
-	}
+// cacheSources lists eligible origins in preference order. The empty source
+// represents legacy records whose origin is unknown.
+func (request TranscriptRequest) cacheSources() []TranscriptSource {
 	switch request {
 	case CaptionsOnly, TimestampedCaptions:
-		return transcript.Source() == TranscriptSourceCaptions
+		return []TranscriptSource{TranscriptSourceCaptions}
 	case PaidOnly:
-		return transcript.Source() == TranscriptSourcePaidTranscription
-	default:
-		return true
+		return []TranscriptSource{TranscriptSourcePaidTranscription}
+	case TimestampedTranscript:
+		return []TranscriptSource{TranscriptSourceCaptions, ""}
+	default: // CaptionsThenPaid
+		return []TranscriptSource{TranscriptSourceCaptions, TranscriptSourcePaidTranscription, ""}
 	}
 }
 

@@ -41,7 +41,7 @@ func (stub *videoStub) FetchPlaylist(context.Context, tldw.ContentRef) (*tldw.Pl
 }
 
 type memoryStore struct {
-	transcript      *tldw.Transcript
+	transcripts     map[tldw.TranscriptSource]*tldw.Transcript
 	transcriptErr   error
 	metadata        *tldw.VideoMetadata
 	metadataEntries []tldw.StoredVideoMetadata
@@ -53,19 +53,23 @@ func (store *memoryStore) ListMetadata() (tldw.MetadataScan, error) {
 	return tldw.MetadataScan{Entries: store.metadataEntries}, nil
 }
 
-func (store *memoryStore) LoadTranscript(videoID string) (*tldw.Transcript, error) {
+func (store *memoryStore) LoadTranscript(_ string, source tldw.TranscriptSource) (*tldw.Transcript, error) {
 	if store.transcriptErr != nil {
 		return nil, store.transcriptErr
 	}
-	if store.transcript == nil {
+	transcript := store.transcripts[source]
+	if transcript == nil {
 		return nil, tldw.ErrStoreNotFound
 	}
-	return store.transcript, nil
+	return transcript, nil
 }
 
 func (store *memoryStore) SaveTranscript(transcript *tldw.Transcript) error {
 	store.transcriptSaves++
-	store.transcript = transcript
+	if store.transcripts == nil {
+		store.transcripts = make(map[tldw.TranscriptSource]*tldw.Transcript)
+	}
+	store.transcripts[transcript.Source()] = transcript
 	return nil
 }
 

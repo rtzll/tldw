@@ -85,8 +85,10 @@ every exit. The downloaded source audio stays in the cache. [Audio preparation](
 
 The filesystem store owns all on-disk formats:
 
-- `<video-id>.transcript.json` — canonical transcript with source and optional timing
-- `<video-id>.txt` — plain-text compatibility cache
+- `<video-id>.captions.transcript.json` — captions with verified origin and optional timing
+- `<video-id>.paid.transcript.json` — paid plain-text transcript
+- `<video-id>.transcript.json` — earlier single-record format, read by recorded origin
+- `<video-id>.txt` — plain-text compatibility copy of the most recently saved transcript
 - `<video-id>.meta.json` — versioned metadata cache with first-seen time used by
   unique-video stats
 

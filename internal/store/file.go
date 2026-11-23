@@ -63,10 +63,60 @@ func (s *File) WithTranscriptLock(ctx context.Context, videoID string, read func
 	return read()
 }
 
-func (s *File) LoadTranscript(videoID string) (*tldw.Transcript, error) {
-	transcript, err := s.loadStructuredTranscript(videoID)
-	if err == nil || !errors.Is(err, tldw.ErrStoreNotFound) {
+const (
+	captionsSuffix = ".captions.transcript.json"
+	paidSuffix     = ".paid.transcript.json"
+)
+
+func transcriptSuffix(source tldw.TranscriptSource) (string, error) {
+	switch source {
+	case tldw.TranscriptSourceCaptions:
+		return captionsSuffix, nil
+	case tldw.TranscriptSourcePaidTranscription:
+		return paidSuffix, nil
+	case "":
+		return ".transcript.json", nil
+	default:
+		return "", fmt.Errorf("unknown transcript source %q", source)
+	}
+}
+
+func (s *File) LoadTranscript(videoID string, source tldw.TranscriptSource) (*tldw.Transcript, error) {
+	suffix, err := transcriptSuffix(source)
+	if err != nil {
+		return nil, err
+	}
+	if source != "" {
+		transcript, err := s.loadStructuredTranscript(videoID, suffix)
+		if err == nil && transcript.Source() != source {
+			return nil, fmt.Errorf("unexpected transcript source %q in %s%s", transcript.Source(), videoID, suffix)
+		}
+		if !errors.Is(err, tldw.ErrStoreNotFound) {
+			return transcript, err
+		}
+	}
+
+	// Older versions stored all origins at one path. Read the recorded origin
+	// before accepting it. New writes to either source leave this file intact.
+	transcript, err := s.loadStructuredTranscript(videoID, ".transcript.json")
+	if err == nil && transcript.Source() != source {
+		return nil, tldw.ErrStoreNotFound
+	}
+	if source != "" || !errors.Is(err, tldw.ErrStoreNotFound) {
 		return transcript, err
+	}
+	// A .txt alongside a structured record is its compatibility copy. Only a
+	// standalone .txt is eligible as a legacy transcript of unknown origin.
+	for _, suffix := range []string{captionsSuffix, paidSuffix} {
+		path, err := s.cachePath(videoID, suffix)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(path); err == nil {
+			return nil, tldw.ErrStoreNotFound
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
 	}
 	text, err := s.loadPlainTranscript(videoID)
 	if err != nil {
@@ -268,7 +318,11 @@ func (s *File) loadPlainTranscript(videoID string) (string, error) {
 }
 
 func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
-	path, err := s.cachePath(transcript.VideoID, ".transcript.json")
+	suffix, err := transcriptSuffix(transcript.Source())
+	if err != nil {
+		return err
+	}
+	path, err := s.cachePath(transcript.VideoID, suffix)
 	if err != nil {
 		return fmt.Errorf("saving transcript: %w", err)
 	}
@@ -286,8 +340,8 @@ func (s *File) saveStructuredTranscript(transcript *tldw.Transcript) error {
 	return nil
 }
 
-func (s *File) loadStructuredTranscript(videoID string) (*tldw.Transcript, error) {
-	path, err := s.cachePath(videoID, ".transcript.json")
+func (s *File) loadStructuredTranscript(videoID, suffix string) (*tldw.Transcript, error) {
+	path, err := s.cachePath(videoID, suffix)
 	if err != nil {
 		return nil, err
 	}

@@ -121,7 +121,7 @@ func TestFileRoundTripsTranscriptAndMetadata(t *testing.T) {
 	if err := adapter.SaveTranscript(transcript); err != nil {
 		t.Fatalf("SaveTranscript() error = %v", err)
 	}
-	loaded, err := adapter.LoadTranscript(transcript.VideoID)
+	loaded, err := adapter.LoadTranscript(transcript.VideoID, transcript.Source())
 	if err != nil {
 		t.Fatalf("LoadTranscript() error = %v", err)
 	}
@@ -148,7 +148,7 @@ func TestFileLoadsLegacyPlainTranscriptWithoutInventingItsSource(t *testing.T) {
 		t.Fatalf("writing legacy transcript: %v", err)
 	}
 
-	transcript, err := store.NewFile(dir).LoadTranscript("dQw4w9WgXcQ")
+	transcript, err := store.NewFile(dir).LoadTranscript("dQw4w9WgXcQ", "")
 	if err != nil {
 		t.Fatalf("LoadTranscript() error = %v", err)
 	}
@@ -176,7 +176,7 @@ func TestFileRefreshesOldCaptionsOnly(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					got, err := store.NewFile(dir).LoadTranscript(id)
+					got, err := store.NewFile(dir).LoadTranscript(id, source)
 					if source == tldw.TranscriptSourceCaptions {
 						// Do not fall back to the equally stale plain text file.
 						if !errors.Is(err, tldw.ErrStoreStale) {
@@ -206,7 +206,7 @@ func TestFileTreatsOldMetadataSchemaAsCacheMiss(t *testing.T) {
 func TestFileIdentifiesMissingEntries(t *testing.T) {
 	adapter := store.NewFile(t.TempDir())
 
-	if _, err := adapter.LoadTranscript("dQw4w9WgXcQ"); !errors.Is(err, tldw.ErrStoreNotFound) {
+	if _, err := adapter.LoadTranscript("dQw4w9WgXcQ", ""); !errors.Is(err, tldw.ErrStoreNotFound) {
 		t.Fatalf("LoadTranscript() error = %v, want ErrStoreNotFound", err)
 	}
 	if _, err := adapter.LoadMetadata("dQw4w9WgXcQ"); !errors.Is(err, tldw.ErrStoreNotFound) {
@@ -216,7 +216,7 @@ func TestFileIdentifiesMissingEntries(t *testing.T) {
 
 func TestFileRejectsVideoIDPathTraversal(t *testing.T) {
 	adapter := store.NewFile(t.TempDir())
-	if _, err := adapter.LoadTranscript("../outside"); err == nil {
+	if _, err := adapter.LoadTranscript("../outside", tldw.TranscriptSourceCaptions); err == nil {
 		t.Fatal("LoadTranscript() accepted an invalid video ID")
 	}
 	input, err := tldw.NewLegacyTranscript("../outside", "secret", nil)
@@ -288,7 +288,7 @@ func TestLegacyPaidCacheAndFailedReplacement(t *testing.T) {
 	if err := s.SaveTranscript(&tldw.Transcript{VideoID: key}); err == nil {
 		t.Fatal("accepted empty replacement")
 	}
-	got, err := s.LoadTranscript(key)
+	got, err := s.LoadTranscript(key, tldw.TranscriptSourcePaidTranscription)
 	if err != nil || got.Source() != tldw.TranscriptSourcePaidTranscription || got.PlainText() != "already paid" || got.HasTimestamps() {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -308,8 +308,28 @@ func TestCanonicalTranscriptSurvivesFailedCompatibilityWrite(t *testing.T) {
 	if err := s.SaveTranscript(paid); err == nil {
 		t.Fatal("expected compatibility write error")
 	}
-	got, err := s.LoadTranscript(key)
+	got, err := s.LoadTranscript(key, tldw.TranscriptSourcePaidTranscription)
 	if err != nil || got.PlainText() != "saved" {
 		t.Fatalf("got %+v, %v", got, err)
+	}
+}
+
+func TestStaleCaptionCompatibilityCopyCannotBecomeLegacyTranscript(t *testing.T) {
+	dir := t.TempDir()
+	const id = "dQw4w9WgXcQ"
+	for name, data := range map[string]string{
+		id + ".captions.transcript.json": `{"source":"captions","cache_version":2,"text":"stale"}`,
+		id + ".txt":                      "stale",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := store.NewFile(dir)
+	if _, err := s.LoadTranscript(id, tldw.TranscriptSourceCaptions); !errors.Is(err, tldw.ErrStoreStale) {
+		t.Fatalf("loading stale captions: %v", err)
+	}
+	if _, err := s.LoadTranscript(id, ""); !errors.Is(err, tldw.ErrStoreNotFound) {
+		t.Fatalf("loading compatibility copy as unknown origin: %v", err)
 	}
 }
