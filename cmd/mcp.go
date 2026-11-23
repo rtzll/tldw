@@ -52,11 +52,11 @@ Transport options:
 			host = "127.0.0.1"
 		}
 
-		var output io.Writer = io.Discard
+		output := io.Discard
 		if config.MCPLogEnabled {
 			file, err := openMCPLog(config.CacheDir)
 			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Opening MCP log: %v\n", err)
+				cmd.PrintErrf("Opening MCP log: %v\n", err)
 			} else {
 				defer func() { _ = file.Close() }()
 				output = file

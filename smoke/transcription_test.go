@@ -5,7 +5,6 @@ package smoke_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -128,24 +127,22 @@ func startSmokeMCP(t *testing.T, binary string, xdg []string) (context.Context, 
 	port := unusedPort(t)
 	server := exec.Command(binary, "mcp", "--transport=http", "--host=127.0.0.1", fmt.Sprintf("--port=%d", port))
 	server.Env = append(os.Environ(), xdg...)
-	var serverLog bytes.Buffer
-	server.Stdout = &serverLog
-	server.Stderr = &serverLog
+	process := &smokeProcess{cmd: server, done: make(chan struct{})}
+	server.Stdout, server.Stderr = &process.log, &process.log
 	if err := server.Start(); err != nil {
 		t.Fatalf("start MCP server: %v", err)
 	}
-	serverResult := &processResult{done: make(chan struct{})}
 	go func() {
-		serverResult.err = server.Wait()
-		close(serverResult.done)
+		process.err = server.Wait()
+		close(process.done)
 	}()
-	t.Cleanup(func() { stopProcess(t, server, serverResult, &serverLog) })
+	t.Cleanup(func() { process.stop(t) })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 	client := mcp.NewClient(&mcp.Implementation{Name: "tldw-smoke-test", Version: "1"}, nil)
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
-	session := connectMCP(t, ctx, client, endpoint, serverResult, &serverLog)
+	session := process.connect(t, ctx, client, endpoint)
 	t.Cleanup(func() { _ = session.Close() })
 	return ctx, session
 }
@@ -202,14 +199,16 @@ func unusedPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-type processResult struct {
+// Wait owns writes to err and log. Closing done publishes both to readers.
+type smokeProcess struct {
+	cmd  *exec.Cmd
+	log  bytes.Buffer
 	done chan struct{}
 	err  error
 }
 
-func connectMCP(t *testing.T, ctx context.Context, client *mcp.Client, endpoint string, serverResult *processResult, serverLog *bytes.Buffer) *mcp.ClientSession {
+func (p *smokeProcess) connect(t *testing.T, ctx context.Context, client *mcp.Client, endpoint string) *mcp.ClientSession {
 	t.Helper()
-	var lastErr error
 	for {
 		session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 			Endpoint:             endpoint,
@@ -218,12 +217,11 @@ func connectMCP(t *testing.T, ctx context.Context, client *mcp.Client, endpoint 
 		if err == nil {
 			return session
 		}
-		lastErr = err
 		select {
-		case <-serverResult.done:
-			t.Fatalf("MCP server exited before accepting connections: %v\n%s", serverResult.err, serverLog.String())
+		case <-p.done:
+			t.Fatalf("MCP server exited before accepting connections: %v\n%s", p.err, p.log.String())
 		case <-ctx.Done():
-			t.Fatalf("connect to MCP server: %v (last error: %v)\n%s", ctx.Err(), lastErr, serverLog.String())
+			t.Fatalf("connect to MCP server: %v (last error: %v)", ctx.Err(), err)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
@@ -248,20 +246,17 @@ func textContent(result *mcp.CallToolResult) string {
 	return text.String()
 }
 
-func stopProcess(t *testing.T, command *exec.Cmd, result *processResult, log *bytes.Buffer) {
+func (p *smokeProcess) stop(t *testing.T) {
 	t.Helper()
-	if command.Process == nil {
-		return
-	}
-	_ = command.Process.Signal(os.Interrupt)
+	_ = p.cmd.Process.Signal(os.Interrupt)
 	select {
-	case <-result.done:
-		if result.err != nil && !errors.Is(result.err, os.ErrProcessDone) {
-			t.Logf("MCP server stopped with %v\n%s", result.err, log.String())
-		}
+	case <-p.done:
 	case <-time.After(5 * time.Second):
-		_ = command.Process.Kill()
-		<-result.done
-		t.Log("MCP server did not stop gracefully; killed it")
+		_ = p.cmd.Process.Kill()
+		<-p.done
+		t.Errorf("MCP server required forced shutdown: %s", p.log.String())
+	}
+	if t.Failed() {
+		t.Logf("MCP server exit: %v\n%s", p.err, p.log.String())
 	}
 }
