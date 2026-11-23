@@ -27,14 +27,19 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Set up just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: '1.59.0'
+
       - name: Check module files
         run: go mod tidy -diff
 
       - name: Test
-        run: go test ./...
+        run: just test
 
       - name: Test with race detector
-        run: go test -race ./...
+        run: just test-race
 
       - name: Lint
         uses: golangci/golangci-lint-action@v9
