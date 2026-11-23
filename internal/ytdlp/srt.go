@@ -208,7 +208,10 @@ func parseSRTTimestamp(value string) (float64, error) {
 		return 0, fmt.Errorf("invalid SRT timestamp milliseconds: %s", millisecondText)
 	}
 
-	totalSeconds := float64(hours*3600+minutes*60+seconds) + float64(milliseconds)/1000
+	totalSeconds := float64(hours)*3600 + float64(minutes*60+seconds) + float64(milliseconds)/1000
+	if totalSeconds >= float64(math.MaxInt) {
+		return 0, fmt.Errorf("SRT timestamp exceeds supported range")
+	}
 	return totalSeconds, nil
 }
 

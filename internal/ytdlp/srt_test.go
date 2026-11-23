@@ -583,3 +583,9 @@ func TestManualCaptionProcessingPreservesRollingLikeSpeech(t *testing.T) {
 		t.Fatalf("manual speech was deduplicated: %+v", got)
 	}
 }
+
+func TestSRTRejectsOverflowingHours(t *testing.T) {
+	if _, err := parseSRTTimestamp("9223372036854775807:00:00,000"); err == nil {
+		t.Fatal("overflowing timestamp accepted")
+	}
+}
