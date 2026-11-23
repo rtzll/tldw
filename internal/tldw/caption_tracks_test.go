@@ -232,3 +232,42 @@ func TestLegacyPositiveMetadataAndCaptionsAreReacquired(t *testing.T) {
 		t.Fatalf("provenance not persisted: %+v, %v", loaded, err)
 	}
 }
+
+func TestPaidFallbackRequiresConfirmedCaptionAbsence(t *testing.T) {
+	for _, input := range []string{testVideoID, "https://x.com/example/status/123"} {
+		for _, tc := range []struct {
+			name         string
+			cause        error
+			wantAttempts int
+		}{
+			{"read error", os.ErrPermission, 1},
+			{"parse error", errors.New("invalid subtitle file"), 1},
+			{"download failure after retry", tldw.ErrDownloadFailed, 2},
+			{"empty adapter result", nil, 1},
+		} {
+			t.Run(input+"/"+tc.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					video := &videoStub{metadata: &tldw.VideoMetadata{HasCaptions: true}, captionsErr: tc.cause}
+					ai := &aiStub{transcription: "should never be requested"}
+					engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+						Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{},
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					ref, err := tldw.ParseVideoRef(input)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, err = engine.Transcript(t.Context(), ref, tldw.CaptionsThenPaid)
+					if err == nil || (tc.cause != nil && !errors.Is(err, tc.cause)) || tldw.CanOfferPaidTranscription(err) {
+						t.Fatalf("unexpected fallback result: %v", err)
+					}
+					if video.captionCalls != tc.wantAttempts || video.audioCalls != 0 || ai.transcribeCalls != 0 {
+						t.Fatalf("captions %d, audio %d, paid %d", video.captionCalls, video.audioCalls, ai.transcribeCalls)
+					}
+				})
+			})
+		}
+	}
+}

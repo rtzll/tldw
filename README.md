@@ -143,7 +143,9 @@ paid transcription.
 
 Negative caption metadata expires after 15 minutes. Before falling back to paid
 transcription, tldw checks cached negative metadata again. A failed
-recheck returns an error instead of starting paid transcription.
+recheck returns an error. On both YouTube and X, automatic paid fallback requires
+confirmed caption absence. Download, file-read, and subtitle-parsing failures
+return their underlying errors.
 
 ### Transcription smoke test
 

@@ -18,7 +18,7 @@ func (e *paidFallbackError) Unwrap() error { return e.cause }
 // plain-text caption request. Operational failures cannot trigger a prompt.
 func CanOfferPaidTranscription(err error) bool {
 	var eligible *paidFallbackError
-	return errors.As(err, &eligible) && errors.Is(eligible.cause, ErrCaptionsUnavailable)
+	return errors.As(err, &eligible)
 }
 
 type fetchCaptionsFunc func(context.Context, ContentRef, *VideoMetadata) (*Transcript, error)
@@ -72,7 +72,7 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 			err = fmt.Errorf("no transcript available for %s", ref.CacheKey())
 		}
 		err = fmt.Errorf("fetching captions: %w", err)
-		if !timed && (!ref.IsX() || errors.Is(err, ErrCaptionsUnavailable)) {
+		if !timed && errors.Is(err, ErrCaptionsUnavailable) {
 			return nil, &paidFallbackError{err}
 		}
 		return nil, err

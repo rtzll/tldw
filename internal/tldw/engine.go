@@ -172,8 +172,7 @@ func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, 
 	}
 	transcript, err := readCaptions(ctx, ref, metadata, request.needsTimestamps(), app.video.FetchCaptions, app.RefreshMetadata)
 	if err != nil {
-		var eligible *paidFallbackError
-		if request == CaptionsThenPaid && errors.As(err, &eligible) {
+		if request == CaptionsThenPaid && CanOfferPaidTranscription(err) {
 			return app.transcribeVideo(ctx, ref)
 		}
 		return nil, err
