@@ -155,9 +155,11 @@ just smoke-transcription
 
 It builds `tldw`, transcribes the README video through both the CLI and the HTTP
 MCP `get_youtube_transcript` tool, and verifies that their timestamped outputs
-match. The test uses isolated temporary XDG directories and requires `yt-dlp`
-and network access. It is intentionally excluded from the default test suite.
-Set `TLDW_SMOKE_VIDEO_URL` to check a different video.
+match. It also checks two single-video X posts with a cold cache per transport.
+The captioned post must produce matching text. The uncaptioned post must return
+paid opt-in guidance. These checks use free captions, isolated temporary XDG
+directories, `yt-dlp`, and network access. Set `TLDW_SMOKE_VIDEO_URL` to change
+the YouTube fixture.
 
 #### Playlists
 

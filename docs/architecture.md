@@ -61,23 +61,43 @@ logging. [cmd/build.go](../cmd/build.go) supplies the concrete implementations.
 5. Paid transcription and summaries go through the OpenAI adapter.
 6. The engine returns domain output; CLI or MCP performs presentation.
 
-The same `Engine.Transcript` workflow serves CLI transcription, summaries,
-playlists, and MCP tools. This is the central behavior seam.
+The CLI, summaries, playlists, and MCP tools all call `Engine.Transcript`.
+The caller chooses one acquisition intent. Both timestamped intents can only
+fetch captions. A playlist that prompts for paid transcription starts each
+item with free captions and applies approval to that item alone.
 
-The yt-dlp adapter keeps validated `ContentRef` values through its internal
-capability paths; raw URLs are produced only when constructing yt-dlp commands.
+On a cache miss, `readCaptions` owns at most two caption attempts. A missing
+track triggers a metadata refresh and a retry if captions remain available.
+A download failure gets one delayed retry. The second result ends recovery.
+Cancellation and rate limits end the request before paid fallback. The engine
+alone decides whether the selected intent permits paid transcription. [Caption recovery](../internal/tldw/captions.go)
+
+YouTube throttling is shared across requests. After a rate limit, one caller
+probes for recovery when the delay expires. Its success can reopen access only
+if no newer rate limit has arrived. Each transcript request also has a bounded
+wait across its metadata and caption reads. [YouTube cooldown](../internal/tldw/youtube_cooldown.go)
+
+Paid transcription prepares and size-checks every audio chunk before the first
+upload. The request owns its temporary split directories and cleans them up on
+every exit. The downloaded source audio stays in the cache. [Audio preparation](../internal/openai/client.go)
 
 ## Persistence
 
 The filesystem store owns all on-disk formats:
 
-- `<video-id>.transcript.json` — canonical timestamped transcript
+- `<video-id>.transcript.json` — canonical transcript with source and optional timing
 - `<video-id>.txt` — plain-text compatibility cache
 - `<video-id>.meta.json` — versioned metadata cache with first-seen time used by
   unique-video stats
 
 Path validation is inside the store adapter. Audio files live under the XDG
 cache directory and are managed by external adapters.
+
+The engine checks the transcript cache after acquiring the per-video lock.
+Concurrent CLI and MCP processes can reuse the completed result. Each file is
+published atomically. Structured JSON is committed first and stays authoritative
+if writing the plain-text copy fails. A separate metadata lock protects the
+original first-seen time across concurrent updates. [Filesystem store](../internal/store/file.go)
 
 ## Verification
 
@@ -87,7 +107,8 @@ cache directory and are managed by external adapters.
 - `just lint` runs the repository lint gate.
 - `just smoke-transcription` builds the real binary, fetches the README video
   through the CLI, starts HTTP MCP, calls `get_youtube_transcript`, and requires
-  the timestamped MCP result to match the CLI result exactly.
+  the timestamped MCP result to match the CLI result exactly. It also checks
+  captioned and uncaptioned X posts through both transports.
 
 The smoke test is opt-in because it requires `yt-dlp` and network access. Pull
 requests and pushes to `main` run module tidiness, tests, race tests, and lint

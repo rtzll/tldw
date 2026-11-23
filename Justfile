@@ -31,7 +31,7 @@ fuzz:
 
 # Run the opt-in end-to-end transcription check (requires network access and yt-dlp).
 smoke-transcription:
-    go test -tags=smoke ./smoke -run TestTranscriptionThroughCLIAndMCP -v -count=1
+    go test -tags=smoke ./smoke -v -count=1
 
 lint:
     golangci-lint run
