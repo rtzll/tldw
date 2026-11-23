@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Shared foreground/launchd supervisor. The caller supplies credentials.
+set -euo pipefail
+[[ $# == 6 ]] || exit 64
+client=$1 profile=$2 command=$3 host=$4 port=$5 profile_dir=$6
+mcp_pid=
+tunnel_pid=
+
+reachable() { (:</dev/tcp/"$host"/"$port") >/dev/null 2>&1; }
+alive() { [[ -n "$1" ]] && kill -0 "$1" 2>/dev/null; }
+stop_child() {
+  local pid=$1
+  if alive "$pid"; then
+    kill "$pid" 2>/dev/null || true
+    for _ in {1..50}; do
+      alive "$pid" || break
+      sleep 0.1
+    done
+    if alive "$pid"; then kill -KILL "$pid" 2>/dev/null || true; fi
+  fi
+  if [[ -n "$pid" ]]; then wait "$pid" 2>/dev/null || true; fi
+}
+cleanup() {
+  trap '' INT TERM
+  stop_child "$tunnel_pid"
+  stop_child "$mcp_pid"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+command -v "$client" >/dev/null || { echo "Cannot find tunnel client: $client" >&2; exit 1; }
+if reachable; then
+  echo "MCP address $host:$port is already in use" >&2
+  exit 1
+fi
+MCP_HOST="$host" MCP_PORT="$port" /bin/bash -c "exec $command --host \"\$MCP_HOST\" --port \"\$MCP_PORT\"" &
+mcp_pid=$!
+wait_for_mcp() {
+  for _ in {1..50}; do
+    if ! alive "$mcp_pid"; then
+      echo "MCP server exited before $host:$port became reachable" >&2
+      return 1
+    fi
+    if reachable; then return 0; fi
+    sleep 0.2
+  done
+  echo "Timed out waiting for MCP server on $host:$port" >&2
+  return 1
+}
+wait_for_mcp
+"$client" run --profile "$profile" --profile-dir "$profile_dir" <&0 &
+tunnel_pid=$!
+while alive "$tunnel_pid"; do
+  if ! alive "$mcp_pid"; then
+    echo "MCP server exited while the tunnel was running" >&2
+    exit 1
+  fi
+  sleep 0.2
+done
+status=0
+wait "$tunnel_pid" || status=$?
+tunnel_pid=
+exit "$status"

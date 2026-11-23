@@ -1,6 +1,7 @@
 package scripts
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTunnelProfileDirectoryAndDefaults(t *testing.T) {
@@ -35,7 +37,7 @@ func TestTunnelProfileDirectoryAndDefaults(t *testing.T) {
 			}
 			// Foreground runs select the same directory as init, editor, and launchd.
 			output := fixture.run(t, false, "--dry-run", "tunnel-run")
-			if !strings.Contains(output, `--profile-dir "`+tt.want+`"`) {
+			if !strings.Contains(output, tt.want) || !strings.Contains(output, "scripts/tunnel-run") {
 				t.Fatalf("foreground profile directory missing:\n%s", output)
 			}
 		})
@@ -118,8 +120,10 @@ func TestLaunchdRunAcceptsOldAndNewProfileArguments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = listener.Close() })
 			port := listener.Addr().(*net.TCPAddr).Port
+			if err := listener.Close(); err != nil {
+				t.Fatal(err)
+			}
 			args := []string{"-c", `source ./tunnel-launchd; run_agent "$@"`, "test", "service", filepath.Join(fixture.dir, "bin", "tunnel-client"), "tldw", filepath.Join(fixture.dir, "bin", "mcp"), "127.0.0.1", fmt.Sprint(port)}
 			want := "xdg/tunnel-client"
 			if explicit {
@@ -159,7 +163,7 @@ func newTunnelFixture(t *testing.T) *tunnelFixture {
 			t.Fatal(err)
 		}
 	}
-	for _, file := range []string{"Justfile", "scripts/update-tunnel-http"} {
+	for _, file := range []string{"Justfile", "scripts/update-tunnel-http", "scripts/tunnel-run"} {
 		content, err := os.ReadFile(filepath.Join("..", file))
 		if err != nil {
 			t.Fatal(err)
@@ -172,13 +176,15 @@ printf '[%s]' "$@" >> "$TEST_LOG"
 printf '\n' >> "$TEST_LOG"
 if [[ "$1" == profiles && "$2" == edit ]]; then exit "${TEST_EDITOR_EXIT:-0}"; fi
 if [[ "$1" == init ]]; then exit "${TEST_INIT_EXIT:-0}"; fi
+if [[ "$1" == run && -n "${TEST_WAIT_FOR_MCP_EXIT:-}" ]]; then exec sleep 30; fi
+if [[ "$1" == run ]]; then exit "${TEST_TUNNEL_EXIT:-0}"; fi
 `))
 	write("scripts/tunnel-launchd", []byte(`#!/usr/bin/env bash
 printf 'launchd' >> "$TEST_LOG"
 printf '[%s]' "$@" >> "$TEST_LOG"
 printf '\n' >> "$TEST_LOG"
 `))
-	write("bin/mcp", []byte("#!/usr/bin/env bash\nexec sleep 30\n"))
+	write("bin/mcp", []byte("#!/usr/bin/env bash\nexec \"$TEST_BINARY\" -test.run=^TestMCPChildProcess$\n"))
 	env := make([]string, 0)
 	for _, value := range os.Environ() {
 		key, _, _ := strings.Cut(value, "=")
@@ -187,14 +193,20 @@ printf '\n' >> "$TEST_LOG"
 		}
 		env = append(env, value)
 	}
-	env = append(env, "HOME=home", "PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"), "TLDW_TUNNEL_ID=tunnel_test", "TEST_LOG="+filepath.Join(dir, "commands.log"))
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	env = append(env, "TEST_BINARY="+binary, "HOME=home", "PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"), "TLDW_TUNNEL_ID=tunnel_test", "TEST_LOG="+filepath.Join(dir, "commands.log"))
 	return &tunnelFixture{dir: dir, env: env}
 }
 
 func (f *tunnelFixture) run(t *testing.T, wantFailure bool, args ...string) string {
 	t.Helper()
 	args = append([]string{"--justfile", filepath.Join(f.dir, "Justfile")}, args...)
-	cmd := exec.Command("just", args...)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "just", args...)
 	cmd.Env = f.env
 	output, err := cmd.CombinedOutput()
 	if (err != nil) != wantFailure {
@@ -210,4 +222,77 @@ func (f *tunnelFixture) log(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(content)
+}
+
+// The supervisor passes the requested address to this child process.
+func TestMCPChildProcess(t *testing.T) {
+	if os.Getenv("TEST_BINARY") == "" || os.Getenv("MCP_PORT") == "" {
+		return
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort(os.Getenv("MCP_HOST"), os.Getenv("MCP_PORT")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.Close()
+		if os.Getenv("TEST_WAIT_FOR_MCP_EXIT") != "" {
+			for {
+				if _, err := os.Stat(os.Getenv("TEST_LOG")); err == nil {
+					return
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	}
+}
+
+func TestForegroundTunnelRejectsOccupiedPort(t *testing.T) {
+	fixture := newTunnelFixture(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	fixture.env = append(fixture.env, fmt.Sprintf("TLDW_MCP_HTTP_PORT=%d", listener.Addr().(*net.TCPAddr).Port))
+	if output := fixture.run(t, true, "tunnel-run"); !strings.Contains(output, "already in use") {
+		t.Fatal(output)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.dir, "commands.log")); !os.IsNotExist(err) {
+		t.Fatal("tunnel client started on occupied port")
+	}
+}
+
+func TestForegroundTunnelReapsMCPAndPropagatesChildExit(t *testing.T) {
+	for _, test := range []struct{ name, setting, message string }{
+		{"tunnel fails", "TEST_TUNNEL_EXIT=17", "17"},
+		{"MCP exits", "TEST_WAIT_FOR_MCP_EXIT=1", "MCP server exited while the tunnel was running"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newTunnelFixture(t)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			addr := listener.Addr().String()
+			port := listener.Addr().(*net.TCPAddr).Port
+			if err := listener.Close(); err != nil {
+				t.Fatal(err)
+			}
+			fixture.env = append(fixture.env, fmt.Sprintf("TLDW_MCP_HTTP_PORT=%d", port), "TLDW_MCP_HTTP_COMMAND="+filepath.Join(fixture.dir, "bin", "mcp"), test.setting)
+			if out := fixture.run(t, true, "tunnel-run"); !strings.Contains(out, test.message) {
+				t.Fatal(out)
+			}
+			// On return the child has been reaped and released its listener.
+			conn, err := net.DialTimeout("tcp", addr, time.Second)
+			if err == nil {
+				_ = conn.Close()
+				t.Fatal("MCP process still listening")
+			}
+		})
+	}
 }

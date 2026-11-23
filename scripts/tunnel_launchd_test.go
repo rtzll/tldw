@@ -72,7 +72,8 @@ func TestLaunchdStatusSummary(t *testing.T) {
 			report: `service = {
 }
 `,
-			want: []string{"launchd state: unknown"},
+			want:   []string{"launchd state: unknown"},
+			absent: []string{"Not running", "tunnel-launchd-restart"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

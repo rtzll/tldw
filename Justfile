@@ -76,36 +76,7 @@ tunnel-update:
     just --justfile "{{justfile_dir}}/Justfile" tunnel-launchd-install
 
 tunnel-run:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    command -v "{{tunnel_client}}" > /dev/null || { echo "Install tunnel-client with 'brew install openai/tools/tunnel-client' or set TLDW_TUNNEL_CLIENT"; exit 1; }
-    cleanup() {
-        if [[ -n "${mcp_pid:-}" ]] && kill -0 "$mcp_pid" >/dev/null 2>&1; then
-            kill "$mcp_pid" >/dev/null 2>&1 || true
-            wait "$mcp_pid" >/dev/null 2>&1 || true
-        fi
-    }
-    wait_for_mcp() {
-        for _ in {1..50}; do
-            if (:</dev/tcp/{{mcp_http_host}}/{{mcp_http_port}}) >/dev/null 2>&1; then
-                return 0
-            fi
-            if ! kill -0 "$mcp_pid" >/dev/null 2>&1; then
-                echo "tldw MCP server exited before {{mcp_server_url}} became reachable"
-                return 1
-            fi
-            sleep 0.2
-        done
-        echo "Timed out waiting for {{mcp_server_url}}"
-        return 1
-    }
-    trap 'cleanup' EXIT
-    trap 'cleanup; exit 130' INT
-    trap 'cleanup; exit 143' TERM
-    {{mcp_http_command}} --host "{{mcp_http_host}}" --port "{{mcp_http_port}}" &
-    mcp_pid="$!"
-    wait_for_mcp
-    "{{tunnel_client}}" run --profile "{{tunnel_profile}}" --profile-dir "{{tunnel_profile_dir}}"
+    /bin/bash {{quote(justfile_dir + "/scripts/tunnel-run")}} {{quote(tunnel_client)}} {{quote(tunnel_profile)}} {{quote(mcp_http_command)}} {{quote(mcp_http_host)}} {{quote(mcp_http_port)}} {{quote(tunnel_profile_dir)}}
 
 tunnel-launchd-install:
     /bin/bash "{{justfile_dir}}/scripts/tunnel-launchd" install \

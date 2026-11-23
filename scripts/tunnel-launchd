@@ -30,7 +30,7 @@ keychain_account() {
   /usr/bin/id -un
 }
 
-install_agent() {
+install_agent() (
   [[ $# -eq 8 || $# -eq 9 ]] || usage
 
   local label="$1"
@@ -75,7 +75,10 @@ install_agent() {
   local script="$repo_dir/scripts/tunnel-launchd"
   mkdir -p "$(dirname "$plist")" "$log_dir"
 
-  cat > "$plist" <<EOF
+  local staged
+  staged="$(mktemp "$plist.XXXXXX")"
+  trap 'rm -f "$staged"' EXIT
+  cat > "$staged" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -117,7 +120,8 @@ install_agent() {
 </plist>
 EOF
 
-  /usr/bin/plutil -lint "$plist" >/dev/null
+  /usr/bin/plutil -lint "$staged" >/dev/null
+  mv -f "$staged" "$plist"
   /bin/launchctl bootout "$(user_domain)" "$plist" >/dev/null 2>&1 || true
   /bin/launchctl bootstrap "$(user_domain)" "$plist"
   /bin/launchctl enable "$(user_domain)/$label"
@@ -125,7 +129,7 @@ EOF
 
   echo "Installed and started $label"
   echo "Logs: $log_dir/tunnel.out.log and $log_dir/tunnel.err.log"
-}
+)
 
 uninstall_agent() {
   [[ $# -eq 1 ]] || usage
@@ -166,8 +170,10 @@ summarize_agent_status() {
         printf "Service:       Running"
         if (fields["pid"] != "") printf " (PID %s)", fields["pid"]
         print ""
+      } else if (state == "") {
+        print "Service:       Unknown (launchd state: unknown)"
       } else {
-        printf "Service:       Not running (launchd state: %s)\n", (state != "" ? state : "unknown")
+        printf "Service:       Not running (launchd state: %s)\n", state
       }
       if (fields["runs"] != "")
         printf "Launches:      %s since the service was loaded\n", fields["runs"]
@@ -183,7 +189,7 @@ summarize_agent_status() {
         if (code == "0") print "Previous exit: Successful (code 0)"
         else printf "Previous exit: Error (code %s); check the logs for the cause.\n", code
       }
-      if (state != "running")
+      if (state != "" && state != "running")
         print "Next step:     Check the logs, then run just tunnel-launchd-restart."
     }
   '
@@ -244,36 +250,6 @@ run_agent() {
   local mcp_host="$5"
   local mcp_port="$6"
   local profile_dir="${7:-${TUNNEL_CLIENT_PROFILE_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/tunnel-client}}"
-  local mcp_pid=""
-
-  cleanup() {
-    if [[ -n "$mcp_pid" ]] && kill -0 "$mcp_pid" >/dev/null 2>&1; then
-      kill "$mcp_pid" >/dev/null 2>&1 || true
-      wait "$mcp_pid" >/dev/null 2>&1 || true
-    fi
-  }
-
-  wait_for_mcp() {
-    local attempts=50
-    local i
-
-    for ((i = 0; i < attempts; i++)); do
-      if (:</dev/tcp/"$mcp_host"/"$mcp_port") >/dev/null 2>&1; then
-        return 0
-      fi
-
-      if ! kill -0 "$mcp_pid" >/dev/null 2>&1; then
-        echo "tldw MCP server exited before $mcp_host:$mcp_port became reachable" >&2
-        return 1
-      fi
-
-      sleep 0.2
-    done
-
-    echo "Timed out waiting for tldw MCP server on $mcp_host:$mcp_port" >&2
-    return 1
-  }
-
   if [[ -z "${CONTROL_PLANE_API_KEY:-}" ]]; then
     CONTROL_PLANE_API_KEY="$(
       /usr/bin/security find-generic-password \
@@ -284,20 +260,8 @@ run_agent() {
     export CONTROL_PLANE_API_KEY
   fi
 
-  trap 'cleanup' EXIT
-  trap 'cleanup; exit 130' INT
-  trap 'cleanup; exit 143' TERM
-
-  # Preserve launchd's PATH so Homebrew tools take precedence over older installs.
-  MCP_HOST="$mcp_host" MCP_PORT="$mcp_port" /bin/bash -c "exec $mcp_command --host \"\$MCP_HOST\" --port \"\$MCP_PORT\"" &
-  mcp_pid="$!"
-  wait_for_mcp
-
-  local status=0
-  "$tunnel_client" run --profile "$profile" --profile-dir "$profile_dir" || status=$?
-  cleanup
-  trap - EXIT INT TERM
-  return "$status"
+  exec /bin/bash "$(dirname "${BASH_SOURCE[0]}")/tunnel-run" \
+    "$tunnel_client" "$profile" "$mcp_command" "$mcp_host" "$mcp_port" "$profile_dir"
 }
 
 # Allow the status formatter to be sourced by deterministic tests.
