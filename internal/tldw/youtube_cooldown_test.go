@@ -15,7 +15,7 @@ func TestYouTubeBackoffAndRecovery(t *testing.T) {
 		var cooldown tldw.YouTubeCooldown
 		start := time.Now()
 		calls := 0
-		rateLimited := func() error {
+		rateLimited := func(context.Context) error {
 			calls++
 			return &tldw.YouTubeRateLimitError{}
 		}
@@ -35,7 +35,7 @@ func TestYouTubeBackoffAndRecovery(t *testing.T) {
 			}
 		}
 		time.Sleep(limited.RetryAfter)
-		if err := cooldown.Read(t.Context(), func() error { return nil }); err != nil {
+		if err := cooldown.Read(t.Context(), func(context.Context) error { return nil }); err != nil {
 			t.Fatal(err)
 		}
 		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -51,7 +51,7 @@ func startCooldown(t *testing.T, cooldown *tldw.YouTubeCooldown, delay time.Dura
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	err := cooldown.Read(ctx, func() error { return &tldw.YouTubeRateLimitError{RetryAfter: delay} })
+	err := cooldown.Read(ctx, func(context.Context) error { return &tldw.YouTubeRateLimitError{RetryAfter: delay} })
 	if !errors.Is(err, tldw.ErrRateLimited) {
 		t.Fatalf("starting cooldown: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestYouTubeWaitBudgetIncludesWaitingBeforeFirstFetch(t *testing.T) {
 		startCooldown(t, &cooldown, 15*time.Second)
 		start := time.Now()
 		calls := 0
-		err := cooldown.Read(t.Context(), func() error {
+		err := cooldown.Read(t.Context(), func(context.Context) error {
 			calls++
 			return &tldw.YouTubeRateLimitError{RetryAfter: 8 * time.Second}
 		})
@@ -81,7 +81,7 @@ func TestYouTubeAllowsOneRecoveryReadAndReleasesCanceledProbe(t *testing.T) {
 		late := make(chan struct{})
 		done := make(chan error, 3)
 		go func() {
-			done <- cooldown.Read(t.Context(), func() error { <-late; return nil })
+			done <- cooldown.Read(t.Context(), func(context.Context) error { <-late; return nil })
 		}()
 		synctest.Wait()
 		startCooldown(t, &cooldown, 5*time.Second)
@@ -93,7 +93,7 @@ func TestYouTubeAllowsOneRecoveryReadAndReleasesCanceledProbe(t *testing.T) {
 		start := time.Now()
 		waiter, cancelWaiter := context.WithCancel(t.Context())
 		go func() {
-			done <- cooldown.Read(waiter, func() error { return errors.New("canceled waiter started fetching") })
+			done <- cooldown.Read(waiter, func(context.Context) error { return errors.New("canceled waiter started fetching") })
 		}()
 		synctest.Wait()
 		cancelWaiter()
@@ -103,7 +103,7 @@ func TestYouTubeAllowsOneRecoveryReadAndReleasesCanceledProbe(t *testing.T) {
 		probing := make(chan struct{})
 		ctx, cancel := context.WithCancel(t.Context())
 		go func() {
-			done <- cooldown.Read(ctx, func() error {
+			done <- cooldown.Read(ctx, func(context.Context) error {
 				close(probing)
 				<-ctx.Done()
 				return ctx.Err()
@@ -117,7 +117,7 @@ func TestYouTubeAllowsOneRecoveryReadAndReleasesCanceledProbe(t *testing.T) {
 		entered := make(chan struct{}, 2)
 		for range 2 {
 			go func() {
-				done <- cooldown.Read(t.Context(), func() error {
+				done <- cooldown.Read(t.Context(), func(context.Context) error {
 					entered <- struct{}{}
 					<-released
 					return nil

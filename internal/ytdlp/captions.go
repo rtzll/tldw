@@ -82,7 +82,7 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 			return yt.processSrtTranscript(path, track.provenance())
 		}
 	}
-	return readVideo(ctx, yt, ref, func() (*tldw.Transcript, error) {
+	return readVideo(ctx, yt, ref, func(ctx context.Context) (*tldw.Transcript, error) {
 		return yt.fetchCaptionTrack(ctx, ref, track)
 	})
 }

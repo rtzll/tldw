@@ -5,8 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/rtzll/tldw/internal/store"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/rtzll/tldw/internal/telemetry"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -48,4 +55,87 @@ func TestDownloadTraceKeepsStatusAndExcludesCommandPayload(t *testing.T) {
 			t.Fatal("trace recorded private input")
 		}
 	}
+}
+
+func TestConcurrentVideoDeferredByAnotherTrace(t *testing.T) {
+	dir := t.TempDir()
+	synctest.Test(t, func(t *testing.T) {
+		recorder := tracetest.NewSpanRecorder()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+		tracer := provider.Tracer("test")
+		a, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
+		b, _ := tldw.ParseVideoRef("tAP1eZYEuKA")
+		disk := store.NewFile(dir)
+		for _, ref := range []tldw.ContentRef{a, b} {
+			err := disk.SaveMetadata(ref.CacheKey(), &tldw.VideoMetadata{
+				Channel: "fixture", HasCaptions: true, CaptionLanguages: []string{"en"}, CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		video := New(dir, dir, false, true)
+		started := make(chan struct{})
+		var calls atomic.Int32
+		video.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+			}
+			if args[len(args)-1] != a.URL() {
+				t.Errorf("unexpected download for %s", args[len(args)-1])
+			}
+			return nil, errors.New("HTTP Error 429: Too Many Requests\nRetry-After: 5")
+		})
+		engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Store: disk, Video: video, AI: unusedDependencies{}, Prompts: unusedDependencies{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		aCtx, rootA := tracer.Start(t.Context(), "request A")
+		done := make(chan error, 1)
+		go func() {
+			_, err := engine.Transcript(aCtx, a, tldw.CaptionsOnly)
+			rootA.End()
+			done <- err
+		}()
+		<-started
+		synctest.Wait() // A has registered the 429 and is waiting to probe.
+		limit, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		bCtx, rootB := tracer.Start(limit, "request B")
+		_, err = engine.Transcript(bCtx, b, tldw.CaptionsOnly)
+		rootB.End()
+		if !errors.Is(err, tldw.ErrRateLimited) || calls.Load() != 1 {
+			t.Fatalf("B: err=%v, total downloads=%d", err, calls.Load())
+		}
+		if err := <-done; !errors.Is(err, tldw.ErrRateLimited) || calls.Load() != 2 {
+			t.Fatalf("A: err=%v, total downloads=%d", err, calls.Load())
+		}
+		var cause, linked trace.SpanID
+		var deferred bool
+		for _, span := range recorder.Ended() {
+			switch span.SpanContext().TraceID() {
+			case rootA.SpanContext().TraceID():
+				if span.Name() == "youtube.fetch" && !cause.IsValid() {
+					cause = span.SpanContext().SpanID()
+				}
+			case rootB.SpanContext().TraceID():
+				if span.Name() == "yt-dlp.captions" || span.Name() == "youtube.fetch" {
+					t.Fatal("B trace reports a download")
+				}
+				for _, link := range span.Links() {
+					if link.SpanContext.TraceID() == rootA.SpanContext().TraceID() {
+						linked = link.SpanContext.SpanID()
+					}
+				}
+				for _, ev := range span.Events() {
+					if ev.Name == "cooldown.deferred" {
+						deferred = true
+					}
+				}
+			}
+		}
+		if !deferred || !cause.IsValid() || linked != cause {
+			t.Fatalf("deferred=%v cause=%s linked=%s", deferred, cause, linked)
+		}
+	})
 }

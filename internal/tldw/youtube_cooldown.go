@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rtzll/tldw/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"math"
 	"math/rand/v2"
 	"sync"
@@ -62,23 +65,31 @@ type YouTubeCooldown struct {
 	phase      cooldownPhase
 	generation uint64
 	changed    chan struct{}
+	origin     trace.SpanContext // fetch that established the active retry deadline
 }
 
-func (c *YouTubeCooldown) Read(ctx context.Context, fetch func() error) error {
+func (c *YouTubeCooldown) Read(ctx context.Context, fetch func(context.Context) error) (readErr error) {
+	ctx, span := telemetry.Start(ctx, "youtube.read")
+	defer func() { EndOperation(span, readErr) }()
 	budget, ok := ctx.Value(youtubeBudgetKey{}).(*youtubeReadBudget)
 	if !ok {
 		budget = &youtubeReadBudget{waitLeft: youtubeWaitBudget}
 	}
 	var cause error
-	for {
+	for attempt := 1; ; attempt++ {
 		probe, err := c.admit(ctx, budget, cause)
 		if err != nil {
 			return err
 		}
-		err = fetch()
+		fetchCtx, fetchSpan := telemetry.Start(ctx, "youtube.fetch", trace.WithAttributes(attribute.Int("tldw.attempt", attempt), attribute.Bool("tldw.cooldown.probe", probe != nil)))
+		err = fetch(fetchCtx)
 		var limited *YouTubeRateLimitError
 		errors.As(err, &limited)
-		next := c.finish(probe, err, limited)
+		next := c.finish(probe, err, limited, fetchSpan.SpanContext())
+		if limited != nil {
+			fetchSpan.SetAttributes(attribute.Int64("tldw.cooldown.remaining_ms", max(0, time.Until(next).Milliseconds())))
+		}
+		EndOperation(fetchSpan, err)
 		if limited == nil {
 			return err
 		}
@@ -91,6 +102,8 @@ func (c *YouTubeCooldown) Read(ctx context.Context, fetch func() error) error {
 }
 
 func (c *YouTubeCooldown) admit(ctx context.Context, budget *youtubeReadBudget, cause error) (*recoveryProbe, error) {
+	span := trace.SpanFromContext(ctx)
+	var lastCause trace.SpanContext
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -100,21 +113,27 @@ func (c *YouTubeCooldown) admit(ctx context.Context, budget *youtubeReadBudget, 
 			c.mu.Unlock()
 			return nil, nil
 		}
+		origin := c.origin
 		delay := time.Until(c.until)
 		if delay <= 0 && c.phase == cooling {
 			c.phase = probing
 			probe := &recoveryProbe{generation: c.generation}
 			c.mu.Unlock()
+			linkCooldown(span, origin, lastCause)
+			span.AddEvent("cooldown.probe")
 			return probe, nil
 		}
 		changed := c.changed
 		c.mu.Unlock()
 
+		linkCooldown(span, origin, lastCause)
+		lastCause = origin
 		allowance := budget.waitLeft
 		if deadline, ok := ctx.Deadline(); ok {
 			allowance = min(allowance, time.Until(deadline))
 		}
 		if allowance <= 0 || delay > allowance {
+			span.AddEvent("cooldown.deferred", trace.WithAttributes(attribute.Int64("tldw.cooldown.remaining_ms", max(0, delay.Milliseconds())), attribute.Int64("tldw.cooldown.budget_ms", max(0, allowance.Milliseconds()))))
 			return nil, &YouTubeRateLimitError{RetryAfter: max(0, delay), Cause: cause}
 		}
 		wait := allowance // When a probe is running, wait for its result.
@@ -129,11 +148,13 @@ func (c *YouTubeCooldown) admit(ctx context.Context, budget *youtubeReadBudget, 
 		case <-timer.C:
 		}
 		timer.Stop()
-		budget.waitLeft -= time.Since(started)
+		waited := time.Since(started)
+		budget.waitLeft -= waited
+		span.AddEvent("cooldown.waited", trace.WithAttributes(attribute.Int64("tldw.cooldown.wait_ms", waited.Milliseconds())))
 	}
 }
 
-func (c *YouTubeCooldown) finish(probe *recoveryProbe, err error, limited *YouTubeRateLimitError) time.Time {
+func (c *YouTubeCooldown) finish(probe *recoveryProbe, err error, limited *YouTubeRateLimitError, origin trace.SpanContext) time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if probe == nil && limited == nil {
@@ -160,10 +181,12 @@ func (c *YouTubeCooldown) finish(probe *recoveryProbe, err error, limited *YouTu
 		}
 		if next := time.Now().Add(delay); next.After(c.until) {
 			c.until = next
+			c.origin = origin
 		}
 	case err == nil && probe != nil && c.generation == probe.generation:
 		c.phase = healthy
 		c.until = time.Time{}
+		c.origin = trace.SpanContext{}
 		c.backoff = 0
 	}
 	if c.changed != nil {
@@ -171,4 +194,12 @@ func (c *YouTubeCooldown) finish(probe *recoveryProbe, err error, limited *YouTu
 	}
 	c.changed = make(chan struct{})
 	return c.until
+}
+
+// Add at most one link per observed deadline owner in this admission loop.
+// Never call instrumentation while the cooldown mutex is held.
+func linkCooldown(span trace.Span, origin, previous trace.SpanContext) {
+	if origin.IsValid() && !origin.Equal(previous) {
+		span.AddLink(trace.Link{SpanContext: origin, Attributes: []attribute.KeyValue{attribute.String("tldw.link.reason", "youtube_cooldown")}})
+	}
 }
