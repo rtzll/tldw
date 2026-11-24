@@ -75,7 +75,7 @@ Transport options:
 				return fmt.Errorf("building application: %w", err)
 			}
 			logger := slog.New(slog.NewJSONHandler(output, nil)).With("service.version", version)
-			return mcpserver.NewMCPServer(app, logger, tracer).Start(cmd.Context(), transport, host, port)
+			return mcpserver.NewMCPServer(app, version, logger, tracer).Start(cmd.Context(), transport, host, port)
 		})
 	},
 }

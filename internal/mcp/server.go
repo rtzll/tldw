@@ -22,9 +22,10 @@ import (
 
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
-	engine MCPApplication
-	log    *slog.Logger
-	tracer trace.Tracer
+	engine  MCPApplication
+	log     *slog.Logger
+	tracer  trace.Tracer
+	version string
 }
 
 type MCPApplication interface {
@@ -33,7 +34,6 @@ type MCPApplication interface {
 }
 
 const (
-	mcpServerVersion  = "1.0.0"
 	mcpMethodCallTool = "tools/call"
 
 	mcpGetMetadataDescription       = "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid OpenAI transcription."
@@ -83,21 +83,21 @@ type mcpTranscriptOutput struct {
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer(engine MCPApplication, logger *slog.Logger, tracer trace.Tracer) *MCPServer {
+func NewMCPServer(engine MCPApplication, version string, logger *slog.Logger, tracer trace.Tracer) *MCPServer {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	if tracer == nil {
 		tracer = noop.NewTracerProvider().Tracer("mcp")
 	}
-	return &MCPServer{engine: engine, log: logger, tracer: tracer}
+	return &MCPServer{engine: engine, version: version, log: logger, tracer: tracer}
 }
 
 // Each transport owns its protocol server and its middleware.
 func (s *MCPServer) protocolServer(transport string) *mcp.Server {
 	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    "tldw-server",
-		Version: mcpServerVersion,
+		Version: s.version,
 	}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{
 			Tools: &mcp.ToolCapabilities{ListChanged: true},

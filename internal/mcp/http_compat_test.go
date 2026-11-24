@@ -28,7 +28,7 @@ func TestMCPHTTPProtocolCompatibility(t *testing.T) {
 					app := &applicationStub{metadata: &tldw.VideoMetadata{
 						Title: "HTTP compatibility", Channel: "Test channel", Duration: 42,
 					}}
-					endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, nil, nil)) + path
+					endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, "test-build", nil, nil)) + path
 					if version == "2026-07-28" {
 						var discovery mcp.DiscoverResult
 						requestCompatibilityMCP(t, endpoint, version, "server/discover", nil, &discovery)
@@ -42,6 +42,9 @@ func TestMCPHTTPProtocolCompatibility(t *testing.T) {
 							"capabilities":    map[string]any{},
 							"clientInfo":      map[string]any{"name": "compatibility-test", "version": "1"},
 						}, &initialized)
+						if initialized.ServerInfo.Version != "test-build" {
+							t.Fatalf("initialize reported server version %q", initialized.ServerInfo.Version)
+						}
 						if initialized.ProtocolVersion != version {
 							t.Fatalf("initialize protocolVersion = %q, want %s", initialized.ProtocolVersion, version)
 						}
@@ -210,7 +213,7 @@ func (a *cancellationApp) Transcript(context.Context, tldw.ContentRef, tldw.Tran
 
 func TestHTTPDisconnectCancelsTool(t *testing.T) {
 	app := &cancellationApp{started: make(chan struct{}), canceled: make(chan struct{})}
-	endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, nil, nil)) + "/mcp"
+	endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, "test-build", nil, nil)) + "/mcp"
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_youtube_metadata","arguments":{"url":"https://youtu.be/dQw4w9WgXcQ"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

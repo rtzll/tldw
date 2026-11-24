@@ -47,7 +47,7 @@ func TestParallelHTTPToolCallsKeepIndependentTraces(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	p := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	app := &overlappingCalls{release: make(chan struct{})}
-	endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, nil, p.Tracer("test")))
+	endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, "test-build", nil, p.Tracer("test")))
 	videoIDs := []string{"dQw4w9WgXcQ", "H15B1j0SAmI", "tAP1eZYEuKA"}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -108,7 +108,7 @@ func TestHTTPAndToolTraceParents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := tracetest.NewSpanRecorder()
 			p := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
-			endpoint := startCompatibilityHTTPServer(t, NewMCPServer(&applicationStub{transcriptErr: context.DeadlineExceeded}, nil, p.Tracer("test")))
+			endpoint := startCompatibilityHTTPServer(t, NewMCPServer(&applicationStub{transcriptErr: context.DeadlineExceeded}, "test-build", nil, p.Tracer("test")))
 			params := map[string]any{"name": "get_youtube_transcript", "arguments": map[string]any{"url": "dQw4w9WgXcQ"}}
 			if tc.meta != "" {
 				params["_meta"] = map[string]any{"traceparent": tc.meta}
@@ -178,7 +178,7 @@ func TestToolErrorCarriesIncomingTraceToTheChatAndLocalLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = telemetry.Shutdown(p) })
-	srv := NewMCPServer(&applicationStub{transcriptErr: context.DeadlineExceeded}, nil, p.Tracer("test"))
+	srv := NewMCPServer(&applicationStub{transcriptErr: context.DeadlineExceeded}, "test-build", nil, p.Tracer("test"))
 	ctx, client := connectTestMCPClient(t, srv)
 	const id = "1234567890abcdef1234567890abcdef"
 	const parent = "abcdef1234567890"
