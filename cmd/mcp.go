@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"go.opentelemetry.io/otel/trace"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -62,34 +64,19 @@ Transport options:
 			host = "127.0.0.1"
 		}
 
-		output := io.Discard
-		if config.MCPLogEnabled {
-			file, err := openMCPLog(config.CacheDir)
+		path := os.Getenv("TLDW_TRACE_LOG")
+		if path == "" && config.MCPLogEnabled {
+			path = filepath.Join(config.CacheDir, "mcp.log")
+		}
+		return withTracing(cmd, path, func(tracer trace.Tracer, output io.Writer) error {
+			app, err := buildEngine(config, nil)
 			if err != nil {
-				cmd.PrintErrf("Opening MCP log: %v\n", err)
-			} else {
-				defer func() { _ = file.Close() }()
-				output = file
+				return fmt.Errorf("building application: %w", err)
 			}
-		}
-		logger := mcpserver.NewLogger(output)
-		app, err := buildEngine(config, logger)
-		if err != nil {
-			return fmt.Errorf("building application: %w", err)
-		}
-
-		mcpServer := mcpserver.NewMCPServer(app, logger)
-
-		// Start the server (this will block until context is cancelled)
-		return mcpServer.Start(cmd.Context(), transport, host, port)
+			logger := slog.New(slog.NewJSONHandler(output, nil)).With("service.version", version)
+			return mcpserver.NewMCPServer(app, logger, tracer).Start(cmd.Context(), transport, host, port)
+		})
 	},
-}
-
-func openMCPLog(dir string) (*os.File, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
-	}
-	return os.OpenFile(filepath.Join(dir, "mcp.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
 // setupClaudeCmd represents the setup-claude subcommand

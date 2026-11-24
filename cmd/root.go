@@ -49,7 +49,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
   tldw "https://youtu.be/tAP1eZYEuKA" --quiet`,
 	PreRunE: loadConfig,
 	Args:    arguments(cobra.ExactArgs(1)),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: tracedCLI(func(cmd *cobra.Command, args []string) error {
 		ref, err := parseSummaryReference(args[0], cmd.Root().Commands())
 		if err != nil {
 			return usageError{err}
@@ -68,7 +68,7 @@ or by editing the config file at $XDG_CONFIG_HOME/tldw/config.toml.`,
 
 		allowPaidTranscription, _ := cmd.Flags().GetBool("allow-paid-transcription")
 		return runSummary(cmd, app, config, ref, allowPaidTranscription)
-	},
+	}),
 }
 
 func loadConfig(cmd *cobra.Command, _ []string) error {

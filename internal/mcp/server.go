@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -18,7 +21,8 @@ import (
 // MCPServer wraps the MCP server and application dependencies
 type MCPServer struct {
 	engine MCPApplication
-	log    *Logger
+	log    *slog.Logger
+	tracer trace.Tracer
 }
 
 type MCPApplication interface {
@@ -77,15 +81,18 @@ type mcpTranscriptOutput struct {
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer(engine MCPApplication, logger *Logger) *MCPServer {
+func NewMCPServer(engine MCPApplication, logger *slog.Logger, tracer trace.Tracer) *MCPServer {
 	if logger == nil {
-		logger = NewLogger(io.Discard)
+		logger = slog.New(slog.DiscardHandler)
 	}
-	return &MCPServer{engine: engine, log: logger}
+	if tracer == nil {
+		tracer = noop.NewTracerProvider().Tracer("mcp")
+	}
+	return &MCPServer{engine: engine, log: logger, tracer: tracer}
 }
 
 // Each transport owns its protocol server and its middleware.
-func (s *MCPServer) protocolServer() *mcp.Server {
+func (s *MCPServer) protocolServer(transport string) *mcp.Server {
 	mcpServer := mcp.NewServer(&mcp.Implementation{
 		Name:    "tldw-server",
 		Version: mcpServerVersion,
@@ -95,6 +102,10 @@ func (s *MCPServer) protocolServer() *mcp.Server {
 		},
 	})
 
+	if transport == "stdio" {
+		mcpServer.AddReceivingMiddleware(serializeStdioToolCalls)
+	}
+	mcpServer.AddReceivingMiddleware(traceToolCalls(s.tracer, transport))
 	s.registerTools(mcpServer)
 	return mcpServer
 }
@@ -166,21 +177,16 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 	url := input.URL
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
-		s.log.errorf("Tool: get_youtube_metadata - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
-	s.log.Printf("Tool: get_youtube_metadata - URL: %s", url)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.video.id", parsed.CacheKey()))
 
 	// Get video metadata
 	metadata, err := s.engine.MetadataFor(ctx, parsed)
 	if err != nil {
-		s.log.errorf("Tool: get_youtube_metadata failed - %v", err)
 		return nil, zero, fmt.Errorf("metadata error: %w", err)
 	}
-
-	s.log.Printf("Tool: get_youtube_metadata succeeded - Title: %s, Duration: %.0fs, HasCaptions: %t",
-		metadata.Title, metadata.Duration, metadata.HasCaptions)
 
 	output := mcpMetadataOutput{
 		Title:            metadata.Title,
@@ -233,11 +239,10 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	url := input.URL
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
-		s.log.errorf("Tool: get_youtube_transcript - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
-	s.log.Printf("Tool: get_youtube_transcript - URL: %s", url)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.video.id", parsed.CacheKey()))
 	includeTimestamps := input.IncludeTimestamps
 
 	format := tldw.TranscriptRenderFormatPlain
@@ -251,7 +256,6 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	}
 	structured, err := s.engine.Transcript(ctx, parsed, request)
 	if err != nil {
-		s.log.errorf("Tool: get_youtube_transcript failed - %v", err)
 		if errors.Is(err, tldw.ErrCaptionsUnavailable) {
 			return nil, zero, fmt.Errorf("%w. Offer transcribe_video_paid for a plain-text transcript (paid) and ask for confirmation first", err)
 		}
@@ -261,8 +265,6 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	if err != nil {
 		return nil, zero, err
 	}
-
-	s.log.Printf("Tool: get_youtube_transcript succeeded - transcript length: %d characters", len(transcript))
 
 	output := mcpTranscriptOutput{
 		URL:               url,
@@ -280,28 +282,23 @@ func (s *MCPServer) handlePaidTranscription(ctx context.Context, _ *mcp.CallTool
 	url := input.URL
 	parsed, err := tldw.ParseVideoRef(url)
 	if err != nil {
-		s.log.errorf("Tool: transcribe_video_paid - invalid URL: %v", err)
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
 	url = parsed.URL()
-	s.log.Printf("Tool: transcribe_video_paid - URL: %s (PAID OPERATION)", url)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.video.id", parsed.CacheKey()))
 	if input.IncludeTimestamps {
 		err := fmt.Errorf("paid transcription returns plain text without timestamps")
-		s.log.errorf("Tool: transcribe_video_paid failed - %v", err)
 		return nil, zero, err
 	}
 
 	structured, err := s.engine.Transcript(ctx, parsed, tldw.PaidOnly)
 	if err != nil {
-		s.log.errorf("Tool: transcribe_video_paid - transcription failed: %v", err)
 		return nil, zero, fmt.Errorf("failed to transcribe audio with OpenAI: %w", err)
 	}
 	transcript, err := structured.Render(tldw.TranscriptRenderFormatPlain)
 	if err != nil {
 		return nil, zero, err
 	}
-
-	s.log.Printf("Tool: transcribe_video_paid succeeded - transcript length: %d characters", len(transcript))
 
 	output := mcpTranscriptOutput{
 		URL:               url,
@@ -322,13 +319,12 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		}
 
 		addr := net.JoinHostPort(host, strconv.Itoa(port))
-		s.log.Printf("Starting MCP server with HTTP transport on %s", addr)
+		s.log.Info("MCP server starting", "transport", transport, "address", addr)
 		if ctx.Err() != nil {
-			s.log.errorf("Context cancelled before HTTP server start")
 			return ctx.Err()
 		}
 
-		server := s.protocolServer()
+		server := s.protocolServer(transport)
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return server
 		}, &mcp.StreamableHTTPOptions{
@@ -350,13 +346,9 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		}
 		return serveHTTP(ctx, httpServer)
 	case "stdio":
-		s.log.Printf("Starting MCP server with stdio transport")
-		server := s.protocolServer()
-		server.AddReceivingMiddleware(serializeStdioToolCalls)
+		s.log.Info("MCP server starting", "transport", transport)
+		server := s.protocolServer(transport)
 		err := server.Run(ctx, &mcp.StdioTransport{})
-		if err != nil {
-			s.log.errorf("Stdio server failed: %v", err)
-		}
 		return err
 	default:
 		return fmt.Errorf("invalid MCP transport %q; expected stdio or http", transport)

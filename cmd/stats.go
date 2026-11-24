@@ -50,7 +50,7 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
   # Return machine-readable output
   tldw stats --period week --json`,
 		Args: arguments(cobra.NoArgs),
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: tracedCLI(func(cmd *cobra.Command, _ []string) error {
 			currentTime := now()
 			periodName, err := cmd.Flags().GetString("period")
 			if err != nil {
@@ -91,7 +91,7 @@ func newStatsCommand(build statsApplicationFactory, now func() time.Time) *cobra
 				return errIncomplete
 			}
 			return err
-		},
+		}),
 	}
 	command.Flags().String("period", "all", "Period to report: today, week, month, or all")
 	command.Flags().String("group-by", "", "Group results by day, week, or month")

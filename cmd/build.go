@@ -38,8 +38,10 @@ func buildEngine(config *internal.Config, log tldw.LogSink) (*tldw.Engine, error
 	if err != nil {
 		return nil, fmt.Errorf("configuring OpenAI adapter: %w", err)
 	}
-	video.SetLogSink(log)
-	ai.SetLogSink(log)
+	if log != nil {
+		video.SetLogSink(log)
+		ai.SetLogSink(log)
+	}
 	return tldw.NewEngine(
 		tldw.Config{
 			TranscriptionTimeout: config.TranscriptionTimeout,

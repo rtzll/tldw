@@ -24,7 +24,7 @@ var metadataCmd = &cobra.Command{
   # Format output as pretty JSON
   tldw metadata tAP1eZYEuKA --pretty`,
 	Args: arguments(cobra.ExactArgs(1)),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: tracedCLI(func(cmd *cobra.Command, args []string) error {
 		app, err := newEngine(config, cmd.ErrOrStderr())
 		if err != nil {
 			return fmt.Errorf("building application: %w", err)
@@ -50,7 +50,7 @@ var metadataCmd = &cobra.Command{
 			}
 			return json.Marshal(metadata)
 		})
-	},
+	}),
 }
 
 func init() {
