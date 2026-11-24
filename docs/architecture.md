@@ -25,6 +25,7 @@ internal/
 │   └── playlist.go         Playlist decoding and video-reference validation
 ├── openai/                 OpenAI summaries, transcription and ffmpeg audio preparation
 ├── mcp/                    MCP tools and HTTP/stdio transports
+├── telemetry/              Trace provider, local span recorder and OTLP export
 ├── process/                External command execution and error reporting
 ├── config.go               XDG configuration used by CLI composition
 ├── prompt.go               Filesystem-backed prompt template adapter
@@ -80,6 +81,41 @@ wait across its metadata and caption reads. [YouTube cooldown](../internal/tldw/
 Paid transcription prepares and size-checks every audio chunk before the first
 upload. The request owns its temporary split directories and cleans them up on
 every exit. The downloaded source audio stays in the cache. [Audio preparation](../internal/openai/client.go)
+
+## Tracing
+
+The CLI owns one OpenTelemetry provider per invocation. The MCP server owns one
+for its lifetime. Application and adapter operations inherit the active span’s
+provider through `context.Context`. Pass the derived context to child work,
+including callbacks admitted by the YouTube cooldown. Each admitted fetch
+records its own attempt. The cooldown keeps only the span context that
+established its current deadline and links waiting requests back to that fetch.
+[Cooldown implementation](../internal/tldw/youtube_cooldown.go)
+
+HTTP records arrival before routing or protocol validation and returns its
+trace ID in `X-Tldw-Trace-Id`. Each MCP tool records its own outcome, including
+tool errors carried by HTTP 200. W3C trace context in MCP `_meta` takes
+precedence over HTTP headers. When the HTTP and MCP parents differ, the spans
+link in both directions. Stdio callers can supply the same metadata and see
+how long they waited for the serialized handler. The local HTTP listener is
+the first observable boundary when an upstream client supplies no context.
+[MCP instrumentation](../internal/mcp/tracing.go)
+
+The local recorder writes a start and an end record for each span. End records
+include elapsed time, outcome, attributes, events, and causal links when
+present. OTLP batches completed spans and gets a bounded flush on shutdown.
+Tracing records all spans when either sink is configured. Local files are
+append-only and retention is managed by the operator.
+[Provider and export](../internal/telemetry/runtime.go)
+
+Use stable operation names and bounded failure categories. Video IDs, caption
+languages, subprocess exit codes and HTTP statuses are useful diagnostic
+fields. Keep raw URLs, arbitrary headers, user input, prompts, transcripts,
+credentials, and subprocess output out of span names, attributes and events.
+Use span links for dependencies between requests and parent spans for work
+performed by one request. The concurrency regression test asserts that a second
+video can be deferred without running yt-dlp and identifies the first video’s
+fetch as the cause. [Concurrency regression test](../internal/ytdlp/tracing_test.go)
 
 ## Persistence
 

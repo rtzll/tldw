@@ -16,9 +16,8 @@ transcription_timeout = "10m" # Timeout for paid transcription
 # Verbose mode (enables additional logging)
 verbose = false
 
-# MCP logging (optional, for debugging MCP server issues)
-# Logs MCP tool calls and errors to ~/.cache/tldw/mcp.log
-# Can also be enabled with TLDW_MCP_LOG=true environment variable
+# Write per-request JSON traces to mcp.log in the cache directory (see tldw paths).
+# TLDW_MCP_LOG=true also enables this. TLDW_TRACE_LOG selects a custom file.
 mcp_log_enabled = false
 
 # Custom prompt template (optional)

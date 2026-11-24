@@ -87,6 +87,47 @@ starts both the local HTTP MCP server and the tunnel at login. After upgrading
 Tip: Put recurring summary prompts in a ChatGPT Project, then enable the `tldw`
 connector in chats from that Project.
 
+### Diagnose a failed request
+
+Set `mcp_log_enabled = true` in `config.toml` and restart the MCP server.
+With the launchd tunnel, run `just tunnel-launchd-restart`. Each failed tool
+call includes a `trace_id`. Look it up in `mcp.log` in the cache directory
+shown by `tldw paths`. On macOS with the default cache location:
+
+```bash
+id='paste-the-32-character-trace-id-here'
+log="$HOME/Library/Caches/tldw/mcp.log"
+jq -Rc --arg id "$id" 'fromjson? | select(.trace_id == $id)' "$log"
+```
+
+| What you see | What happened |
+| --- | --- |
+| An HTTP arrival and response, with no `tools/call` span | The request reached the listener. Check the HTTP status, route, and any linked MCP trace. Discovery and initialization also stop here. |
+| `yt-dlp.captions` ends with `http.response.status_code = 429` | This subprocess observed the rate limit. Its parent `youtube.fetch` records the attempt and cooldown. |
+| `youtube.read` has a `cooldown.deferred` event | The remaining cooldown exceeded this request’s wait budget. Follow `links[].trace_id` and `span_id` to the fetch that established the deadline. |
+| A local `span.start` has no matching `span.end` | That stage started. It may still be running, or the process or log may have been interrupted. |
+
+`just tunnel-launchd-logs --tail` follows the tunnel logs and the local MCP
+trace file when present. If there is no HTTP arrival around a failure, check
+the server startup record and the tunnel logs for the same time window.
+A downloader error includes its exit code and HTTP status when available.
+An unrecognized diagnostic is labeled `process_failed`. The trace omits raw
+command output, full URLs, prompts and transcripts.
+
+To trace one CLI invocation, set `TLDW_TRACE_LOG` to an append-only JSON lines
+file. This also works as a path override for MCP.
+
+```bash
+TLDW_TRACE_LOG="$PWD/tldw-trace.jsonl" tldw transcribe tAP1eZYEuKA
+```
+
+For a trace viewer, set `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`
+in the environment of the CLI or MCP process to send the same spans over
+OTLP/HTTP. For a custom trace URL, use `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+with the full path, including `/v1/traces`. Search the viewer for the trace
+ID or the service `tldw`. A local file works independently of the collector.
+[OTLP endpoint configuration](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/)
+
 ## CLI
 
 ### Usage Examples
@@ -172,7 +213,8 @@ doubles on repeated failures, up to two minutes. One request checks whether
 YouTube has recovered when the cooldown expires. Each call can retry once and
 spend up to 20 seconds waiting for recovery, subject to its own deadline.
 Longer waits return a suggested retry time. Cached results remain available.
-With MCP logging enabled, each automatic retry logs its outcome and added time.
+With tracing enabled, attempts have separate durations and outcomes. Cooldown
+events record the time spent waiting or the budget that forced a deferral.
 X/Twitter reads run independently, and a caption rate limit never triggers
 paid transcription.
 

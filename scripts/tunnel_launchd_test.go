@@ -1,10 +1,39 @@
 package scripts
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLaunchdLogsIncludeTraceWhenPresent(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "Library", "Logs", "tldw")
+	if err := os.MkdirAll(logs, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"tunnel.err.log", "tunnel.out.log"} {
+		if err := os.WriteFile(filepath.Join(logs, name), []byte("tunnel record\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	trace := filepath.Join(dir, "custom trace.jsonl")
+	for _, present := range []bool{false, true} {
+		if present {
+			if err := os.WriteFile(trace, []byte("MCP trace record\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("bash", "./tunnel-launchd", "logs")
+		cmd.Env = append(cmd.Environ(), "HOME="+dir, "TLDW_TRACE_LOG="+trace)
+		out, err := cmd.CombinedOutput()
+		if err != nil || strings.Count(string(out), "tunnel record") != 2 || strings.Contains(string(out), "MCP trace record") != present {
+			t.Fatalf("present=%v logs=%s err=%v", present, out, err)
+		}
+	}
+}
 
 func TestLaunchdStatusSummary(t *testing.T) {
 	for _, tt := range []struct {

@@ -288,13 +288,18 @@ case "${1:-}" in
     ;;
   logs)
     shift
+    log_files=("$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log")
+    trace_file="${TLDW_TRACE_LOG:-${XDG_CACHE_HOME:-$HOME/Library/Caches}/tldw/mcp.log}"
+    if [[ -f "$trace_file" ]]; then
+      log_files+=("$trace_file")
+    fi
     case "${1:-}" in
       "")
-        tail -n 80 "$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log"
+        tail -n 80 "${log_files[@]}"
         ;;
       --tail)
         [[ $# -eq 1 ]] || usage
-        tail -f "$HOME/Library/Logs/tldw/tunnel.err.log" "$HOME/Library/Logs/tldw/tunnel.out.log"
+        tail -f "${log_files[@]}"
         ;;
       *)
         usage
