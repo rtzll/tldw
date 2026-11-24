@@ -9,8 +9,6 @@ import (
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
-const youtubeExtractorPolicy = "youtube:player_client=web,android,-tv"
-
 type discardLogSink struct{}
 
 func (discardLogSink) Printf(string, ...any) {}
@@ -86,7 +84,9 @@ func extractorArgs(ref tldw.ContentRef) []string {
 		// A text-only post can link to an external page. Only resolve X videos.
 		return []string{"--use-extractors", "twitter"}
 	}
-	return []string{"--extractor-args", youtubeExtractorPolicy}
+	// Let the installed yt-dlp select compatible YouTube players for both
+	// track discovery and download.
+	return nil
 }
 
 func lookupArgs(ref tldw.ContentRef) []string {

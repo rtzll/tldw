@@ -3,6 +3,7 @@ package ytdlp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os/exec"
 	"regexp"
@@ -20,15 +21,20 @@ var httpStatus = regexp.MustCompile(`(?i)\bhttp error ([1-5][0-9]{2})\b`)
 
 const captionClientMarker = "tldw.caption.player_client="
 
-// Only export an exact, single client from our YouTube extractor policy.
+// Only export a single recognized player name from the selected subtitle.
 // Older yt-dlp versions and failures before selection may omit this field.
 func captionPlayerClient(output []byte) string {
 	for line := range bytes.Lines(output) {
-		switch string(bytes.TrimSpace(line)) {
-		case captionClientMarker + `["web"]`:
-			return "web"
-		case captionClientMarker + `["android"]`:
-			return "android"
+		value, ok := bytes.CutPrefix(bytes.TrimSpace(line), []byte(captionClientMarker))
+		if !ok {
+			continue
+		}
+		var clients []string
+		if err := json.Unmarshal(value, &clients); err == nil && len(clients) == 1 {
+			switch clients[0] {
+			case "web", "android", "tv_samsung", "visionos", "web_embedded", "web_creator", "web_safari":
+				return clients[0]
+			}
 		}
 	}
 	return "unknown"

@@ -114,12 +114,12 @@ func TestDirectCaptionFormatsRejectsUnknownOrTranslatedURLs(t *testing.T) {
 
 func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 	for _, tc := range []struct {
-		name, input, sleep, extractorPolicy string
-		automatic                           bool
+		name, input, sleep, extractor string
+		automatic                     bool
 	}{
-		{"YouTube manual", "dQw4w9WgXcQ", "5", youtubeExtractorPolicy, false},
-		{"YouTube automatic", "dQw4w9WgXcQ", "5", youtubeExtractorPolicy, true},
-		{"X manual", "https://x.com/AmpCode/status/2123051353505443912", "", "", false},
+		{"YouTube manual", "dQw4w9WgXcQ", "5", "", false},
+		{"YouTube automatic", "dQw4w9WgXcQ", "5", "", true},
+		{"X manual", "https://x.com/AmpCode/status/2123051353505443912", "", "twitter", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			track := tldw.CaptionTrack{Language: "en", Automatic: tc.automatic, Direct: true}
@@ -135,7 +135,7 @@ func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 						values[arg] = args[i+1]
 					}
 				}
-				if values["--sub-langs"] != "en" || values["--convert-subs"] != "srt" || values["--sleep-subtitles"] != tc.sleep || values["--extractor-args"] != tc.extractorPolicy {
+				if values["--sub-langs"] != "en" || values["--convert-subs"] != "srt" || values["--sleep-subtitles"] != tc.sleep || flags["--extractor-args"] || values["--use-extractors"] != tc.extractor {
 					t.Fatalf("wrong exact download policy: %v", args)
 				}
 				if flags["--print"] {

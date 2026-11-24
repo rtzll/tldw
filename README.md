@@ -110,9 +110,9 @@ jq -Rc --arg id "$id" 'fromjson? | select(.trace_id == $id)' "$log"
 
 Each completed YouTube `yt-dlp.captions` span includes
 `tldw.caption.player_client`. It identifies which player supplied the selected
-subtitle URL (`web` or `android`). A value of `unknown` means yt-dlp did not
-identify a recognized client. Compare this field across successful and failed
-attempts for the same video.
+subtitle URL (for example, `tv_samsung` or `web`). A value of `unknown`
+means yt-dlp did not identify a recognized client. Compare this field across
+successful and failed attempts for the same video.
 
 `just tunnel-launchd-logs --tail` follows the tunnel logs and the local MCP
 trace file when present. If there is no HTTP arrival around a failure, check
@@ -211,7 +211,8 @@ use `day`, `week`, or `month`.
 
 Caption downloads prefer original English automatic captions, then manual
 English captions, then a direct track in another language. Each download
-requests one track. Automatically translated captions are excluded.
+requests one track. tldw uses the installed yt-dlp’s player selection for both
+YouTube metadata and captions. Automatically translated captions are excluded.
 
 When YouTube rate-limits a metadata or caption fetch, tldw shares a cooldown
 across those reads in the running process. It honors a `Retry-After` delay

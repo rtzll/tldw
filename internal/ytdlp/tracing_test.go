@@ -127,6 +127,20 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 	}
 }
 
+func TestCaptionPlayerClientRecognizesDownloaderDefaults(t *testing.T) {
+	for _, client := range []string{"tv_samsung", "visionos", "web", "web_embedded", "web_creator", "web_safari"} {
+		output := fmt.Appendf(nil, "other output\n%s[%q]\r\n", captionClientMarker, client)
+		if got := captionPlayerClient(output); got != client {
+			t.Errorf("player=%q, want %q", got, client)
+		}
+	}
+	for _, value := range []string{"NA", "null", `["web","android"]`, `["private value"]`} {
+		if got := captionPlayerClient([]byte(captionClientMarker + value)); got != "unknown" {
+			t.Errorf("unexpected exported client %q", got)
+		}
+	}
+}
+
 func TestDownloadTraceKeepsStatusAndExcludesCommandPayload(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
