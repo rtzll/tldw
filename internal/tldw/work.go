@@ -2,6 +2,7 @@ package tldw
 
 import (
 	"context"
+	"github.com/rtzll/tldw/internal/telemetry"
 	"sync"
 )
 
@@ -21,6 +22,7 @@ func withVideoWork[T any](ctx context.Context, g *workGates, key string, work fu
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	_, waitSpan := telemetry.Start(ctx, "lock.in_process.wait")
 	g.mu.Lock()
 	if g.entries == nil {
 		g.entries = make(map[string]*workGate)
@@ -44,11 +46,13 @@ func withVideoWork[T any](ctx context.Context, g *workGates, key string, work fu
 	select {
 	case entry.token <- struct{}{}:
 		defer func() { <-entry.token }()
+		EndOperation(waitSpan, ctx.Err())
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		return work()
 	case <-ctx.Done():
+		EndOperation(waitSpan, ctx.Err())
 		return nil, ctx.Err()
 	}
 }

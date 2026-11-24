@@ -3,6 +3,8 @@ package ytdlp
 import (
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"os"
 	"path/filepath"
 	"sort"
@@ -37,7 +39,7 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading direct captions: %s (automatic=%t)\n", track.Language, track.Automatic)
 	}
-	output, runErr := yt.executor.Run(ctx, "yt-dlp", args...)
+	output, runErr := yt.run(ctx, "captions", ref, args, attribute.String("tldw.caption.language", track.Language), attribute.Bool("tldw.caption.automatic", track.Automatic))
 	runErr = classifyReadError(ctx, ref, output, runErr)
 	if terminalReadError(runErr) {
 		return "", runErr
@@ -76,6 +78,7 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 			return nil, fmt.Errorf("searching existing captions: %w", err)
 		}
 		if path != "" {
+			trace.SpanFromContext(ctx).AddEvent("captions.local_srt_hit")
 			return yt.processSrtTranscript(path, track.provenance())
 		}
 	}

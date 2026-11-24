@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rtzll/tldw/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"time"
 )
 
@@ -121,7 +124,9 @@ type PlaylistSummaryResult struct {
 
 // Transcript acquires a canonical transcript through one workflow shared by
 // CLI, MCP, summaries, and playlists.
-func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request TranscriptRequest) (*Transcript, error) {
+func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request TranscriptRequest) (result *Transcript, err error) {
+	ctx, span := telemetry.Start(ctx, "transcript.acquire", trace.WithAttributes(attribute.String("tldw.video.id", ref.CacheKey())))
+	defer func() { EndOperation(span, err) }()
 	if err := validateTranscriptRequest(request); err != nil {
 		return nil, err
 	}
@@ -151,9 +156,11 @@ func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, 
 			return nil, fmt.Errorf("loading cached transcript: %w", err)
 		}
 		if transcript != nil && transcript.Source() == source && (!request.needsTimestamps() || transcript.HasTimestamps()) {
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.cache.result", "hit"), attribute.String("tldw.transcript.source", string(source)))
 			return transcript, nil
 		}
 	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.cache.result", "miss"))
 	if request == PaidOnly {
 		// An X post URL alone cannot establish whether it contains one video.
 		if ref.IsX() {
@@ -179,7 +186,7 @@ func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, 
 		return nil, err
 	}
 
-	return app.saveAcquiredTranscript(ref, transcript), nil
+	return app.saveAcquiredTranscript(ctx, ref, transcript), nil
 }
 
 // cacheSources lists eligible origins in preference order. The empty source
@@ -327,6 +334,7 @@ func (app *Engine) resolveMetadata(ctx context.Context, ref ContentRef) (*VideoM
 func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref ContentRef, refreshNegative bool) (*VideoMetadata, error) {
 	return withVideoWork(ctx, &app.metadataWork, ref.CacheKey(), func() (*VideoMetadata, error) {
 		if cached, ok := app.getCachedMetadata(ref.CacheKey()); ok {
+			trace.SpanFromContext(ctx).AddEvent("metadata.memory_hit")
 			return app.useOrRefreshMetadata(ctx, ref, cached, refreshNegative)
 		}
 
@@ -334,6 +342,7 @@ func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref ContentRef
 			if cached == nil {
 				return nil, fmt.Errorf("metadata store returned no record")
 			}
+			trace.SpanFromContext(ctx).AddEvent("metadata.disk_hit")
 			resolved, refreshErr := app.useOrRefreshMetadata(ctx, ref, cached.clone(), refreshNegative)
 			if refreshErr == nil {
 				app.setCachedMetadata(ref.CacheKey(), resolved)
@@ -348,6 +357,7 @@ func (app *Engine) resolveMetadataWithPolicy(ctx context.Context, ref ContentRef
 }
 
 func (app *Engine) fetchMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error) {
+	trace.SpanFromContext(ctx).AddEvent("metadata.fetch")
 	metadata, err := app.video.FetchMetadata(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -358,6 +368,7 @@ func (app *Engine) fetchMetadata(ctx context.Context, ref ContentRef) (*VideoMet
 	metadata = metadata.clone()
 	metadata.CheckedAt = time.Now()
 	if err := app.store.SaveMetadata(ref.CacheKey(), metadata.clone()); err != nil {
+		trace.SpanFromContext(ctx).AddEvent("metadata.cache_write_failed")
 		app.log.Printf("Warning: Failed to cache metadata: %v\n", err)
 	}
 	app.setCachedMetadata(ref.CacheKey(), metadata)
@@ -395,7 +406,7 @@ func (app *Engine) transcribeVideo(ctx context.Context, ref ContentRef) (*Transc
 	if err != nil {
 		return nil, err
 	}
-	return app.saveAcquiredTranscript(ref, transcript), nil
+	return app.saveAcquiredTranscript(ctx, ref, transcript), nil
 }
 
 func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Transcript, error) {
@@ -411,10 +422,11 @@ func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Tran
 	return NewPaidTranscript("", text)
 }
 
-func (app *Engine) saveAcquiredTranscript(ref ContentRef, transcript *Transcript) *Transcript {
+func (app *Engine) saveAcquiredTranscript(ctx context.Context, ref ContentRef, transcript *Transcript) *Transcript {
 	result := *transcript
 	result.VideoID = ref.CacheKey()
 	if err := app.store.SaveTranscript(&result); err != nil {
+		trace.SpanFromContext(ctx).AddEvent("transcript.cache_write_failed")
 		app.log.Printf("Warning: %v\n", err)
 	}
 	return &result

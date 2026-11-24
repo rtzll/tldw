@@ -31,7 +31,7 @@ func (yt *Client) playlistVideoURLs(ctx context.Context, ref tldw.ContentRef) (*
 	args = append(args, ref.URL())
 
 	// Run the command
-	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	output, err := yt.run(ctx, "playlist", ref, args)
 	if err != nil {
 		if yt.verbose {
 			yt.log.Printf("Playlist extraction error: %v\n", err)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rtzll/tldw/internal/telemetry"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,9 @@ func (s *File) WithTranscriptLock(ctx context.Context, videoID string, read func
 		return nil, err
 	}
 	lock := flock.New(path)
+	_, waitSpan := telemetry.Start(ctx, "lock.filesystem.wait")
 	locked, err := lock.TryLockContext(ctx, 50*time.Millisecond)
+	tldw.EndOperation(waitSpan, err)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rtzll/tldw/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"time"
 )
 
@@ -41,25 +44,33 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 		return nil, &paidFallbackError{err}
 	}
 
-	transcript, err := fetch(ctx, ref, metadata)
+	attempt := func(number int, m *VideoMetadata) (*Transcript, error) {
+		attemptCtx, span := telemetry.Start(ctx, "captions.acquire", trace.WithAttributes(attribute.Int("tldw.attempt", number)))
+		transcript, err := fetch(attemptCtx, ref, m)
+		EndOperation(span, err)
+		return transcript, err
+	}
+	transcript, err := attempt(1, metadata)
 	switch {
 	case terminalTranscriptError(err):
 		return nil, err
 	case errors.Is(err, ErrCaptionsUnavailable):
+		trace.SpanFromContext(ctx).AddEvent("captions.refresh_tracks")
 		fresh, refreshErr := refresh(ctx, ref)
 		if refreshErr != nil {
 			return nil, fmt.Errorf("refreshing caption availability: %w", refreshErr)
 		}
 		if fresh.HasCaptions {
-			transcript, err = fetch(ctx, ref, excludingMissingTrack(fresh, err))
+			transcript, err = attempt(2, excludingMissingTrack(fresh, err))
 		} else {
 			transcript, err = nil, ErrCaptionsUnavailable
 		}
 	case errors.Is(err, ErrDownloadFailed):
+		trace.SpanFromContext(ctx).AddEvent("captions.retry_download", trace.WithAttributes(attribute.Int("tldw.retry.delay_ms", 1000)))
 		if err := sleepWithContext(ctx, time.Second); err != nil {
 			return nil, err
 		}
-		transcript, err = fetch(ctx, ref, metadata)
+		transcript, err = attempt(2, metadata)
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()

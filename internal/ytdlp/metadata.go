@@ -27,7 +27,7 @@ func (yt *Client) metadata(ctx context.Context, ref tldw.ContentRef) (*tldw.Vide
 	args = append(args, ref.URL())
 
 	// Run the command
-	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	output, err := yt.run(ctx, "metadata", ref, args)
 	if err != nil {
 		if yt.verbose {
 			yt.log.Printf("Metadata extraction error: %v\n", err)
