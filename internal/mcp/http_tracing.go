@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/felixge/httpsnoop"
+	"github.com/rtzll/tldw/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -28,7 +29,7 @@ func traceHTTP(tracer trace.Tracer, next http.Handler) http.Handler {
 		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 		ctx, span := tracer.Start(ctx, method+" "+route, trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(attribute.String("http.request.method", method), attribute.String("http.route", route)))
-		defer span.End()
+		defer telemetry.EndSpan(span)
 		if id := span.SpanContext().TraceID(); id.IsValid() {
 			w.Header().Set("X-Tldw-Trace-Id", id.String())
 		}

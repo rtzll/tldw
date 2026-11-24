@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rtzll/tldw/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -44,7 +45,7 @@ func traceToolCalls(tracer trace.Tracer, transport string) mcp.Middleware {
 			}
 			ctx, span := tracer.Start(ctx, "tools/call "+name, trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
 				attribute.String("mcp.method.name", method), attribute.String("gen_ai.tool.name", name), attribute.String("tldw.transport", transport)))
-			defer span.End()
+			defer telemetry.EndSpan(span)
 			// A caller can send its own MCP parent independently of the HTTP
 			// headers. Keep both sides navigable when the parents differ.
 			if ingress.IsRecording() && !parent.Equal(ingress.SpanContext()) {

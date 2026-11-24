@@ -3,12 +3,40 @@ package telemetry
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestPanicReachesCallerWithoutItsPayloadEnteringTraces(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+	var out bytes.Buffer
+	p, err := NewProvider(t.Context(), "test", &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = Shutdown(p) }()
+	const secret = "private request body"
+	func() {
+		defer func() {
+			if got := recover(); got != secret {
+				t.Fatalf("unexpected panic: %v", got)
+			}
+		}()
+		ctx, root := p.Tracer(Scope).Start(t.Context(), "request")
+		defer EndSpan(root)
+		_, child := Start(ctx, "sdk operation")
+		defer child.End()
+		panic(secret)
+	}()
+	if strings.Contains(out.String(), secret) || !strings.Contains(out.String(), `"error.type":"panic"`) {
+		t.Fatalf("unexpected trace: %s", out.String())
+	}
+}
 
 func TestLocalSpansCorrelateAcrossRequests(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")

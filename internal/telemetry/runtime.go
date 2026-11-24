@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -29,6 +30,7 @@ func NewProvider(ctx context.Context, version string, local io.Writer) (*sdktrac
 	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(resource.NewSchemaless(attribute.String("service.name", "tldw"), attribute.String("service.version", version))),
 		sdktrace.WithSampler(sampler),
+		sdktrace.WithoutPanicRecording(), // Panic values can contain request payloads.
 	}
 	if local != nil {
 		logger := slog.New(slog.NewJSONHandler(local, nil)).With("service.version", version)
@@ -53,6 +55,18 @@ func Shutdown(provider *sdktrace.TracerProvider) error {
 
 func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return trace.SpanFromContext(ctx).TracerProvider().Tracer(Scope).Start(ctx, name, opts...)
+}
+
+// EndSpan is deferred directly at request and subprocess boundaries. Preserve
+// the original panic for the caller while exporting only its category.
+func EndSpan(span trace.Span) {
+	if failure := recover(); failure != nil {
+		span.SetStatus(codes.Error, "panic")
+		span.SetAttributes(attribute.String("error.type", "panic"))
+		span.End()
+		panic(failure)
+	}
+	span.End()
 }
 
 func ExportConfigured() bool {

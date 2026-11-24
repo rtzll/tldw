@@ -22,7 +22,7 @@ var httpStatus = regexp.MustCompile(`(?i)\bhttp error ([1-5][0-9]{2})\b`)
 func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, args []string, attrs ...attribute.KeyValue) ([]byte, error) {
 	attrs = append(attrs, attribute.String("tldw.video.id", ref.CacheKey()))
 	ctx, span := telemetry.Start(ctx, "yt-dlp."+stage, trace.WithAttributes(attrs...))
-	defer span.End()
+	defer telemetry.EndSpan(span)
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if err != nil && span.IsRecording() {
 		detail := failureDiagnostic(err, output)
