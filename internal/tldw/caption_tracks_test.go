@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/rtzll/tldw/internal/store"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -92,6 +93,7 @@ func TestMissingTracksDoNotLoopAfterRefresh(t *testing.T) {
 }
 
 func TestCaptionRecoveryCannotChangeStrategiesOnTheSecondAttempt(t *testing.T) {
+	empty := &tldw.EmptyCaptionResponseError{Cause: errors.New("no data blocks")}
 	for _, tc := range []struct {
 		name          string
 		first, second error
@@ -100,6 +102,10 @@ func TestCaptionRecoveryCannotChangeStrategiesOnTheSecondAttempt(t *testing.T) {
 	}{
 		{"missing then download failed", tldw.ErrCaptionsUnavailable, tldw.ErrDownloadFailed, 1, false},
 		{"download failed then missing", tldw.ErrDownloadFailed, tldw.ErrCaptionsUnavailable, 0, true},
+		{"missing then empty", tldw.ErrCaptionsUnavailable, empty, 1, false},
+		{"download failed then empty", tldw.ErrDownloadFailed, empty, 0, false},
+		{"empty then download failed", empty, tldw.ErrDownloadFailed, 0, false},
+		{"empty then rate limited", empty, tldw.ErrRateLimited, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -126,6 +132,30 @@ func TestCaptionRecoveryCannotChangeStrategiesOnTheSecondAttempt(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestDeadlineDuringEmptyCaptionBackoff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		video := &videoStub{
+			metadata:    &tldw.VideoMetadata{HasCaptions: true},
+			captionsErr: &tldw.EmptyCaptionResponseError{Cause: errors.New("no data blocks")},
+		}
+		ai := &aiStub{}
+		engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{
+			Video: video, Store: &memoryStore{}, AI: ai, Prompts: &promptStub{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref, _ := tldw.ParseVideoRef(testVideoID)
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		start := time.Now()
+		_, err = engine.Transcript(ctx, ref, tldw.CaptionsThenPaid)
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != 2*time.Second || video.captionCalls != 2 || video.audioCalls != 0 || ai.transcribeCalls != 0 {
+			t.Fatalf("err=%v elapsed=%v captions=%d audio=%d paid=%d", err, time.Since(start), video.captionCalls, video.audioCalls, ai.transcribeCalls)
+		}
+	})
 }
 
 func TestMissingTrackRetryTerminalErrorDoesNotSpend(t *testing.T) {

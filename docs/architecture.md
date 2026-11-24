@@ -67,11 +67,14 @@ The caller chooses one acquisition intent. Both timestamped intents can only
 fetch captions. A playlist that prompts for paid transcription starts each
 item with free captions and applies approval to that item alone.
 
-On a cache miss, `readCaptions` owns at most two caption attempts. A missing
-track triggers a metadata refresh and a retry if captions remain available.
-A download failure gets one delayed retry. The second result ends recovery.
-Cancellation and rate limits end the request before paid fallback. The engine
-alone decides whether the selected intent permits paid transcription. [Caption recovery](../internal/tldw/captions.go)
+On a cache miss, `readCaptions` owns caption recovery. A missing track triggers
+a metadata refresh and one retry if captions remain available. A retryable
+download failure gets a second attempt after one second. If both attempts
+returned empty YouTube caption responses, tldw waits another 10 seconds before
+a final attempt. Each YouTube download also uses yt-dlp’s five-second subtitle
+delay. The request context covers every wait and download. Only confirmed
+caption absence can trigger fallback to paid transcription, and the engine
+checks whether the request permits it. [Caption recovery](../internal/tldw/captions.go)
 
 YouTube throttling is shared across requests. After a rate limit, one caller
 probes for recovery when the delay expires. Its success can reopen access only

@@ -38,8 +38,7 @@ func CanOfferPaidTranscription(err error) bool {
 type fetchCaptionsFunc func(context.Context, ContentRef, *VideoMetadata) (*Transcript, error)
 type refreshMetadataFunc func(context.Context, ContentRef) (*VideoMetadata, error)
 
-// readCaptions has no paid dependencies. Only the first attempt can schedule
-// recovery. The final result can finish the lookup or offer plain-text fallback.
+// readCaptions owns recovery for one caption lookup, including its retry waits.
 func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, timed bool, fetch fetchCaptionsFunc, refresh refreshMetadataFunc) (*Transcript, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -55,14 +54,27 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 		return nil, &paidFallbackError{err}
 	}
 
-	attempt := func(number int, m *VideoMetadata) (*Transcript, error) {
-		attemptCtx, span := telemetry.Start(ctx, "captions.acquire", trace.WithAttributes(attribute.Int("tldw.attempt", number)))
+	attempts := 0
+	attempt := func(m *VideoMetadata) (*Transcript, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		attempts++
+		attemptCtx, span := telemetry.Start(ctx, "captions.acquire", trace.WithAttributes(attribute.Int("tldw.attempt", attempts)))
 		defer telemetry.EndSpan(span)
 		transcript, err := fetch(attemptCtx, ref, m)
 		RecordOperationError(span, err)
 		return transcript, err
 	}
-	transcript, err := attempt(1, metadata)
+	retryDownload := func(delay time.Duration) (*Transcript, error) {
+		trace.SpanFromContext(ctx).AddEvent("captions.retry_download", trace.WithAttributes(
+			attribute.Int("tldw.attempt", attempts+1), attribute.Int64("tldw.retry.delay_ms", delay.Milliseconds())))
+		if err := sleepWithContext(ctx, delay); err != nil {
+			return nil, err
+		}
+		return attempt(metadata)
+	}
+	transcript, err := attempt(metadata)
 	switch {
 	case terminalTranscriptError(err):
 		return nil, err
@@ -73,16 +85,17 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 			return nil, fmt.Errorf("refreshing caption availability: %w", refreshErr)
 		}
 		if fresh.HasCaptions {
-			transcript, err = attempt(2, excludingMissingTrack(fresh, err))
+			transcript, err = attempt(excludingMissingTrack(fresh, err))
 		} else {
 			transcript, err = nil, ErrCaptionsUnavailable
 		}
 	case errors.Is(err, ErrDownloadFailed):
-		trace.SpanFromContext(ctx).AddEvent("captions.retry_download", trace.WithAttributes(attribute.Int("tldw.retry.delay_ms", 1000)))
-		if err := sleepWithContext(ctx, time.Second); err != nil {
-			return nil, err
+		_, firstEmpty := errors.AsType[*EmptyCaptionResponseError](err)
+		transcript, err = retryDownload(time.Second)
+		_, secondEmpty := errors.AsType[*EmptyCaptionResponseError](err)
+		if !ref.IsX() && firstEmpty && secondEmpty && !terminalTranscriptError(err) {
+			transcript, err = retryDownload(10 * time.Second)
 		}
-		transcript, err = attempt(2, metadata)
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -91,7 +104,7 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 		return nil, err
 	}
 	if _, ok := errors.AsType[*EmptyCaptionResponseError](err); ok {
-		return nil, fmt.Errorf("caption download failed after two attempts: %w. Try again later", err)
+		return nil, fmt.Errorf("caption download failed after %d attempts: %w. Try again later", attempts, err)
 	}
 	if err != nil || transcript == nil {
 		if err == nil {

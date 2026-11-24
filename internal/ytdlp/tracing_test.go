@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -23,10 +24,19 @@ import (
 )
 
 func TestEmptyCaptionResponseRetry(t *testing.T) {
+	const youtubeID = "v9gt7u_7nWQ"
 	for _, tc := range []struct {
 		name           string
+		input          string
 		emptyDownloads int
-	}{{"recovers", 1}, {"exhausted", 2}} {
+		wantStarts     []time.Duration
+	}{
+		{"first succeeds", youtubeID, 0, []time.Duration{0}},
+		{"second recovers", youtubeID, 1, []time.Duration{0, time.Second}},
+		{"third recovers", youtubeID, 2, []time.Duration{0, time.Second, 11 * time.Second}},
+		{"three empty responses", youtubeID, 3, []time.Duration{0, time.Second, 11 * time.Second}},
+		{"X stops after two", "https://x.com/example/status/123", 2, []time.Duration{0, time.Second}},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			synctest.Test(t, func(t *testing.T) {
@@ -34,9 +44,12 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 				provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 				ctx, root := provider.Tracer("test").Start(t.Context(), "request")
 				defer root.End()
-				ref, _ := tldw.ParseVideoRef("v9gt7u_7nWQ")
+				ref, err := tldw.ParseVideoRef(tc.input)
+				if err != nil {
+					t.Fatal(err)
+				}
 				disk := store.NewFile(dir)
-				err := disk.SaveMetadata(ref.CacheKey(), &tldw.VideoMetadata{
+				err = disk.SaveMetadata(ref.CacheKey(), &tldw.VideoMetadata{
 					Channel: "fixture", HasCaptions: true, CaptionLanguages: []string{"en-orig"},
 					CaptionTracks: []tldw.CaptionTrack{{Language: "en-orig", Automatic: true, Direct: true}},
 				})
@@ -45,13 +58,14 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 				}
 				cause := errors.New("WARNING: private diagnostic\nERROR: Did not get any data blocks\nWARNING: Skipping embedding en-orig subtitle because the file is missing")
 				video := New(dir, dir, false, true)
-				calls := 0
+				start := time.Now()
+				var starts []time.Duration
 				video.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
-					calls++
+					starts = append(starts, time.Since(start))
 					if !slices.Contains(args, "--write-auto-subs") {
 						t.Fatalf("unexpected download: %v", args)
 					}
-					if calls <= tc.emptyDownloads {
+					if len(starts) <= tc.emptyDownloads {
 						return nil, cause
 					}
 					path := args[slices.Index(args, "-o")+1] + ".en-orig.srt"
@@ -61,17 +75,16 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				start := time.Now()
 				got, err := engine.Transcript(ctx, ref, tldw.CaptionsThenPaid)
-				if calls != 2 || time.Since(start) != time.Second {
-					t.Fatalf("attempts=%d elapsed=%v", calls, time.Since(start))
+				if !slices.Equal(starts, tc.wantStarts) {
+					t.Fatalf("downloads started at %v, want %v", starts, tc.wantStarts)
 				}
-				if tc.emptyDownloads == 1 {
+				if tc.emptyDownloads < len(tc.wantStarts) {
 					if err != nil || got == nil || got.PlainText() != "Recovered caption" {
 						t.Fatalf("recovered transcript=%+v err=%v", got, err)
 					}
 				} else if !errors.Is(err, cause) || !errors.Is(err, tldw.ErrDownloadFailed) || tldw.CanOfferPaidTranscription(err) ||
-					!strings.Contains(err.Error(), "after two attempts") || !strings.Contains(err.Error(), "Try again later") || strings.Contains(err.Error(), "private diagnostic") {
+					!strings.Contains(err.Error(), fmt.Sprintf("after %d attempts", len(starts))) || !strings.Contains(err.Error(), "Try again later") || strings.Contains(err.Error(), "private diagnostic") {
 					t.Fatalf("unexpected terminal error: %v", err)
 				}
 				var emptySpans int
