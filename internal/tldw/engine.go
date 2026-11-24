@@ -153,6 +153,7 @@ func (app *Engine) loadOrAcquireTranscript(ctx context.Context, ref ContentRef, 
 			continue
 		}
 		if err != nil {
+			trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.cache.result", "read_error"))
 			return nil, fmt.Errorf("loading cached transcript: %w", err)
 		}
 		if transcript != nil && transcript.Source() == source && (!request.needsTimestamps() || transcript.HasTimestamps()) {
@@ -425,7 +426,10 @@ func (app *Engine) transcribeAudio(ctx context.Context, audioFile string) (*Tran
 func (app *Engine) saveAcquiredTranscript(ctx context.Context, ref ContentRef, transcript *Transcript) *Transcript {
 	result := *transcript
 	result.VideoID = ref.CacheKey()
-	if err := app.store.SaveTranscript(&result); err != nil {
+	_, span := telemetry.Start(ctx, "transcript.persist", trace.WithAttributes(attribute.String("tldw.transcript.source", string(result.Source()))))
+	err := app.store.SaveTranscript(&result)
+	EndOperation(span, err)
+	if err != nil {
 		trace.SpanFromContext(ctx).AddEvent("transcript.cache_write_failed")
 		app.log.Printf("Warning: %v\n", err)
 	}

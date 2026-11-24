@@ -79,7 +79,7 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 		}
 		if path != "" {
 			trace.SpanFromContext(ctx).AddEvent("captions.local_srt_hit")
-			return yt.processSrtTranscript(path, track.provenance())
+			return yt.processSrtTranscript(ctx, path, track.provenance())
 		}
 	}
 	return readVideo(ctx, yt, ref, func(ctx context.Context) (*tldw.Transcript, error) {
@@ -106,7 +106,7 @@ func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, tr
 	if err != nil {
 		return nil, err
 	}
-	return worker.processSrtTranscript(path, track.provenance())
+	return worker.processSrtTranscript(ctx, path, track.provenance())
 }
 
 func (yt *Client) findExistingTranscript(videoID, language string) (string, error) {

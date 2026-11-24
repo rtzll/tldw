@@ -1,7 +1,10 @@
 package ytdlp
 
 import (
+	"context"
 	"fmt"
+	"github.com/rtzll/tldw/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 	"math"
 	"os"
 	"path/filepath"
@@ -17,7 +20,9 @@ var (
 	htmlTagRegex        = regexp.MustCompile(`<[^>]+>`)
 )
 
-func (yt *Client) processSrtTranscript(filePath string, track tldw.CaptionTrack) (*tldw.Transcript, error) {
+func (yt *Client) processSrtTranscript(ctx context.Context, filePath string, track tldw.CaptionTrack) (result *tldw.Transcript, err error) {
+	_, span := telemetry.Start(ctx, "captions.parse")
+	defer func() { tldw.EndOperation(span, err) }()
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Processing SRT transcript: %s\n", filePath)
 	}
@@ -38,6 +43,7 @@ func (yt *Client) processSrtTranscript(filePath string, track tldw.CaptionTrack)
 			segments[i].Text = strings.Join(strings.Fields(segments[i].Text), " ")
 		}
 	}
+	span.SetAttributes(attribute.Int("tldw.caption.segments", len(segments)))
 	transcript, err := tldw.NewCaptionTranscript(id, track, "", segments)
 	if err != nil {
 		return nil, err

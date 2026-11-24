@@ -37,7 +37,7 @@ func TestProcessSRTTranscriptRemovesOnlyCacheFiles(t *testing.T) {
 			}
 
 			yt := New(persistentDir, cacheDir, false, true)
-			if _, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}); err != nil {
+			if _, err := yt.processSrtTranscript(t.Context(), path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}); err != nil {
 				t.Fatalf("processSrtTranscript() error = %v", err)
 			}
 
@@ -400,7 +400,7 @@ Goodbye
 		t.Fatal(err)
 	}
 	yt := New(dir, filepath.Join(dir, "cache"), false, true)
-	got, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
+	got, err := yt.processSrtTranscript(t.Context(), path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ So, in this talk, I'll
 		t.Fatal(err)
 	}
 	yt := New(dir, filepath.Join(dir, "cache"), false, true)
-	got, err := yt.processSrtTranscript(path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
+	got, err := yt.processSrtTranscript(t.Context(), path, tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestManualCaptionProcessingPreservesRollingLikeSpeech(t *testing.T) {
 	}
 	yt := New(dir, t.TempDir(), false, true)
 	track := tldw.CaptionTrack{Language: "en", Direct: true}
-	got, err := yt.processSrtTranscript(path, track)
+	got, err := yt.processSrtTranscript(t.Context(), path, track)
 	if err != nil {
 		t.Fatal(err)
 	}

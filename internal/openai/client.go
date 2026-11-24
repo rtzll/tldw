@@ -10,7 +10,10 @@ import (
 
 	openaisdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/rtzll/tldw/internal/telemetry"
 	"github.com/rtzll/tldw/internal/tldw"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type discardLogSink struct{}
@@ -129,7 +132,11 @@ func (ai *AI) Transcribe(ctx context.Context, audioFile string) (string, error) 
 
 	var prepared preparedAudio
 	defer prepared.cleanup()
-	if err := ai.fitAudio(ctx, &prepared, audioFile, 0); err != nil {
+	prepareCtx, span := telemetry.Start(ctx, "audio.prepare")
+	err = ai.fitAudio(prepareCtx, &prepared, audioFile, 0)
+	span.SetAttributes(attribute.Int("tldw.audio.chunks", len(prepared.files)))
+	tldw.EndOperation(span, err)
+	if err != nil {
 		return "", err
 	}
 	transcript, err := ai.processAudioChunks(ctx, api, prepared.files)
@@ -206,7 +213,9 @@ func (ai *AI) processAudioChunks(ctx context.Context, api client, chunks []strin
 			return "", fmt.Errorf("opening chunk %s: %w", chunkPath, err)
 		}
 
-		text, err := api.CreateTranscription(ctx, file)
+		uploadCtx, span := telemetry.Start(ctx, "openai.transcribe", trace.WithSpanKind(trace.SpanKindClient), trace.WithAttributes(attribute.Int("tldw.audio.chunk", i+1)))
+		text, err := api.CreateTranscription(uploadCtx, file)
+		tldw.EndOperation(span, err)
 		if closeErr := file.Close(); closeErr != nil {
 			ai.log.Printf("Warning: failed to close file %s: %v\n", chunkPath, closeErr)
 		}
@@ -240,7 +249,9 @@ func (ai *AI) Summary(ctx context.Context, prompt string) (string, error) {
 		defer cancel()
 	}
 
-	content, err := api.CreateChatCompletion(ctx, ai.model, prompt)
+	completionCtx, span := telemetry.Start(ctx, "openai.summary", trace.WithSpanKind(trace.SpanKindClient))
+	content, err := api.CreateChatCompletion(completionCtx, ai.model, prompt)
+	tldw.EndOperation(span, err)
 	if err != nil {
 		return "", fmt.Errorf("creating chat completion: %w", err)
 	}
