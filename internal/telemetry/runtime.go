@@ -21,15 +21,20 @@ const Scope = "github.com/rtzll/tldw"
 // NewProvider records locally when a writer is supplied. Network export is
 // opt-in. Both sinks consume the same ended spans, including their links.
 func NewProvider(ctx context.Context, version string, local io.Writer) (*sdktrace.TracerProvider, error) {
+	export := ExportConfigured()
+	sampler := sdktrace.NeverSample()
+	if local != nil || export {
+		sampler = sdktrace.AlwaysSample()
+	}
 	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(resource.NewSchemaless(attribute.String("service.name", "tldw"), attribute.String("service.version", version))),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSampler(sampler),
 	}
 	if local != nil {
 		logger := slog.New(slog.NewJSONHandler(local, nil)).With("service.version", version)
 		opts = append(opts, sdktrace.WithSpanProcessor(&localRecorder{logger}))
 	}
-	if ExportConfigured() {
+	if export {
 		exporter, err := otlptracehttp.New(ctx)
 		if err != nil {
 			return sdktrace.NewTracerProvider(opts...), err

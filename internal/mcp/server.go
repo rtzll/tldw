@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rtzll/tldw/internal/telemetry"
 	"github.com/rtzll/tldw/internal/tldw"
 )
 
@@ -118,13 +119,16 @@ func serializeStdioToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 			return next(ctx, method, request)
 		}
 
+		_, wait := telemetry.Start(ctx, "mcp.stdio.wait")
 		select {
 		case token <- struct{}{}:
 			defer func() { <-token }()
+			tldw.EndOperation(wait, ctx.Err())
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
 		case <-ctx.Done():
+			tldw.EndOperation(wait, ctx.Err())
 			return nil, ctx.Err()
 		}
 

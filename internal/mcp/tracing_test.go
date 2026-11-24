@@ -85,7 +85,7 @@ func TestTraceHTTPRejectionExcludesRawPath(t *testing.T) {
 		t.Fatal("missing HTTP status")
 	}
 	for _, kv := range spans[0].Attributes() {
-		if strings.Contains(kv.Value.Emit(), "private-path") || strings.Contains(kv.Value.Emit(), "secret") {
+		if strings.Contains(kv.Value.String(), "private-path") || strings.Contains(kv.Value.String(), "secret") {
 			t.Fatalf("raw URL in trace: %v", kv)
 		}
 	}
@@ -111,17 +111,28 @@ func TestToolErrorCarriesIncomingTraceToTheChatAndLocalLog(t *testing.T) {
 		t.Fatalf("unexpected MCP error result: %+v, %v", result, err)
 	}
 	var s struct {
+		Name    string `json:"msg"`
+		Event   string `json:"event"`
 		Trace   string `json:"trace_id"`
 		Parent  string `json:"parent_span_id"`
 		Outcome string `json:"outcome"`
 	}
 	records := json.NewDecoder(bytes.NewReader(local.Bytes()))
-	for _, outcome := range []string{"", "error"} {
-		if err := records.Decode(&s); err != nil || s.Outcome != outcome {
+	var toolEnded, waited bool
+	for records.More() {
+		if err := records.Decode(&s); err != nil || s.Trace != id {
 			t.Fatalf("record=%+v err=%v", s, err)
 		}
+		if s.Event == "span.end" {
+			switch s.Name {
+			case "tools/call get_youtube_transcript":
+				toolEnded = s.Parent == parent && s.Outcome == "error"
+			case "mcp.stdio.wait":
+				waited = s.Outcome == "ok"
+			}
+		}
 	}
-	if s.Trace != id || s.Parent != parent || s.Outcome != "error" || strings.Contains(local.String(), "should-never-appear") {
+	if !toolEnded || !waited || strings.Contains(local.String(), "should-never-appear") {
 		t.Fatalf("unexpected trace %s", local.String())
 	}
 }

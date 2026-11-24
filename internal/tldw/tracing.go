@@ -3,6 +3,7 @@ package tldw
 import (
 	"context"
 	"errors"
+	"io/fs"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -27,6 +28,10 @@ func EndOperation(span trace.Span, err error) {
 			kind = "captions_unavailable"
 		case errors.Is(err, ErrDownloadFailed):
 			kind = "download_failed"
+		case errors.Is(err, fs.ErrPermission):
+			kind = "permission_denied"
+		case errors.Is(err, fs.ErrNotExist):
+			kind = "file_not_found"
 		}
 		span.SetStatus(codes.Error, kind)
 		span.SetAttributes(attribute.String("error.type", kind))

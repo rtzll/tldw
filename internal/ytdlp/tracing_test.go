@@ -34,7 +34,7 @@ func TestDownloadTraceKeepsStatusAndExcludesCommandPayload(t *testing.T) {
 	dir := t.TempDir()
 	client := New(dir, dir, false, true)
 	client.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("private transcript body"), errors.New("ERROR: Unable to download video subtitles: HTTP Error 403: Forbidden https://example.invalid/?token=do-not-export")
+		return []byte("private transcript body"), errors.New("WARNING: HTTP Error 503: retrying\nERROR: Unable to download video subtitles: HTTP Error 403: Forbidden https://example.invalid/?token=do-not-export")
 	})
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
 	_, err = client.downloadCaptions(ctx, ref, directTrack{Language: "en-orig", Automatic: true})

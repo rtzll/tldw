@@ -58,7 +58,7 @@ func TestLocalSpansCorrelateAcrossRequests(t *testing.T) {
 			t.Fatalf("unexpected record: %+v", r)
 		}
 	}
-	if starts != 2 || len(ended) != 3 {
+	if starts != 3 || len(ended) != 3 {
 		t.Fatalf("starts=%d ended=%d", starts, len(ended))
 	}
 	a, b, c := ended["attempt"], ended["first"], ended["second"]

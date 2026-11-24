@@ -89,6 +89,9 @@ func (c *YouTubeCooldown) Read(ctx context.Context, fetch func(context.Context) 
 		next := c.finish(probe, err, limited, fetchSpan.SpanContext())
 		if limited != nil {
 			fetchSpan.SetAttributes(attribute.Int64("tldw.cooldown.remaining_ms", max(0, time.Until(next).Milliseconds())))
+			if limited.RetryAfter > 0 {
+				fetchSpan.SetAttributes(attribute.Int64("tldw.retry_after_ms", limited.RetryAfter.Milliseconds()))
+			}
 		}
 		EndOperation(fetchSpan, err)
 		if limited == nil {

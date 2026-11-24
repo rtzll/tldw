@@ -25,9 +25,7 @@ func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, ar
 	defer span.End()
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if err != nil && span.IsRecording() {
-		message := err.Error()
-		// Some versions print the status on stdout. Inspect it only on failure.
-		detail := message + "\n" + string(output)
+		detail := failureDiagnostic(err, output)
 		reason := commandDiagnostic(ctx, detail)
 		span.SetAttributes(attribute.String("error.type", reason))
 		if match := httpStatus.FindStringSubmatch(detail); match != nil {
@@ -43,6 +41,22 @@ func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, ar
 		span.SetAttributes(attribute.Int("process.exit.code", 0))
 	}
 	return output, err
+}
+
+// A recovered warning (including a different HTTP status) can precede the
+// terminal error. Some yt-dlp versions emit diagnostics on stdout.
+func failureDiagnostic(err error, output []byte) string {
+	detail := err.Error() + "\n" + string(output)
+	last := ""
+	for line := range strings.Lines(detail) {
+		if _, message, ok := strings.Cut(line, "ERROR: "); ok {
+			last = message
+		}
+	}
+	if last != "" {
+		return last
+	}
+	return detail
 }
 
 func commandDiagnostic(ctx context.Context, detail string) string {

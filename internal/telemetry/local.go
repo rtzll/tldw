@@ -3,9 +3,6 @@ package telemetry
 import (
 	"context"
 	"log/slog"
-	"strings"
-
-	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -38,12 +35,9 @@ func recordFields(s sdktrace.ReadOnlySpan, event string) []slog.Attr {
 	return attrs
 }
 
-// Persist ingress and outbound download starts even if the process never
-// reaches End. Cheap internal decisions only need a completion record.
+// Persist each stage before work starts so a killed or hung process leaves
+// evidence of the innermost operation it entered.
 func (e *localRecorder) OnStart(ctx context.Context, s sdktrace.ReadWriteSpan) {
-	if s.Parent().IsValid() && s.SpanKind() != trace.SpanKindServer && !strings.HasPrefix(s.Name(), "yt-dlp.") {
-		return
-	}
 	e.log.LogAttrs(ctx, slog.LevelInfo, s.Name(), recordFields(s, "span.start")...)
 }
 
