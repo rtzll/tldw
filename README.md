@@ -240,9 +240,10 @@ Run the opt-in end-to-end check with:
 just smoke-transcription
 ```
 
-It builds `tldw`, transcribes the README video through both the CLI and the HTTP
-MCP `get_youtube_transcript` tool, and verifies that their timestamped outputs
-match. It also checks two single-video X posts with a cold cache per transport.
+It builds `tldw` and fetches the README video's captions with independent,
+empty caches for the CLI and HTTP MCP. The CLI then reads the MCP cache with
+yt-dlp off its path and must reproduce the timestamped tool result exactly.
+The suite also checks two single-video X posts with a cold cache per transport.
 The captioned post must produce matching text. The uncaptioned post must return
 paid opt-in guidance. These checks use free captions, isolated temporary XDG
 directories, `yt-dlp`, and network access. Set `TLDW_SMOKE_VIDEO_URL` to change

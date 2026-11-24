@@ -150,9 +150,9 @@ original first-seen time across concurrent updates. [Filesystem store](../intern
 - `go test -race ./...` checks concurrent paths under the race detector.
 - `just fuzz` exercises reference and subtitle parsers with bounded fuzz runs.
 - `just lint` runs the repository lint gate.
-- `just smoke-transcription` builds the real binary, fetches the README video
-  through the CLI, starts HTTP MCP, calls `get_youtube_transcript`, and requires
-  the timestamped MCP result to match the CLI result exactly. It also checks
+- `just smoke-transcription` builds the real binary and fetches the README
+  video's captions independently through the CLI and HTTP MCP. A CLI read of
+  the MCP cache must exactly reproduce its timestamped result. It also checks
   captioned and uncaptioned X posts through both transports.
 
 The smoke test is opt-in because it requires `yt-dlp` and network access. Pull

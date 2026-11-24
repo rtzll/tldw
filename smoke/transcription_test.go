@@ -30,18 +30,18 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 	root := repositoryRoot(t)
 	binary := filepath.Join(t.TempDir(), "tldw")
 	run(t, root, nil, "go", "build", "-o", binary, ".")
-	xdg := isolatedXDG(t, "run")
-
-	cliTranscript := strings.TrimSpace(run(t, root, xdg, binary,
-		"transcribe", videoURL, "--timestamps", "--quiet"))
-	if cliTranscript == "" {
-		t.Fatal("CLI returned an empty transcript")
+	transcribeCLI := func(env []string) string {
+		t.Helper()
+		result := strings.TrimSpace(run(t, root, env, binary, "transcribe", videoURL, "--timestamps", "--quiet"))
+		if !strings.HasPrefix(result, "[") {
+			t.Fatalf("expected timestamped CLI transcript, got %.100q", result)
+		}
+		return result
 	}
-	if !strings.HasPrefix(cliTranscript, "[") {
-		t.Fatalf("CLI transcript does not appear to contain timestamps: %.100q", cliTranscript)
-	}
+	transcribeCLI(isolatedXDG(t, "cli"))
 
-	ctx, session := startSmokeMCP(t, binary, xdg)
+	mcpEnv := isolatedXDG(t, "mcp")
+	ctx, session := startSmokeMCP(t, binary, mcpEnv)
 
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
@@ -66,10 +66,13 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 	}
 
 	mcpTranscript := strings.TrimSpace(textContent(result))
-	if mcpTranscript != cliTranscript {
-		t.Fatalf("CLI and MCP transcripts differ\nCLI: %d bytes\nMCP: %d bytes", len(cliTranscript), len(mcpTranscript))
+	// Fresh downloads can have different cue boundaries. Compare the exact
+	// rendering of the same captions and prove the CLI can read them offline.
+	cached := transcribeCLI(append(mcpEnv, "PATH="+t.TempDir()))
+	if mcpTranscript != cached {
+		t.Fatalf("MCP and cached CLI transcripts differ: MCP %d bytes, CLI %d bytes", len(mcpTranscript), len(cached))
 	}
-	t.Logf("CLI and MCP returned the same timestamped transcript (%d bytes)", len(cliTranscript))
+	t.Logf("CLI and MCP fetched captions independently; the offline CLI matched all %d bytes from MCP", len(cached))
 }
 
 // This live check exercises only metadata and free captions, with a cold cache per transport.
