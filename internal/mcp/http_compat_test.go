@@ -28,7 +28,7 @@ func TestMCPHTTPProtocolCompatibility(t *testing.T) {
 					app := &applicationStub{metadata: &tldw.VideoMetadata{
 						Title: "HTTP compatibility", Channel: "Test channel", Duration: 42,
 					}}
-					endpoint := startCompatibilityHTTPServer(t, app) + path
+					endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, nil, nil)) + path
 					if version == "2026-07-28" {
 						var discovery mcp.DiscoverResult
 						requestCompatibilityMCP(t, endpoint, version, "server/discover", nil, &discovery)
@@ -74,13 +74,13 @@ func TestMCPHTTPProtocolCompatibility(t *testing.T) {
 	}
 }
 
-func startCompatibilityHTTPServer(t *testing.T, app MCPApplication) string {
+func startCompatibilityHTTPServer(t *testing.T, server *MCPServer) string {
 	t.Helper()
 	port := unusedTCPPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- NewMCPServer(app, nil, nil).Start(ctx, "http", "127.0.0.1", port)
+		errCh <- server.Start(ctx, "http", "127.0.0.1", port)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -101,17 +101,20 @@ func startCompatibilityHTTPServer(t *testing.T, app MCPApplication) string {
 	return ""
 }
 
-func requestCompatibilityMCP(t *testing.T, endpoint, version, method string, params map[string]any, result any) {
+func requestCompatibilityMCP(t *testing.T, endpoint, version, method string, params map[string]any, result any, headers ...http.Header) {
 	t.Helper()
 	if params == nil {
 		params = map[string]any{}
 	}
 	if version == "2026-07-28" {
-		params["_meta"] = map[string]any{
-			mcp.MetaKeyProtocolVersion:    version,
-			mcp.MetaKeyClientInfo:         map[string]any{"name": "compatibility-test", "version": "1"},
-			mcp.MetaKeyClientCapabilities: map[string]any{},
+		meta, _ := params["_meta"].(map[string]any)
+		if meta == nil {
+			meta = map[string]any{}
+			params["_meta"] = meta
 		}
+		meta[mcp.MetaKeyProtocolVersion] = version
+		meta[mcp.MetaKeyClientInfo] = map[string]any{"name": "compatibility-test", "version": "1"}
+		meta[mcp.MetaKeyClientCapabilities] = map[string]any{}
 	}
 	notification := strings.HasPrefix(method, "notifications/")
 	message := map[string]any{"jsonrpc": "2.0", "method": method, "params": params}
@@ -134,6 +137,11 @@ func requestCompatibilityMCP(t *testing.T, endpoint, version, method string, par
 	req.Header.Set("MCP-Method", method)
 	if name, ok := params["name"].(string); ok {
 		req.Header.Set("MCP-Name", name)
+	}
+	for _, header := range headers {
+		for k, values := range header {
+			req.Header[k] = values
+		}
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -202,7 +210,7 @@ func (a *cancellationApp) Transcript(context.Context, tldw.ContentRef, tldw.Tran
 
 func TestHTTPDisconnectCancelsTool(t *testing.T) {
 	app := &cancellationApp{started: make(chan struct{}), canceled: make(chan struct{})}
-	endpoint := startCompatibilityHTTPServer(t, app) + "/mcp"
+	endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, nil, nil)) + "/mcp"
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_youtube_metadata","arguments":{"url":"https://youtu.be/dQw4w9WgXcQ"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

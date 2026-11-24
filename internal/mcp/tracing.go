@@ -23,7 +23,8 @@ func traceToolCalls(tracer trace.Tracer, transport string) mcp.Middleware {
 				return next(ctx, method, req)
 			}
 			propagator := propagation.TraceContext{}
-			if extra := req.GetExtra(); extra != nil {
+			ingress := trace.SpanFromContext(ctx)
+			if extra := req.GetExtra(); extra != nil && !ingress.SpanContext().IsValid() {
 				ctx = propagator.Extract(ctx, propagation.HeaderCarrier(extra.Header))
 			}
 			carrier := propagation.MapCarrier{}
@@ -33,6 +34,7 @@ func traceToolCalls(tracer trace.Tracer, transport string) mcp.Middleware {
 				}
 			}
 			ctx = propagator.Extract(ctx, carrier)
+			parent := trace.SpanContextFromContext(ctx)
 			// Unknown, user-supplied tool names must not enter exported attributes.
 			name := params.Name
 			switch name {
@@ -43,6 +45,12 @@ func traceToolCalls(tracer trace.Tracer, transport string) mcp.Middleware {
 			ctx, span := tracer.Start(ctx, "tools/call "+name, trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
 				attribute.String("mcp.method.name", method), attribute.String("gen_ai.tool.name", name), attribute.String("tldw.transport", transport)))
 			defer span.End()
+			// A caller can send its own MCP parent independently of the HTTP
+			// headers. Keep both sides navigable when the parents differ.
+			if ingress.IsRecording() && !parent.Equal(ingress.SpanContext()) {
+				span.AddLink(trace.Link{SpanContext: ingress.SpanContext()})
+				ingress.AddLink(trace.Link{SpanContext: span.SpanContext()})
+			}
 			result, err := next(ctx, method, req)
 			id := span.SpanContext().TraceID()
 			if err != nil {

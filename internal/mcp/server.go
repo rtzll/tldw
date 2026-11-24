@@ -336,7 +336,7 @@ func (s *MCPServer) Start(ctx context.Context, transport, host string, port int)
 		mux.Handle("/{$}", handler) // Preserve the legacy root endpoint.
 		httpServer := &http.Server{
 			Addr:        addr,
-			Handler:     mux,
+			Handler:     traceHTTP(s.tracer, mux),
 			BaseContext: func(net.Listener) context.Context { return ctx },
 		}
 		return serveHTTP(ctx, httpServer)

@@ -7,6 +7,7 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/creack/pty v1.1.24
+	github.com/felixge/httpsnoop v1.1.0
 	github.com/gofrs/flock v0.13.2
 	github.com/mattn/go-isatty v0.0.24
 	github.com/modelcontextprotocol/go-sdk v1.8.0
