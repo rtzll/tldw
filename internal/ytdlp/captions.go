@@ -29,6 +29,11 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	if !ref.IsX() {
 		// Space out YouTube subtitle requests to reduce rate limiting.
 		args = append(args, "--sleep-subtitles", "5")
+		if trace.SpanFromContext(ctx).IsRecording() {
+			// The video stage runs after track selection and before the subtitle GET.
+			// Traverse the one requested track; language keys may contain hyphens.
+			args = append(args, "--print", "video:"+captionClientMarker+"%(requested_subtitles.:.__yt_dlp_client)j", "--no-simulate")
+		}
 	}
 	args = append(args,
 		"--sub-langs", track.Language,

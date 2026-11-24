@@ -138,6 +138,9 @@ func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 				if values["--sub-langs"] != "en" || values["--convert-subs"] != "srt" || values["--sleep-subtitles"] != tc.sleep || values["--extractor-args"] != tc.extractorPolicy {
 					t.Fatalf("wrong exact download policy: %v", args)
 				}
+				if flags["--print"] {
+					t.Fatal("untraced download requested a player-client marker")
+				}
 				if tc.automatic != flags["--write-auto-subs"] || tc.automatic != flags["--no-write-subs"] || tc.automatic == flags["--write-subs"] || tc.automatic == flags["--no-write-auto-subs"] {
 					t.Fatalf("caption sources mixed: %v", args)
 				}

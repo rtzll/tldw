@@ -108,6 +108,12 @@ jq -Rc --arg id "$id" 'fromjson? | select(.trace_id == $id)' "$log"
 | `youtube.read` has a `cooldown.deferred` event | The remaining cooldown exceeded this request’s wait budget. Follow `links[].trace_id` and `span_id` to the fetch that established the deadline. |
 | A local `span.start` has no matching `span.end` | That stage started. It may still be running, or the process or log may have been interrupted. |
 
+Each completed YouTube `yt-dlp.captions` span includes
+`tldw.caption.player_client`. It identifies which player supplied the selected
+subtitle URL (`web` or `android`). A value of `unknown` means yt-dlp did not
+identify a recognized client. Compare this field across successful and failed
+attempts for the same video.
+
 `just tunnel-launchd-logs --tail` follows the tunnel logs and the local MCP
 trace file when present. If there is no HTTP arrival around a failure, check
 the server startup record and the tunnel logs for the same time window.

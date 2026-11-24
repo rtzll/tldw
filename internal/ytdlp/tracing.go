@@ -1,6 +1,7 @@
 package ytdlp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os/exec"
@@ -17,6 +18,22 @@ import (
 
 var httpStatus = regexp.MustCompile(`(?i)\bhttp error ([1-5][0-9]{2})\b`)
 
+const captionClientMarker = "tldw.caption.player_client="
+
+// Only export an exact, single client from our YouTube extractor policy.
+// Older yt-dlp versions and failures before selection may omit this field.
+func captionPlayerClient(output []byte) string {
+	for line := range bytes.Lines(output) {
+		switch string(bytes.TrimSpace(line)) {
+		case captionClientMarker + `["web"]`:
+			return "web"
+		case captionClientMarker + `["android"]`:
+			return "android"
+		}
+	}
+	return "unknown"
+}
+
 // run traces one actual subprocess, including failed attempts later recovered
 // by the caller. Keep raw arguments and process output out of both exporters.
 func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, args []string, attrs ...attribute.KeyValue) ([]byte, error) {
@@ -24,6 +41,9 @@ func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, ar
 	ctx, span := telemetry.Start(ctx, "yt-dlp."+stage, trace.WithAttributes(attrs...))
 	defer telemetry.EndSpan(span)
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	if stage == "captions" && !ref.IsX() && span.IsRecording() {
+		span.SetAttributes(attribute.String("tldw.caption.player_client", captionPlayerClient(output)))
+	}
 	if err != nil && span.IsRecording() {
 		detail := failureDiagnostic(err, output)
 		reason := commandDiagnostic(ctx, stage, detail)
