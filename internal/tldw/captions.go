@@ -11,6 +11,16 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// EmptyCaptionResponseError marks a retryable download that yielded no bytes.
+// Preserve the subprocess cause without putting its raw output in the tool result.
+type EmptyCaptionResponseError struct{ Cause error }
+
+func (*EmptyCaptionResponseError) Error() string {
+	return "the caption source returned an empty response"
+}
+func (*EmptyCaptionResponseError) Is(target error) bool { return target == ErrDownloadFailed }
+func (e *EmptyCaptionResponseError) Unwrap() error      { return e.Cause }
+
 // Only a completed caption lookup may offer paid fallback. A failed metadata
 // refresh, canceled wait or rate limit never produces this outcome.
 type paidFallbackError struct{ cause error }
@@ -79,6 +89,9 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 	}
 	if terminalTranscriptError(err) {
 		return nil, err
+	}
+	if _, ok := errors.AsType[*EmptyCaptionResponseError](err); ok {
+		return nil, fmt.Errorf("caption download failed after two attempts: %w. Try again later", err)
 	}
 	if err != nil || transcript == nil {
 		if err == nil {

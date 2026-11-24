@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -19,6 +21,76 @@ import (
 	"github.com/rtzll/tldw/internal/telemetry"
 	"github.com/rtzll/tldw/internal/tldw"
 )
+
+func TestEmptyCaptionResponseRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		emptyDownloads int
+	}{{"recovers", 1}, {"exhausted", 2}} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			synctest.Test(t, func(t *testing.T) {
+				recorder := tracetest.NewSpanRecorder()
+				provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+				ctx, root := provider.Tracer("test").Start(t.Context(), "request")
+				defer root.End()
+				ref, _ := tldw.ParseVideoRef("v9gt7u_7nWQ")
+				disk := store.NewFile(dir)
+				err := disk.SaveMetadata(ref.CacheKey(), &tldw.VideoMetadata{
+					Channel: "fixture", HasCaptions: true, CaptionLanguages: []string{"en-orig"},
+					CaptionTracks: []tldw.CaptionTrack{{Language: "en-orig", Automatic: true, Direct: true}},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				cause := errors.New("WARNING: private diagnostic\nERROR: Did not get any data blocks\nWARNING: Skipping embedding en-orig subtitle because the file is missing")
+				video := New(dir, dir, false, true)
+				calls := 0
+				video.executor = commandRunnerFunc(func(_ context.Context, _ string, args ...string) ([]byte, error) {
+					calls++
+					if !slices.Contains(args, "--write-auto-subs") {
+						t.Fatalf("unexpected download: %v", args)
+					}
+					if calls <= tc.emptyDownloads {
+						return nil, cause
+					}
+					path := args[slices.Index(args, "-o")+1] + ".en-orig.srt"
+					return nil, os.WriteFile(path, []byte("1\n00:00:00,000 --> 00:00:01,000\nRecovered caption\n"), 0600)
+				})
+				engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: disk, AI: unusedDependencies{}, Prompts: unusedDependencies{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				start := time.Now()
+				got, err := engine.Transcript(ctx, ref, tldw.CaptionsThenPaid)
+				if calls != 2 || time.Since(start) != time.Second {
+					t.Fatalf("attempts=%d elapsed=%v", calls, time.Since(start))
+				}
+				if tc.emptyDownloads == 1 {
+					if err != nil || got == nil || got.PlainText() != "Recovered caption" {
+						t.Fatalf("recovered transcript=%+v err=%v", got, err)
+					}
+				} else if !errors.Is(err, cause) || !errors.Is(err, tldw.ErrDownloadFailed) || tldw.CanOfferPaidTranscription(err) ||
+					!strings.Contains(err.Error(), "after two attempts") || !strings.Contains(err.Error(), "Try again later") || strings.Contains(err.Error(), "private diagnostic") {
+					t.Fatalf("unexpected terminal error: %v", err)
+				}
+				var emptySpans int
+				for _, span := range recorder.Ended() {
+					if span.Name() == "yt-dlp.captions" {
+						for _, kv := range span.Attributes() {
+							if kv.Key == "error.type" && kv.Value.AsString() == "empty_caption_response" {
+								emptySpans++
+							}
+						}
+					}
+				}
+				if emptySpans != tc.emptyDownloads {
+					t.Fatalf("empty download spans=%d, want %d", emptySpans, tc.emptyDownloads)
+				}
+			})
+		})
+	}
+}
 
 func TestDownloadTraceKeepsStatusAndExcludesCommandPayload(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")

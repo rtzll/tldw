@@ -26,7 +26,7 @@ func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, ar
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
 	if err != nil && span.IsRecording() {
 		detail := failureDiagnostic(err, output)
-		reason := commandDiagnostic(ctx, detail)
+		reason := commandDiagnostic(ctx, stage, detail)
 		span.SetAttributes(attribute.String("error.type", reason))
 		if match := httpStatus.FindStringSubmatch(detail); match != nil {
 			status, _ := strconv.Atoi(match[1])
@@ -59,11 +59,18 @@ func failureDiagnostic(err error, output []byte) string {
 	return detail
 }
 
-func commandDiagnostic(ctx context.Context, detail string) string {
+func emptyCaptionDiagnostic(detail string) bool {
+	return strings.EqualFold(strings.TrimSpace(detail), "Did not get any data blocks")
+}
+
+func commandDiagnostic(ctx context.Context, stage, detail string) string {
 	if err := ctx.Err(); errors.Is(err, context.Canceled) {
 		return "canceled"
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		return "deadline_exceeded"
+	}
+	if stage == "captions" && emptyCaptionDiagnostic(detail) {
+		return "empty_caption_response"
 	}
 	lower := strings.ToLower(detail)
 	for _, signature := range []struct{ match, reason string }{

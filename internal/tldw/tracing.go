@@ -19,6 +19,7 @@ func EndOperation(span trace.Span, err error) {
 // contain signed URLs or entire provider responses and must not be exported.
 func RecordOperationError(span trace.Span, err error) {
 	if err != nil {
+		_, emptyCaption := errors.AsType[*EmptyCaptionResponseError](err)
 		kind := "operation_failed"
 		switch {
 		case errors.Is(err, context.Canceled):
@@ -31,6 +32,8 @@ func RecordOperationError(span trace.Span, err error) {
 			kind = "timestamps_unavailable"
 		case errors.Is(err, ErrCaptionsUnavailable):
 			kind = "captions_unavailable"
+		case emptyCaption:
+			kind = "empty_caption_response"
 		case errors.Is(err, ErrDownloadFailed):
 			kind = "download_failed"
 		case errors.Is(err, fs.ErrPermission):

@@ -52,6 +52,9 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 		return path, nil
 	}
 	if runErr != nil {
+		if emptyCaptionDiagnostic(failureDiagnostic(runErr, output)) {
+			return "", &tldw.EmptyCaptionResponseError{Cause: runErr}
+		}
 		return "", captionDownloadError(runErr)
 	}
 	if os.IsNotExist(fileErr) {

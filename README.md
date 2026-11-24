@@ -104,6 +104,7 @@ jq -Rc --arg id "$id" 'fromjson? | select(.trace_id == $id)' "$log"
 | --- | --- |
 | An HTTP arrival and response, with no `tools/call` span | The request reached the listener. Check the HTTP status, route, and any linked MCP trace. Discovery and initialization also stop here. |
 | `yt-dlp.captions` ends with `http.response.status_code = 429` | This subprocess observed the rate limit. Its parent `youtube.fetch` records the attempt and cooldown. |
+| `yt-dlp.captions` ends with `error.type = empty_caption_response` | yt-dlp received no caption bytes. A first download failure gets one retry in the same tool call. |
 | `youtube.read` has a `cooldown.deferred` event | The remaining cooldown exceeded this request’s wait budget. Follow `links[].trace_id` and `span_id` to the fetch that established the deadline. |
 | A local `span.start` has no matching `span.end` | That stage started. It may still be running, or the process or log may have been interrupted. |
 
