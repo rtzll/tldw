@@ -15,7 +15,6 @@ import (
 )
 
 // downloadCaptions requests exactly one language and one caption source.
-// Rebuilding arguments prevents fallback from modifying the conversion flag.
 func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, track directTrack) (string, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
@@ -29,11 +28,6 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	if !ref.IsX() {
 		// Space out YouTube subtitle requests to reduce rate limiting.
 		args = append(args, "--sleep-subtitles", "5")
-		if trace.SpanFromContext(ctx).IsRecording() {
-			// The video stage runs after track selection and before the subtitle GET.
-			// Traverse the one requested track; language keys may contain hyphens.
-			args = append(args, "--print", "video:"+captionClientMarker+"%(requested_subtitles.:.__yt_dlp_client)j", "--no-simulate")
-		}
 	}
 	args = append(args,
 		"--sub-langs", track.Language,
@@ -60,7 +54,7 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 		if emptyCaptionDiagnostic(failureDiagnostic(runErr, output)) {
 			return "", &tldw.EmptyCaptionResponseError{Cause: runErr}
 		}
-		return "", captionDownloadError(runErr)
+		return "", fmt.Errorf("%w: %w", tldw.ErrDownloadFailed, runErr)
 	}
 	if os.IsNotExist(fileErr) {
 		return "", &tldw.CaptionTrackUnavailableError{Track: track.provenance()}
@@ -163,11 +157,4 @@ func extractCaptionLanguages(subtitles, autoCaptions map[string]any) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-func captionDownloadError(err error) error {
-	if terminalReadError(err) {
-		return err
-	}
-	return fmt.Errorf("%w: %w", tldw.ErrDownloadFailed, err)
 }

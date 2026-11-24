@@ -46,8 +46,14 @@ func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, ar
 	attrs = append(attrs, attribute.String("tldw.video.id", ref.CacheKey()))
 	ctx, span := telemetry.Start(ctx, "yt-dlp."+stage, trace.WithAttributes(attrs...))
 	defer telemetry.EndSpan(span)
+	tracePlayer := stage == "captions" && !ref.IsX() && span.IsRecording()
+	if tracePlayer {
+		// Print the selected client before download so failures also report it.
+		// Traverse the one requested track because language keys can contain hyphens.
+		args = append([]string{"--print", "video:" + captionClientMarker + "%(requested_subtitles.:.__yt_dlp_client)j", "--no-simulate"}, args...)
+	}
 	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
-	if stage == "captions" && !ref.IsX() && span.IsRecording() {
+	if tracePlayer {
 		span.SetAttributes(attribute.String("tldw.caption.player_client", captionPlayerClient(output)))
 	}
 	if err != nil && span.IsRecording() {

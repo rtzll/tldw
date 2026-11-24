@@ -30,12 +30,13 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 		input          string
 		emptyDownloads int
 		wantStarts     []time.Duration
+		wantClients    []string
 	}{
-		{"first succeeds", youtubeID, 0, []time.Duration{0}},
-		{"second recovers", youtubeID, 1, []time.Duration{0, time.Second}},
-		{"third recovers", youtubeID, 2, []time.Duration{0, time.Second, 11 * time.Second}},
-		{"three empty responses", youtubeID, 3, []time.Duration{0, time.Second, 11 * time.Second}},
-		{"X stops after two", "https://x.com/example/status/123", 2, []time.Duration{0, time.Second}},
+		{"first succeeds", youtubeID, 0, []time.Duration{0}, []string{"tv_samsung"}},
+		{"same player recovers", youtubeID, 1, []time.Duration{0, time.Second}, []string{"web", "web"}},
+		{"third recovers", youtubeID, 2, []time.Duration{0, time.Second, 11 * time.Second}, []string{"unknown", "android", "tv_samsung"}},
+		{"three empty responses", youtubeID, 3, []time.Duration{0, time.Second, 11 * time.Second}, []string{"web", "web", "web"}},
+		{"X stops after two", "https://x.com/example/status/123", 2, []time.Duration{0, time.Second}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -66,18 +67,23 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 						t.Fatalf("unexpected download: %v", args)
 					}
 					printAt := slices.Index(args, "--print")
+					var output []byte
 					if ref.IsX() {
 						if printAt >= 0 {
 							t.Fatal("YouTube player lookup requested for X")
 						}
 					} else if printAt < 0 || args[printAt+1] != "video:tldw.caption.player_client=%(requested_subtitles.:.__yt_dlp_client)j" || !slices.Contains(args, "--no-simulate") {
 						t.Fatalf("missing selected client or download disabled: %v", args)
+					} else if len(starts) > len(tc.wantClients) {
+						t.Fatalf("unexpected extra download %d", len(starts))
+					} else if client := tc.wantClients[len(starts)-1]; client != "unknown" {
+						output = fmt.Appendf(nil, "tldw.caption.player_client=[%q]\n", client)
 					}
 					if len(starts) <= tc.emptyDownloads {
-						return []byte("tldw.caption.player_client=[\"web\"]\n"), cause
+						return output, cause
 					}
 					path := args[slices.Index(args, "-o")+1] + ".en-orig.srt"
-					return []byte("tldw.caption.player_client=[\"android\"]\n"), os.WriteFile(path, []byte("1\n00:00:00,000 --> 00:00:01,000\nRecovered caption\n"), 0600)
+					return output, os.WriteFile(path, []byte("1\n00:00:00,000 --> 00:00:01,000\nRecovered caption\n"), 0600)
 				})
 				engine, err := tldw.NewEngine(tldw.Config{}, tldw.Dependencies{Video: video, Store: disk, AI: unusedDependencies{}, Prompts: unusedDependencies{}})
 				if err != nil {
@@ -112,15 +118,8 @@ func TestEmptyCaptionResponseRetry(t *testing.T) {
 				if emptySpans != tc.emptyDownloads {
 					t.Fatalf("empty download spans=%d, want %d", emptySpans, tc.emptyDownloads)
 				}
-				var wantClients []string
-				if !ref.IsX() {
-					wantClients = slices.Repeat([]string{"web"}, tc.emptyDownloads)
-					if len(starts) > tc.emptyDownloads {
-						wantClients = append(wantClients, "android")
-					}
-				}
-				if !slices.Equal(clients, wantClients) {
-					t.Fatalf("clients=%v, want %v", clients, wantClients)
+				if !slices.Equal(clients, tc.wantClients) {
+					t.Fatalf("clients=%v, want %v", clients, tc.wantClients)
 				}
 			})
 		})
