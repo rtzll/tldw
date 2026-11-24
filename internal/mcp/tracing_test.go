@@ -8,15 +8,93 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rtzll/tldw/internal/telemetry"
+	"github.com/rtzll/tldw/internal/tldw"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+type overlappingCalls struct {
+	applicationStub
+	arrivals atomic.Int32
+	release  chan struct{}
+}
+
+func (a *overlappingCalls) Transcript(ctx context.Context, ref tldw.ContentRef, _ tldw.TranscriptRequest) (*tldw.Transcript, error) {
+	if a.arrivals.Add(1) == 3 {
+		close(a.release)
+	}
+	select {
+	case <-a.release:
+		if ref.CacheKey() == "dQw4w9WgXcQ" {
+			return tldw.NewCaptionTranscript(ref.CacheKey(), tldw.CaptionTrack{Language: "en", Direct: true}, "caption", nil)
+		}
+		return nil, tldw.ErrCaptionsUnavailable
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestParallelHTTPToolCallsKeepIndependentTraces(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	p := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	app := &overlappingCalls{release: make(chan struct{})}
+	endpoint := startCompatibilityHTTPServer(t, NewMCPServer(app, nil, p.Tracer("test")))
+	videoIDs := []string{"dQw4w9WgXcQ", "H15B1j0SAmI", "tAP1eZYEuKA"}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = session.Close() }()
+	results := make([]*mcp.CallToolResult, len(videoIDs))
+	errs := make([]error, len(videoIDs))
+	var group sync.WaitGroup
+	for i, id := range videoIDs {
+		group.Go(func() {
+			results[i], errs[i] = session.CallTool(ctx, &mcp.CallToolParams{
+				Name: "get_youtube_transcript", Arguments: map[string]any{"url": id},
+			})
+		})
+	}
+	group.Wait()
+	toolIDs := map[string]string{}
+	roots := map[string]bool{}
+	for _, s := range recorder.Ended() {
+		id := s.SpanContext().TraceID().String()
+		switch s.Name() {
+		case "POST /mcp":
+			roots[id] = true
+		case "tools/call get_youtube_transcript":
+			for _, kv := range s.Attributes() {
+				if kv.Key == "tldw.video.id" {
+					toolIDs[kv.Value.AsString()] = id
+				}
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for i, video := range videoIDs {
+		id := toolIDs[video]
+		if errs[i] != nil || !roots[id] || seen[id] || results[i].IsError != (i != 0) {
+			t.Fatalf("missing or incorrect result for %s: trace=%s err=%v", video, id, errs[i])
+		}
+		seen[id] = true
+		if i != 0 && !strings.Contains(textContent(t, results[i]), "trace_id="+id) {
+			t.Fatalf("error for %s did not carry its own trace %s", video, id)
+		}
+	}
+}
 
 func TestHTTPAndToolTraceParents(t *testing.T) {
 	const headerTrace = "11111111111111111111111111111111"
