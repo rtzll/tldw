@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/rtzll/tldw/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"time"
 )
 
 // TranscriptRequest describes one acquisition intent. Its zero value only uses captions.

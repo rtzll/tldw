@@ -1,9 +1,10 @@
 package tldw
 
 import (
-	"go.opentelemetry.io/otel/trace"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestSupersededProbeCannotClearCooldown(t *testing.T) {

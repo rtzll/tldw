@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rtzll/tldw/internal/telemetry"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rtzll/tldw/internal/telemetry"
 
 	"github.com/gofrs/flock"
 	"github.com/rtzll/tldw/internal/atomicfile"

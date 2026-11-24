@@ -32,7 +32,9 @@ func TestLocalSpansCorrelateAcrossRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	dec := json.NewDecoder(&out)
-	var a, b, c struct {
+	type record struct {
+		Name    string           `json:"msg"`
+		Event   string           `json:"event"`
 		Trace   string           `json:"trace_id"`
 		ID      string           `json:"span_id"`
 		Parent  string           `json:"parent_span_id"`
@@ -40,12 +42,27 @@ func TestLocalSpansCorrelateAcrossRequests(t *testing.T) {
 		Links   []map[string]any `json:"links"`
 		Events  []map[string]any `json:"events"`
 	}
-	for _, v := range []any{&a, &b, &c} {
-		if err := dec.Decode(v); err != nil {
+	ended := map[string]record{}
+	starts := 0
+	for dec.More() {
+		var r record
+		if err := dec.Decode(&r); err != nil {
 			t.Fatal(err)
 		}
+		switch r.Event {
+		case "span.start":
+			starts++
+		case "span.end":
+			ended[r.Name] = r
+		default:
+			t.Fatalf("unexpected record: %+v", r)
+		}
 	}
-	if a.Parent != b.ID || a.Trace != b.Trace || c.Trace == a.Trace || a.Outcome != "error" || len(c.Links) != 1 || c.Links[0]["span_id"] != a.ID || len(c.Events) != 1 {
+	if starts != 2 || len(ended) != 3 {
+		t.Fatalf("starts=%d ended=%d", starts, len(ended))
+	}
+	a, b, c := ended["attempt"], ended["first"], ended["second"]
+	if a.Event != "span.end" || b.Event != "span.end" || c.Event != "span.end" || a.Parent != b.ID || a.Trace != b.Trace || c.Trace == a.Trace || a.Outcome != "error" || len(c.Links) != 1 || c.Links[0]["span_id"] != a.ID || len(c.Events) != 1 {
 		t.Fatalf("unexpected span relationships: %+v %+v %+v", a, b, c)
 	}
 }

@@ -3,12 +3,13 @@ package ytdlp
 import (
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rtzll/tldw/internal/tldw"
 )

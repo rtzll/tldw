@@ -5,15 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/rtzll/tldw/internal/store"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/rtzll/tldw/internal/store"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rtzll/tldw/internal/telemetry"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -44,8 +45,11 @@ func TestDownloadTraceKeepsStatusAndExcludesCommandPayload(t *testing.T) {
 		Attrs   map[string]any `json:"attributes"`
 		Outcome string         `json:"outcome"`
 	}
-	if err := json.Unmarshal(local.Bytes(), &record); err != nil {
-		t.Fatal(err)
+	decoder := json.NewDecoder(bytes.NewReader(local.Bytes()))
+	for decoder.More() {
+		if err := decoder.Decode(&record); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if record.Outcome != "error" || record.Attrs["http.response.status_code"] != 403.0 || record.Attrs["error.type"] != "subtitle_download_failed" || record.Attrs["tldw.caption.language"] != "en-orig" {
 		t.Fatalf("%s", local.String())

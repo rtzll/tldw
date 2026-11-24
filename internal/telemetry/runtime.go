@@ -27,9 +27,9 @@ func NewProvider(ctx context.Context, version string, local io.Writer) (*sdktrac
 	}
 	if local != nil {
 		logger := slog.New(slog.NewJSONHandler(local, nil)).With("service.version", version)
-		opts = append(opts, sdktrace.WithSyncer(&localExporter{logger}))
+		opts = append(opts, sdktrace.WithSpanProcessor(&localRecorder{logger}))
 	}
-	if os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+	if ExportConfigured() {
 		exporter, err := otlptracehttp.New(ctx)
 		if err != nil {
 			return sdktrace.NewTracerProvider(opts...), err
@@ -48,4 +48,8 @@ func Shutdown(provider *sdktrace.TracerProvider) error {
 
 func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return trace.SpanFromContext(ctx).TracerProvider().Tracer(Scope).Start(ctx, name, opts...)
+}
+
+func ExportConfigured() bool {
+	return os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != ""
 }

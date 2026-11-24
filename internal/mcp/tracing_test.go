@@ -35,8 +35,11 @@ func TestToolErrorCarriesIncomingTraceToTheChatAndLocalLog(t *testing.T) {
 		Parent  string `json:"parent_span_id"`
 		Outcome string `json:"outcome"`
 	}
-	if err := json.Unmarshal(local.Bytes(), &s); err != nil {
-		t.Fatal(err)
+	records := json.NewDecoder(bytes.NewReader(local.Bytes()))
+	for _, outcome := range []string{"", "error"} {
+		if err := records.Decode(&s); err != nil || s.Outcome != outcome {
+			t.Fatalf("record=%+v err=%v", s, err)
+		}
 	}
 	if s.Trace != id || s.Parent != parent || s.Outcome != "error" || strings.Contains(local.String(), "should-never-appear") {
 		t.Fatalf("unexpected trace %s", local.String())

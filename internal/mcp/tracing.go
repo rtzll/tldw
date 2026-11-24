@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -48,33 +48,44 @@ func traceToolCalls(tracer trace.Tracer, transport string) mcp.Middleware {
 			if err != nil {
 				span.SetStatus(codes.Error, "MCP protocol error")
 				span.SetAttributes(attribute.String("error.type", "protocol_error"))
-				if id.IsValid() {
-					var wire *jsonrpc.Error
-					if errors.As(err, &wire) {
-						withID := *wire
-						withID.Message = fmt.Sprintf("%s [trace_id=%s]", err.Error(), id)
-						err = &withID
-					} else {
-						err = fmt.Errorf("%w [trace_id=%s]", err, id)
-					}
-				}
-			} else if tool, ok := result.(*mcp.CallToolResult); ok && tool.IsError {
+				return result, protocolErrorWithTraceID(err, id)
+			}
+			if tool, ok := result.(*mcp.CallToolResult); ok && tool.IsError {
 				span.SetStatus(codes.Error, "MCP tool error")
 				span.SetAttributes(attribute.String("error.type", "tool_error"))
-				if id.IsValid() {
-					suffix := fmt.Sprintf(" [trace_id=%s]", id)
-					if len(tool.Content) == 1 {
-						if text, ok := tool.Content[0].(*mcp.TextContent); ok {
-							copy := *text
-							copy.Text += suffix
-							tool.Content = []mcp.Content{&copy}
-							return result, nil
-						}
-					}
-					tool.Content = append(tool.Content, &mcp.TextContent{Text: suffix})
-				}
+				addToolTraceID(tool, id)
 			}
-			return result, err
+			return result, nil
 		}
 	}
+}
+
+func protocolErrorWithTraceID(err error, id trace.TraceID) error {
+	if !id.IsValid() {
+		return err
+	}
+	// Preserve both the JSON-RPC code and structured data when adding context.
+	var wire *jsonrpc.Error
+	if errors.As(err, &wire) {
+		withID := *wire
+		withID.Message = fmt.Sprintf("%s [trace_id=%s]", err.Error(), id)
+		return &withID
+	}
+	return fmt.Errorf("%w [trace_id=%s]", err, id)
+}
+
+func addToolTraceID(tool *mcp.CallToolResult, id trace.TraceID) {
+	if !id.IsValid() {
+		return
+	}
+	suffix := fmt.Sprintf("[trace_id=%s]", id)
+	if len(tool.Content) == 1 {
+		if text, ok := tool.Content[0].(*mcp.TextContent); ok {
+			annotated := *text
+			annotated.Text += " " + suffix
+			tool.Content = []mcp.Content{&annotated}
+			return
+		}
+	}
+	tool.Content = append(tool.Content, &mcp.TextContent{Text: suffix})
 }

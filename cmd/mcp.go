@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"go.opentelemetry.io/otel/trace"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/adrg/xdg"
 	"github.com/spf13/cobra"
@@ -68,7 +69,7 @@ Transport options:
 		if path == "" && config.MCPLogEnabled {
 			path = filepath.Join(config.CacheDir, "mcp.log")
 		}
-		return withTracing(cmd, path, func(tracer trace.Tracer, output io.Writer) error {
+		return withTracing(cmd.Context(), cmd.ErrOrStderr(), path, func(tracer trace.Tracer, output io.Writer) error {
 			app, err := buildEngine(config, nil)
 			if err != nil {
 				return fmt.Errorf("building application: %w", err)

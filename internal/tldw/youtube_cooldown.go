@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rtzll/tldw/internal/telemetry"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"math"
 	"math/rand/v2"
 	"sync"
 	"time"
+
+	"github.com/rtzll/tldw/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // YouTubeRateLimitError carries the next suggested wait and preserves the

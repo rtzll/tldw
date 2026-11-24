@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
 	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rtzll/tldw/internal/tldw"
@@ -174,12 +175,10 @@ func mcpTextResult(text string) *mcp.CallToolResult {
 // handleGetMetadata implements the get_youtube_metadata tool
 func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetMetadataInput) (*mcp.CallToolResult, mcpMetadataOutput, error) {
 	var zero mcpMetadataOutput
-	url := input.URL
-	parsed, err := tldw.ParseVideoRef(url)
+	parsed, err := tldw.ParseVideoRef(input.URL)
 	if err != nil {
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
-	url = parsed.URL()
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.video.id", parsed.CacheKey()))
 
 	// Get video metadata
@@ -236,12 +235,10 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 // handleGetTranscript implements the get_youtube_transcript tool (free captions only)
 func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetTranscriptInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
-	url := input.URL
-	parsed, err := tldw.ParseVideoRef(url)
+	parsed, err := tldw.ParseVideoRef(input.URL)
 	if err != nil {
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
-	url = parsed.URL()
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.video.id", parsed.CacheKey()))
 	includeTimestamps := input.IncludeTimestamps
 
@@ -267,7 +264,7 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 	}
 
 	output := mcpTranscriptOutput{
-		URL:               url,
+		URL:               parsed.URL(),
 		Transcript:        transcript,
 		Source:            string(tldw.TranscriptSourceCaptions),
 		IncludeTimestamps: includeTimestamps,
@@ -279,12 +276,10 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 // handlePaidTranscription implements the transcribe_video_paid tool (paid OpenAI transcription)
 func (s *MCPServer) handlePaidTranscription(ctx context.Context, _ *mcp.CallToolRequest, input mcpPaidTranscriptionInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
 	var zero mcpTranscriptOutput
-	url := input.URL
-	parsed, err := tldw.ParseVideoRef(url)
+	parsed, err := tldw.ParseVideoRef(input.URL)
 	if err != nil {
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
 	}
-	url = parsed.URL()
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("tldw.video.id", parsed.CacheKey()))
 	if input.IncludeTimestamps {
 		err := fmt.Errorf("paid transcription returns plain text without timestamps")
@@ -301,7 +296,7 @@ func (s *MCPServer) handlePaidTranscription(ctx context.Context, _ *mcp.CallTool
 	}
 
 	output := mcpTranscriptOutput{
-		URL:               url,
+		URL:               parsed.URL(),
 		Transcript:        transcript,
 		Source:            string(tldw.TranscriptSourcePaidTranscription),
 		IncludeTimestamps: false,

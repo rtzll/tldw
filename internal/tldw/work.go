@@ -2,8 +2,9 @@ package tldw
 
 import (
 	"context"
-	"github.com/rtzll/tldw/internal/telemetry"
 	"sync"
+
+	"github.com/rtzll/tldw/internal/telemetry"
 )
 
 // workGates serialize cache acquisition for one video while allowing unrelated

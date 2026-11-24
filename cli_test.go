@@ -37,7 +37,7 @@ func cliCommand(t *testing.T, dir string, args ...string) *exec.Cmd {
 	c := exec.CommandContext(ctx, exe, args...)
 	c.Dir = dir
 	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "TLDW_") && !strings.HasPrefix(kv, "OPENAI_") {
+		if !strings.HasPrefix(kv, "TLDW_") && !strings.HasPrefix(kv, "OPENAI_") && !strings.HasPrefix(kv, "OTEL_") {
 			c.Env = append(c.Env, kv)
 		}
 	}
