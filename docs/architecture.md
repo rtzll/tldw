@@ -90,6 +90,10 @@ provider through `context.Context`. Pass the derived context to child work,
 including callbacks admitted by the YouTube cooldown. Each admitted fetch
 records its own attempt. The cooldown keeps only the span context that
 established its current deadline and links waiting requests back to that fetch.
+A probe starts with a failed outcome until the fetch returns. A rate limit
+updates the cooldown window. Only a successful probe from the current generation
+can reopen access. Cancellation, failure, and panic release the probe and wake
+waiting requests so another caller can try.
 [Cooldown implementation](../internal/tldw/youtube_cooldown.go)
 
 HTTP records arrival before routing or protocol validation and returns its

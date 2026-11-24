@@ -127,7 +127,8 @@ type PlaylistSummaryResult struct {
 // CLI, MCP, summaries, and playlists.
 func (app *Engine) Transcript(ctx context.Context, ref ContentRef, request TranscriptRequest) (result *Transcript, err error) {
 	ctx, span := telemetry.Start(ctx, "transcript.acquire", trace.WithAttributes(attribute.String("tldw.video.id", ref.CacheKey())))
-	defer func() { EndOperation(span, err) }()
+	defer telemetry.EndSpan(span)
+	defer func() { RecordOperationError(span, err) }()
 	if err := validateTranscriptRequest(request); err != nil {
 		return nil, err
 	}

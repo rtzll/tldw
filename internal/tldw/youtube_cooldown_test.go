@@ -8,7 +8,54 @@ import (
 	"time"
 
 	"github.com/rtzll/tldw/internal/tldw"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestPanickedRecoveryProbeReleasesWaiter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var cooldown tldw.YouTubeCooldown
+		startCooldown(t, &cooldown, 5*time.Second)
+		time.Sleep(5 * time.Second)
+		recorder := tracetest.NewSpanRecorder()
+		provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+		ctx, root := provider.Tracer("test").Start(t.Context(), "request")
+		defer root.End()
+		release := make(chan struct{})
+		panicked := make(chan any, 1)
+		go func() {
+			defer func() { panicked <- recover() }()
+			_ = cooldown.Read(ctx, func(context.Context) error {
+				<-release
+				panic("private payload")
+			})
+		}()
+		synctest.Wait()
+		done := make(chan error, 1)
+		go func() {
+			done <- cooldown.Read(t.Context(), func(context.Context) error { return nil })
+		}()
+		synctest.Wait()
+		start := time.Now()
+		close(release)
+		if cause := <-panicked; cause != "private payload" {
+			t.Fatalf("unexpected panic: %v", cause)
+		}
+		if err := <-done; err != nil || time.Since(start) != 0 {
+			t.Fatalf("waiting caller after panic: err=%v waited=%s", err, time.Since(start))
+		}
+		ended := recorder.Ended()
+		if len(ended) != 2 {
+			t.Fatalf("expected the fetch and read to end: %v", ended)
+		}
+		for _, s := range ended {
+			if s.Status().Code != codes.Error || s.Status().Description != "panic" {
+				t.Fatalf("%s ended with %v", s.Name(), s.Status())
+			}
+		}
+	})
+}
 
 func TestYouTubeBackoffAndRecovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

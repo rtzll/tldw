@@ -23,7 +23,8 @@ var (
 
 func (yt *Client) processSrtTranscript(ctx context.Context, filePath string, track tldw.CaptionTrack) (result *tldw.Transcript, err error) {
 	_, span := telemetry.Start(ctx, "captions.parse")
-	defer func() { tldw.EndOperation(span, err) }()
+	defer telemetry.EndSpan(span)
+	defer func() { tldw.RecordOperationError(span, err) }()
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Processing SRT transcript: %s\n", filePath)
 	}

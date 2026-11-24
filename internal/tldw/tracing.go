@@ -10,9 +10,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// EndOperation records a stable failure category. Wrapped adapter errors can
-// contain signed URLs or entire provider responses and must not be exported.
 func EndOperation(span trace.Span, err error) {
+	RecordOperationError(span, err)
+	span.End()
+}
+
+// RecordOperationError records a stable failure category. Wrapped adapter errors can
+// contain signed URLs or entire provider responses and must not be exported.
+func RecordOperationError(span trace.Span, err error) {
 	if err != nil {
 		kind := "operation_failed"
 		switch {
@@ -36,5 +41,4 @@ func EndOperation(span trace.Span, err error) {
 		span.SetStatus(codes.Error, kind)
 		span.SetAttributes(attribute.String("error.type", kind))
 	}
-	span.End()
 }

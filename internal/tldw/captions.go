@@ -47,8 +47,9 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 
 	attempt := func(number int, m *VideoMetadata) (*Transcript, error) {
 		attemptCtx, span := telemetry.Start(ctx, "captions.acquire", trace.WithAttributes(attribute.Int("tldw.attempt", number)))
+		defer telemetry.EndSpan(span)
 		transcript, err := fetch(attemptCtx, ref, m)
-		EndOperation(span, err)
+		RecordOperationError(span, err)
 		return transcript, err
 	}
 	transcript, err := attempt(1, metadata)
