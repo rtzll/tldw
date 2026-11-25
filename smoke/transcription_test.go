@@ -56,6 +56,7 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 		Arguments: map[string]any{
 			"url":                videoURL,
 			"include_timestamps": true,
+			"include_metadata":   true,
 		},
 	})
 	if err != nil {
@@ -65,7 +66,18 @@ func TestTranscriptionThroughCLIAndMCP(t *testing.T) {
 		t.Fatalf("get_youtube_transcript returned an error: %s", textContent(result))
 	}
 
-	mcpTranscript := strings.TrimSpace(textContent(result))
+	if len(result.Content) != 2 {
+		t.Fatalf("expected transcript and metadata from one call, got %d content blocks", len(result.Content))
+	}
+	captions, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatal("missing transcript text")
+	}
+	details, ok := result.Content[1].(*mcp.TextContent)
+	if !ok || !strings.Contains(details.Text, "Title: ") {
+		t.Fatal("missing video details")
+	}
+	mcpTranscript := strings.TrimSpace(captions.Text)
 	// Fresh downloads can have different cue boundaries. Compare the exact
 	// rendering of the same captions and prove the CLI can read them offline.
 	cached := transcribeCLI(append(mcpEnv, "PATH="+t.TempDir()))

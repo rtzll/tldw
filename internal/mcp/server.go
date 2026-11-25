@@ -48,6 +48,7 @@ type mcpGetMetadataInput struct {
 type mcpGetTranscriptInput struct {
 	URL               string `json:"url" jsonschema:"YouTube video URL or single-video X post URL"`
 	IncludeTimestamps bool   `json:"include_timestamps,omitempty" jsonschema:"When true, return transcript lines with timestamps if caption timing data is available."`
+	IncludeMetadata   bool   `json:"include_metadata,omitempty" jsonschema:"Include video details such as the title, channel, and chapters in the same call."`
 }
 
 type mcpPaidTranscriptionInput struct {
@@ -80,6 +81,11 @@ type mcpTranscriptOutput struct {
 	Transcript        string `json:"transcript" jsonschema:"Transcript text"`
 	Source            string `json:"source" jsonschema:"Transcript source (captions for existing captions or paid_transcription for paid OpenAI transcription)"`
 	IncludeTimestamps bool   `json:"include_timestamps" jsonschema:"Whether timestamps were requested in the transcript text"`
+}
+
+type mcpCaptionOutput struct {
+	mcpTranscriptOutput
+	Metadata *mcpMetadataOutput `json:"metadata,omitempty" jsonschema:"Video details when requested and available"`
 }
 
 // NewMCPServer creates a new MCP server instance
@@ -191,6 +197,11 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 		return nil, zero, fmt.Errorf("metadata error: %w", err)
 	}
 
+	details, output := formatMetadata(metadata)
+	return mcpTextResult(details), output, nil
+}
+
+func formatMetadata(metadata *tldw.VideoMetadata) (string, mcpMetadataOutput) {
 	output := mcpMetadataOutput{
 		Title:            metadata.Title,
 		Channel:          metadata.Channel,
@@ -233,12 +244,12 @@ func (s *MCPServer) handleGetMetadata(ctx context.Context, _ *mcp.CallToolReques
 		fmt.Fprintf(&buf, "Chapter (%.0f–%.0f): %s\n", ch.StartTime, ch.EndTime, ch.Title)
 	}
 
-	return mcpTextResult(buf.String()), output, nil
+	return buf.String(), output
 }
 
 // handleGetTranscript implements the get_youtube_transcript tool (free captions only)
-func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetTranscriptInput) (*mcp.CallToolResult, mcpTranscriptOutput, error) {
-	var zero mcpTranscriptOutput
+func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequest, input mcpGetTranscriptInput) (*mcp.CallToolResult, mcpCaptionOutput, error) {
+	var zero mcpCaptionOutput
 	parsed, err := tldw.ParseVideoRef(input.URL)
 	if err != nil {
 		return nil, zero, fmt.Errorf("invalid video URL: %w", err)
@@ -267,14 +278,29 @@ func (s *MCPServer) handleGetTranscript(ctx context.Context, _ *mcp.CallToolRequ
 		return nil, zero, err
 	}
 
-	output := mcpTranscriptOutput{
+	output := mcpCaptionOutput{mcpTranscriptOutput: mcpTranscriptOutput{
 		URL:               parsed.URL(),
 		Transcript:        transcript,
 		Source:            string(tldw.TranscriptSourceCaptions),
 		IncludeTimestamps: includeTimestamps,
-	}
+	}}
 
-	return mcpTextResult(transcript), output, nil
+	result := mcpTextResult(transcript)
+	if input.IncludeMetadata {
+		metadata, err := s.engine.MetadataFor(ctx, parsed)
+		if ctx.Err() != nil {
+			return nil, zero, ctx.Err()
+		}
+		details := "Video details unavailable."
+		if err == nil && metadata != nil {
+			text, fields := formatMetadata(metadata)
+			details, output.Metadata = text, &fields
+		} else {
+			trace.SpanFromContext(ctx).AddEvent("metadata.unavailable")
+		}
+		result.Content = append(result.Content, &mcp.TextContent{Text: details})
+	}
+	return result, output, nil
 }
 
 // handlePaidTranscription implements the transcribe_video_paid tool (paid OpenAI transcription)

@@ -22,8 +22,10 @@ export OPENAI_API_KEY="your-api-key-here"  # optional: for AI summaries & paid t
 - **`get_youtube_transcript`**: Free video captions transcript
 - **`transcribe_video_paid`**: Paid OpenAI transcription
 
-`get_youtube_transcript` accepts `include_timestamps=true` to return caption
-lines with timestamps when timing data is available.
+For a transcript or brief, call `get_youtube_transcript` directly. Set
+`include_metadata=true` when you also need the title, channel, chapters, or
+other video details. The same response includes the transcript and available
+metadata. Set `include_timestamps=true` for timestamped caption lines.
 
 ### Claude Desktop Setup
 

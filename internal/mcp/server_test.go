@@ -84,6 +84,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			inputFields: map[string]string{
 				"url":                "YouTube video URL or single-video X post URL",
 				"include_timestamps": "When true, return transcript lines with timestamps if caption timing data is available.",
+				"include_metadata":   "Include video details such as the title, channel, and chapters in the same call.",
 			},
 			requiredInput: []string{"url"},
 			outputFields: []string{
@@ -91,6 +92,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 				"transcript",
 				"source",
 				"include_timestamps",
+				"metadata",
 			},
 			readOnly: true,
 		},
@@ -285,8 +287,44 @@ func TestMCPGetTranscriptReturnsTextAndStructuredContent(t *testing.T) {
 	if !output.IncludeTimestamps {
 		t.Error("structured include_timestamps = false, want true")
 	}
-	if app.transcriptCalls != 1 || app.lastRequest != tldw.TimestampedCaptions {
+	if app.transcriptCalls != 1 || app.metadataCalls != 0 || app.lastRequest != tldw.TimestampedCaptions {
 		t.Fatalf("Transcript() calls = %d, request = %+v", app.transcriptCalls, app.lastRequest)
+	}
+}
+
+func TestMCPTranscriptWithMetadata(t *testing.T) {
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprint(available), func(t *testing.T) {
+			captions, err := tldw.NewCaptionTranscript("dQw4w9WgXcQ", tldw.CaptionTrack{Language: "en", Direct: true}, "Hello world", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			app := &applicationStub{transcript: captions}
+			if available {
+				app.metadata = &tldw.VideoMetadata{Title: "Test Video", Channel: "Test Channel"}
+			} else {
+				app.metadataErr = errors.New("lookup failed")
+			}
+			ctx, client := connectTestMCPClient(t, NewMCPServer(app, "test-build", nil, nil))
+			result, err := client.CallTool(ctx, &mcp.CallToolParams{
+				Name: "get_youtube_transcript", Arguments: map[string]any{"url": "dQw4w9WgXcQ", "include_metadata": true},
+			})
+			if err != nil || result.IsError || app.transcriptCalls != 1 || app.metadataCalls != 1 {
+				t.Fatalf("combined call: captions=%d metadata=%d err=%v result=%+v", app.transcriptCalls, app.metadataCalls, err, result)
+			}
+			output := structuredContent[mcpCaptionOutput](t, result)
+			if output.Transcript != "Hello world" || len(result.Content) != 2 || result.Content[0].(*mcp.TextContent).Text != output.Transcript {
+				t.Fatal("lost transcript in combined response")
+			}
+			details := result.Content[1].(*mcp.TextContent).Text
+			if available {
+				if output.Metadata == nil || output.Metadata.Title != "Test Video" || !strings.Contains(details, "Test Channel") {
+					t.Fatal("missing requested video details")
+				}
+			} else if output.Metadata != nil || details != "Video details unavailable." {
+				t.Fatalf("unexpected partial result: %q", details)
+			}
+		})
 	}
 }
 
