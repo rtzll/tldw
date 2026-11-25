@@ -36,8 +36,8 @@ type MCPApplication interface {
 const (
 	mcpMethodCallTool = "tools/call"
 
-	mcpGetMetadataDescription       = "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid OpenAI transcription."
-	mcpGetTranscriptDescription     = "Get existing captions for a YouTube video or single-video X post (FREE)."
+	mcpGetMetadataDescription       = "Get video details such as title, channel, duration, and caption availability for a YouTube video or single-video X post."
+	mcpGetTranscriptDescription     = "Get existing captions for a YouTube video or single-video X post (FREE). Call this tool directly for a transcript or summary. It checks caption availability automatically."
 	mcpPaidTranscriptionDescription = "Transcribe a YouTube video or single-video X post using OpenAI's gpt-transcribe model (PAID). Requires OPENAI_API_KEY. Use only when captions are unavailable and the user explicitly approves the cost."
 )
 

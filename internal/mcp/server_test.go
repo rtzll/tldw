@@ -64,7 +64,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 		readOnly      bool
 	}{
 		"get_youtube_metadata": {
-			description: "Check metadata and caption availability for a YouTube video or single-video X post. Use get_youtube_transcript for free captions. If captions are unavailable, offer paid OpenAI transcription.",
+			description: "Get video details such as title, channel, duration, and caption availability for a YouTube video or single-video X post.",
 			inputFields: map[string]string{
 				"url": "YouTube video URL or single-video X post URL",
 			},
@@ -80,7 +80,7 @@ func TestMCPToolsDeclareSchemasDescriptionsAndAnnotations(t *testing.T) {
 			readOnly: true,
 		},
 		"get_youtube_transcript": {
-			description: "Get existing captions for a YouTube video or single-video X post (FREE).",
+			description: "Get existing captions for a YouTube video or single-video X post (FREE). Call this tool directly for a transcript or summary. It checks caption availability automatically.",
 			inputFields: map[string]string{
 				"url":                "YouTube video URL or single-video X post URL",
 				"include_timestamps": "When true, return transcript lines with timestamps if caption timing data is available.",
