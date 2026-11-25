@@ -151,7 +151,7 @@ func TestCaptionDownloadRequestsOneExactSource(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{track}})
+			got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{track}}, 1)
 			if err != nil || calls != 1 || got.CaptionTrack() == nil || *got.CaptionTrack() != track || got.Language != "en" {
 				t.Fatalf("got %+v, err %v, calls %d", got, err, calls)
 			}
@@ -165,7 +165,7 @@ func TestCaptionDownloadMissingExactTrackDoesNotBroaden(t *testing.T) {
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, nil })
 	track := tldw.CaptionTrack{Language: "en-orig", Automatic: true, Direct: true}
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{track}})
+	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{track}}, 1)
 	var missing *tldw.CaptionTrackUnavailableError
 	if calls != 1 || !errors.As(err, &missing) || !errors.Is(err, tldw.ErrCaptionsUnavailable) || missing.Track != track {
 		t.Fatalf("calls %d, error %v", calls, err)
@@ -187,7 +187,7 @@ func TestExistingSRTRespectsTrackAndPreservesUnrelatedFiles(t *testing.T) {
 		return nil, nil
 	})
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en-orig", Automatic: true, Direct: true}}})
+	got, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en-orig", Automatic: true, Direct: true}}}, 1)
 	if err != nil || got.PlainText() != "Original text" {
 		t.Fatalf("got %+v, err %v", got, err)
 	}
@@ -208,7 +208,7 @@ func TestManualTrackDoesNotReuseAmbiguousSRT(t *testing.T) {
 	yt := New(data, t.TempDir(), false, true)
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("download failed") })
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
+	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}}, 1)
 	if !errors.Is(err, tldw.ErrDownloadFailed) {
 		t.Fatalf("unexpected reuse: %v", err)
 	}

@@ -1,8 +1,10 @@
 package ytdlp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,7 +17,7 @@ import (
 )
 
 // downloadCaptions requests exactly one language and one caption source.
-func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, track directTrack) (string, error) {
+func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, track directTrack, prepared []byte) (string, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating cache directory: %w", err)
 	}
@@ -34,12 +36,20 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 		"--convert-subs", "srt",
 		"--skip-download",
 		"-o", filepath.Join(yt.cacheDir, ref.CacheKey()),
-		ref.URL(),
 	)
+	var input io.Reader
+	if prepared != nil {
+		// In info-file mode the playlist default can swallow the subtitle HTTP
+		// diagnostic. Abort on this one video so a 429 reaches the cooldown.
+		args = append(args, "--abort-on-error", "--no-clean-info-json", "--load-info-json", "-")
+		input = bytes.NewReader(prepared)
+	} else {
+		args = append(args, ref.URL())
+	}
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Downloading direct captions: %s (automatic=%t)\n", track.Language, track.Automatic)
 	}
-	output, runErr := yt.run(ctx, "captions", ref, args, attribute.String("tldw.caption.language", track.Language), attribute.Bool("tldw.caption.automatic", track.Automatic))
+	output, runErr := yt.run(ctx, "captions", ref, args, input, attribute.String("tldw.caption.language", track.Language), attribute.Bool("tldw.caption.automatic", track.Automatic), attribute.Bool("tldw.caption.reused_metadata", prepared != nil))
 	runErr = classifyReadError(ctx, ref, output, runErr)
 	if terminalReadError(runErr) {
 		return "", runErr
@@ -57,6 +67,10 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 		return "", fmt.Errorf("%w: %w", tldw.ErrDownloadFailed, runErr)
 	}
 	if os.IsNotExist(fileErr) {
+		if prepared != nil {
+			// This subprocess never revisited the video to confirm a missing track.
+			return "", fmt.Errorf("%w: prepared caption download produced no file", tldw.ErrDownloadFailed)
+		}
 		return "", &tldw.CaptionTrackUnavailableError{Track: track.provenance()}
 	}
 	if fileErr != nil {
@@ -65,7 +79,7 @@ func (yt *Client) downloadCaptions(ctx context.Context, ref tldw.ContentRef, tra
 	return "", fmt.Errorf("downloaded captions are not a regular file")
 }
 
-func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
+func (yt *Client) FetchCaptions(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata, attempt int) (*tldw.Transcript, error) {
 	if metadata == nil {
 		return nil, tldw.ErrCaptionsUnavailable
 	}
@@ -85,12 +99,18 @@ func (yt *Client) fetchStructuredTranscript(ctx context.Context, ref tldw.Conten
 			return yt.processSrtTranscript(ctx, path, track.provenance())
 		}
 	}
+	canReuse := attempt == 1 && !ref.IsX()
 	return readVideo(ctx, yt, ref, func(ctx context.Context) (*tldw.Transcript, error) {
-		return yt.fetchCaptionTrack(ctx, ref, track)
+		var prepared []byte
+		if canReuse {
+			prepared = yt.prepared.take(ref.ID(), track)
+			canReuse = false // A cooldown probe must rediscover the track, too.
+		}
+		return yt.fetchCaptionTrack(ctx, ref, track, prepared)
 	})
 }
 
-func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, track directTrack) (*tldw.Transcript, error) {
+func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, track directTrack, prepared []byte) (*tldw.Transcript, error) {
 	if err := os.MkdirAll(yt.cacheDir, 0o755); err != nil {
 		return nil, err
 	}
@@ -105,7 +125,7 @@ func (yt *Client) fetchCaptionTrack(ctx context.Context, ref tldw.ContentRef, tr
 	}()
 	worker := *yt
 	worker.cacheDir, worker.transcriptsDir = workDir, workDir
-	path, err := worker.downloadCaptions(ctx, ref, track)
+	path, err := worker.downloadCaptions(ctx, ref, track, prepared)
 	if err != nil {
 		return nil, err
 	}

@@ -79,7 +79,7 @@ func TestCaptionErrorsPreserveCauseWithShortDeadline(t *testing.T) {
 			ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			_, err := yt.FetchCaptions(ctx, ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
+			_, err := yt.FetchCaptions(ctx, ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}}, 1)
 			var got *process.CommandError
 			if !errors.Is(err, tt.want) || !errors.As(err, &got) || got != commandErr {
 				t.Fatalf("error chain lost: %v", err)
@@ -97,7 +97,7 @@ func TestCaptionDownloadPreservesErrorChain(t *testing.T) {
 	cause := errors.New("network failure")
 	yt.executor = commandRunnerFunc(func(context.Context, string, ...string) ([]byte, error) { calls++; return nil, cause })
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}})
+	_, err := yt.FetchCaptions(context.Background(), ref, &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en", Direct: true}}}, 1)
 	if calls != 1 || !errors.Is(err, cause) || !errors.Is(err, tldw.ErrDownloadFailed) {
 		t.Fatalf("calls=%d error=%v", calls, err)
 	}
@@ -116,7 +116,7 @@ func TestCanceledDownloadDoesNotAcceptPartialFiles(t *testing.T) {
 		return nil, errors.New("process exited")
 	})
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	path, err := yt.downloadCaptions(ctx, ref, directTrack{Language: "en"})
+	path, err := yt.downloadCaptions(ctx, ref, directTrack{Language: "en"}, nil)
 	if !errors.Is(err, context.Canceled) || path != "" {
 		t.Fatalf("accepted canceled partial download: path=%q err=%v", path, err)
 	}

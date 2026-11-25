@@ -57,7 +57,7 @@ func (yt *Client) audio(ctx context.Context, ref tldw.ContentRef) (string, error
 		ref.URL(),
 	)
 
-	output, err := yt.run(ctx, "audio", ref, args)
+	output, err := yt.run(ctx, "audio", ref, args, nil)
 	if err != nil {
 		if yt.verbose {
 			yt.log.Printf("Audio download error: %v\n", err)

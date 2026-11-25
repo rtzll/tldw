@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -34,8 +35,13 @@ func (err *CommandError) Error() string {
 
 func (err *CommandError) Unwrap() error { return err.Err }
 
-func (*CommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (r *CommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return r.RunWithInput(ctx, nil, name, args...)
+}
+
+func (*CommandRunner) RunWithInput(ctx context.Context, input io.Reader, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = input
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

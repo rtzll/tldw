@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -42,7 +43,7 @@ func captionPlayerClient(output []byte) string {
 
 // run traces one actual subprocess, including failed attempts later recovered
 // by the caller. Keep raw arguments and process output out of both exporters.
-func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, args []string, attrs ...attribute.KeyValue) ([]byte, error) {
+func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, args []string, input io.Reader, attrs ...attribute.KeyValue) ([]byte, error) {
 	attrs = append(attrs, attribute.String("tldw.video.id", ref.CacheKey()))
 	ctx, span := telemetry.Start(ctx, "yt-dlp."+stage, trace.WithAttributes(attrs...))
 	defer telemetry.EndSpan(span)
@@ -52,7 +53,7 @@ func (yt *Client) run(ctx context.Context, stage string, ref tldw.ContentRef, ar
 		// Traverse the one requested track because language keys can contain hyphens.
 		args = append([]string{"--print", "video:" + captionClientMarker + "%(requested_subtitles.:.__yt_dlp_client)j", "--no-simulate"}, args...)
 	}
-	output, err := yt.executor.Run(ctx, "yt-dlp", args...)
+	output, err := yt.executor.RunWithInput(ctx, input, "yt-dlp", args...)
 	if tracePlayer {
 		span.SetAttributes(attribute.String("tldw.caption.player_client", captionPlayerClient(output)))
 	}
@@ -92,7 +93,12 @@ func failureDiagnostic(err error, output []byte) string {
 }
 
 func emptyCaptionDiagnostic(detail string) bool {
-	return strings.EqualFold(strings.TrimSpace(detail), "Did not get any data blocks")
+	detail = strings.TrimSpace(detail)
+	// --abort-on-error can wrap the downloader's diagnostic in a subtitle error.
+	if trackError, ok := strings.CutPrefix(detail, "Unable to download video subtitles for "); ok {
+		_, detail, _ = strings.Cut(trackError, ": ERROR: ")
+	}
+	return strings.EqualFold(detail, "Did not get any data blocks")
 }
 
 func commandDiagnostic(ctx context.Context, stage, detail string) string {

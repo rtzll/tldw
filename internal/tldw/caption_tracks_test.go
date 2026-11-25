@@ -19,7 +19,7 @@ type captionTrackVideoStub struct {
 	fetch func(*tldw.VideoMetadata) (*tldw.Transcript, error)
 }
 
-func (stub *captionTrackVideoStub) FetchCaptions(_ context.Context, _ tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
+func (stub *captionTrackVideoStub) FetchCaptions(_ context.Context, _ tldw.ContentRef, metadata *tldw.VideoMetadata, _ int) (*tldw.Transcript, error) {
 	stub.captionCalls++
 	return stub.fetch(metadata)
 }

@@ -157,7 +157,7 @@ func TestDownloadTraceKeepsStatusAndExcludesCommandPayload(t *testing.T) {
 		return []byte("private transcript body\ntldw.caption.player_client=[\"do-not-export\"]\n"), errors.New("WARNING: HTTP Error 503: retrying\nERROR: Unable to download video subtitles: HTTP Error 403: Forbidden https://example.invalid/?token=do-not-export")
 	})
 	ref, _ := tldw.ParseVideoRef("dQw4w9WgXcQ")
-	_, err = client.downloadCaptions(ctx, ref, directTrack{Language: "en-orig", Automatic: true})
+	_, err = client.downloadCaptions(ctx, ref, directTrack{Language: "en-orig", Automatic: true}, nil)
 	if !errors.Is(err, tldw.ErrDownloadFailed) {
 		t.Fatal(err)
 	}

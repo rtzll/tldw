@@ -26,7 +26,7 @@ func (stub *videoStub) FetchMetadata(context.Context, tldw.ContentRef) (*tldw.Vi
 	return stub.metadata, stub.metadataErr
 }
 
-func (stub *videoStub) FetchCaptions(context.Context, tldw.ContentRef, *tldw.VideoMetadata) (*tldw.Transcript, error) {
+func (stub *videoStub) FetchCaptions(context.Context, tldw.ContentRef, *tldw.VideoMetadata, int) (*tldw.Transcript, error) {
 	stub.captionCalls++
 	return stub.captions, stub.captionsErr
 }

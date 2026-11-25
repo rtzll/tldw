@@ -112,7 +112,9 @@ Each completed YouTube `yt-dlp.captions` span includes
 `tldw.caption.player_client`. It identifies which player supplied the selected
 subtitle URL (for example, `tv_samsung` or `web`). A value of `unknown`
 means yt-dlp did not identify a recognized client. Compare this field across
-successful and failed attempts for the same video.
+successful and failed attempts for the same video. A value of `true` for
+`tldw.caption.reused_metadata` means that download used the track from the
+preceding metadata lookup and skipped a second watch-page lookup.
 
 `just tunnel-launchd-logs --tail` follows the tunnel logs and the local MCP
 trace file when present. If there is no HTTP arrival around a failure, check
@@ -213,6 +215,9 @@ Caption downloads prefer original English automatic captions, then manual
 English captions, then a direct track in another language. Each download
 requests one track. tldw uses the installed yt-dlp’s player selection for both
 YouTube metadata and captions. Automatically translated captions are excluded.
+The first download can reuse a track discovered in the same process within the
+past minute. Retries look up the video again. The five-second delay before a
+YouTube subtitle request applies to both paths.
 
 When YouTube rate-limits a metadata or caption fetch, tldw shares a cooldown
 across those reads in the running process. It honors a `Retry-After` delay

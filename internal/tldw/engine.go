@@ -63,7 +63,8 @@ var ErrStoreStale = errors.New("store entry is stale")
 // Production uses yt-dlp; tests can provide a local adapter.
 type VideoAdapter interface {
 	FetchMetadata(ctx context.Context, ref ContentRef) (*VideoMetadata, error)
-	FetchCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata) (*Transcript, error)
+	// Only the first attempt may reuse download information from discovery.
+	FetchCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, attempt int) (*Transcript, error)
 	DownloadAudio(ctx context.Context, ref ContentRef) (string, error)
 	FetchPlaylist(ctx context.Context, ref ContentRef) (*PlaylistInfo, error)
 }

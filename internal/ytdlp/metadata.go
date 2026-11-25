@@ -27,7 +27,7 @@ func (yt *Client) metadata(ctx context.Context, ref tldw.ContentRef) (*tldw.Vide
 	args = append(args, ref.URL())
 
 	// Run the command
-	output, err := yt.run(ctx, "metadata", ref, args)
+	output, err := yt.run(ctx, "metadata", ref, args, nil)
 	if err != nil {
 		if yt.verbose {
 			yt.log.Printf("Metadata extraction error: %v\n", err)
@@ -42,7 +42,9 @@ func (yt *Client) metadata(ctx context.Context, ref tldw.ContentRef) (*tldw.Vide
 	// Parse JSON once to populate metadata and caption availability
 	var raw struct {
 		tldw.VideoMetadata
+		ID                string             `json:"id"`
 		Type              string             `json:"_type"`
+		LiveStatus        string             `json:"live_status"`
 		DisplayID         string             `json:"display_id"`
 		Formats           []struct{}         `json:"formats"`
 		Uploader          string             `json:"uploader"`
@@ -78,6 +80,20 @@ func (yt *Client) metadata(ctx context.Context, ref tldw.ContentRef) (*tldw.Vide
 	metadata.Channel = bestMetadataChannel(metadata.Channel, raw.Uploader)
 	metadata.ChannelURL = bestMetadataChannelURL(metadata.ChannelURL, raw.UploaderURL)
 	metadata.PublishedAt = bestMetadataPublishedAt(metadata.PublishedAt, raw.UploadDate)
+
+	if !ref.IsX() {
+		track, ok := selectCaptionTrack(metadata.CaptionTracks, metadata.Language)
+		var info []byte
+		if ok && raw.ID == ref.ID() && (raw.Type == "video" || raw.Type == "") &&
+			(raw.LiveStatus == "not_live" || raw.LiveStatus == "was_live" || raw.LiveStatus == "") {
+			formats := raw.Subtitles[track.Language]
+			if track.Automatic {
+				formats = raw.AutomaticCaptions[track.Language]
+			}
+			info = captionInfoJSON(output, track, formats)
+		}
+		yt.prepared.replace(ref.ID(), track, info)
+	}
 
 	if yt.verbose && !yt.quiet {
 		yt.log.Printf("Metadata extraction completed\n")

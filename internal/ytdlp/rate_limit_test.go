@@ -49,12 +49,12 @@ func TestYouTubeCooldownAcrossProvidersAndCache(t *testing.T) {
 		if _, err := client.FetchMetadata(t.Context(), x); err != nil {
 			t.Fatalf("X metadata during YouTube cooldown: %v", err)
 		}
-		_, err = client.FetchCaptions(t.Context(), x, metadata)
+		_, err = client.FetchCaptions(t.Context(), x, metadata, 1)
 		if !errors.Is(err, tldw.ErrRateLimited) || errors.As(err, &limited) || calls != 3 {
 			t.Fatalf("X captions: calls=%d err=%v", calls, err)
 		}
 		time.Sleep(10 * time.Second)
-		_, err = client.FetchCaptions(t.Context(), youtube, metadata)
+		_, err = client.FetchCaptions(t.Context(), youtube, metadata, 1)
 		if !errors.As(err, &limited) || limited.RetryAfter != 290*time.Second || calls != 3 {
 			t.Fatalf("YouTube captions: calls=%d err=%v", calls, err)
 		}
@@ -63,7 +63,7 @@ func TestYouTubeCooldownAcrossProvidersAndCache(t *testing.T) {
 			t.Fatal(err)
 		}
 		original := &tldw.VideoMetadata{CaptionTracks: []tldw.CaptionTrack{{Language: "en-orig", Direct: true, Automatic: true}}}
-		transcript, err := client.FetchCaptions(t.Context(), youtube, original)
+		transcript, err := client.FetchCaptions(t.Context(), youtube, original, 1)
 		if err != nil || transcript.PlainText() != "Cached" || calls != 3 || time.Since(now) != 10*time.Second {
 			t.Fatalf("cached captions: calls=%d err=%v", calls, err)
 		}

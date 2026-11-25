@@ -3,6 +3,7 @@ package ytdlp
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/rtzll/tldw/internal/process"
@@ -20,8 +21,11 @@ type Client struct {
 	verbose        bool
 	quiet          bool
 	log            tldw.LogSink
-	executor       process.Runner
-	youtube        *tldw.YouTubeCooldown
+	executor       interface {
+		RunWithInput(context.Context, io.Reader, string, ...string) ([]byte, error)
+	}
+	youtube  *tldw.YouTubeCooldown
+	prepared *preparedCaptions
 }
 
 // New creates a yt-dlp client with explicit storage paths.
@@ -34,6 +38,7 @@ func New(transcriptsDir, cacheDir string, verbose bool, quiet bool) *Client {
 		log:            discardLogSink{},
 		executor:       &process.CommandRunner{},
 		youtube:        &tldw.YouTubeCooldown{},
+		prepared:       &preparedCaptions{},
 	}
 }
 
@@ -65,10 +70,6 @@ func readVideo[T any](ctx context.Context, yt *Client, ref tldw.ContentRef, fetc
 		return err
 	})
 	return value, err
-}
-
-func (yt *Client) FetchCaptions(ctx context.Context, ref tldw.ContentRef, metadata *tldw.VideoMetadata) (*tldw.Transcript, error) {
-	return yt.fetchStructuredTranscript(ctx, ref, metadata)
 }
 
 func (yt *Client) DownloadAudio(ctx context.Context, ref tldw.ContentRef) (string, error) {

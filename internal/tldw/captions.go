@@ -35,7 +35,7 @@ func CanOfferPaidTranscription(err error) bool {
 	return errors.As(err, &eligible)
 }
 
-type fetchCaptionsFunc func(context.Context, ContentRef, *VideoMetadata) (*Transcript, error)
+type fetchCaptionsFunc func(context.Context, ContentRef, *VideoMetadata, int) (*Transcript, error)
 type refreshMetadataFunc func(context.Context, ContentRef) (*VideoMetadata, error)
 
 // readCaptions owns recovery for one caption lookup, including its retry waits.
@@ -62,7 +62,7 @@ func readCaptions(ctx context.Context, ref ContentRef, metadata *VideoMetadata, 
 		attempts++
 		attemptCtx, span := telemetry.Start(ctx, "captions.acquire", trace.WithAttributes(attribute.Int("tldw.attempt", attempts)))
 		defer telemetry.EndSpan(span)
-		transcript, err := fetch(attemptCtx, ref, m)
+		transcript, err := fetch(attemptCtx, ref, m, attempts)
 		RecordOperationError(span, err)
 		return transcript, err
 	}
